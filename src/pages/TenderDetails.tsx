@@ -20,6 +20,10 @@ interface Tender {
   created_at: string;
   file_url: string;
   original_filename: string;
+  parsed_data?: {
+    error?: string;
+    questions?: string[];
+  } | null;
 }
 
 interface TenderResponse {
@@ -69,7 +73,13 @@ const TenderDetails = () => {
         .single();
 
       if (tenderError) throw tenderError;
-      setTender(tenderData);
+      
+      // Cast the parsed_data properly
+      const tenderWithParsedData = {
+        ...tenderData,
+        parsed_data: tenderData.parsed_data as { error?: string; questions?: string[] } | null
+      };
+      setTender(tenderWithParsedData);
 
       // Fetch tender responses - maintain original document order
       const { data: responsesData, error: responsesError } = await supabase
@@ -80,6 +90,15 @@ const TenderDetails = () => {
 
       if (responsesError) throw responsesError;
       setResponses(responsesData || []);
+
+      // Check if tender has an error state from processing
+      if (tenderWithParsedData.status === 'error' && tenderWithParsedData.parsed_data?.error) {
+        toast({
+          title: "Processing Error",
+          description: tenderWithParsedData.parsed_data.error,
+          variant: "destructive",
+        });
+      }
     } catch (error) {
       console.error('Error fetching tender details:', error);
       toast({
@@ -547,7 +566,23 @@ const TenderDetails = () => {
                 </div>
               </div>
 
-              {responses.length === 0 ? (
+              {tender.status === 'error' && tender.parsed_data?.error ? (
+                <Card>
+                  <CardContent className="text-center py-8">
+                    <div className="space-y-2">
+                      <p className="text-muted-foreground">
+                        No questions could be extracted from the uploaded document.
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {tender.parsed_data.error}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Please ensure your document contains numbered questions (e.g., "1. What is your experience?").
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : responses.length === 0 ? (
                 <Card>
                   <CardContent className="text-center py-8">
                     <p className="text-muted-foreground">No responses generated yet</p>

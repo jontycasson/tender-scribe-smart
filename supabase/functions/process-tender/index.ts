@@ -46,9 +46,13 @@ serve(async (req) => {
       const uint8Array = new Uint8Array(arrayBuffer);
       const base64Data = btoa(String.fromCharCode(...uint8Array));
 
-      // Call Nanonets OCR API - using generic OCR model
-      const modelId = Deno.env.get('NANONETS_MODEL_ID') || 'd9d6c8b0-70b5-4b6a-a321-89b1b7bca5f9'; // Generic OCR model
-      const nanonetsResponse = await fetch(`https://app.nanonets.com/api/v2/OCR/Model/${modelId}/LabelFile/`, {
+      // Call Nanonets OCR API - use generic endpoint if no specific model ID
+      const modelId = Deno.env.get('NANONETS_MODEL_ID');
+      const apiUrl = modelId 
+        ? `https://app.nanonets.com/api/v2/OCR/Model/${modelId}/LabelFile/`
+        : 'https://app.nanonets.com/api/v2/OCR/FullText/';
+      
+      const nanonetsResponse = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Basic ${btoa(nanonetsApiKey + ':')}`,
