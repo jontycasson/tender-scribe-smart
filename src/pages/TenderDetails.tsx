@@ -285,7 +285,7 @@ const TenderDetails = () => {
   };
 
 
-  const handleExport = async (format: 'PDF' | 'DOCX' | 'XLSX') => {
+  const handleExport = async (format: 'txt' | 'rtf' | 'csv') => {
     if (!tender) return;
     
     setIsExporting(true);
@@ -301,15 +301,15 @@ const TenderDetails = () => {
 
       // Create download link
       const blob = new Blob([data], { 
-        type: format === 'PDF' ? 'application/pdf' : 
-              format === 'DOCX' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' :
-              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        type: format === 'txt' ? 'text/plain' : 
+              format === 'rtf' ? 'application/rtf' :
+              'text/csv'
       });
       
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${tender.title}_responses.${format.toLowerCase()}`;
+      a.download = `${tender.title}_responses.${format}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -518,29 +518,29 @@ const TenderDetails = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleExport('PDF')}
+                        onClick={() => handleExport('txt')}
                         disabled={isExporting}
                       >
                         <FileDown className="h-4 w-4 mr-2" />
-                        Export PDF
+                        Export TXT
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleExport('DOCX')}
+                        onClick={() => handleExport('rtf')}
                         disabled={isExporting}
                       >
                         <FileDown className="h-4 w-4 mr-2" />
-                        Export DOCX
+                        Export RTF
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleExport('XLSX')}
+                        onClick={() => handleExport('csv')}
                         disabled={isExporting}
                       >
                         <FileDown className="h-4 w-4 mr-2" />
-                        Export XLSX
+                        Export CSV
                       </Button>
                     </div>
                   )}

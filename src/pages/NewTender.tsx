@@ -270,7 +270,7 @@ const NewTender = () => {
     }
   };
 
-  const exportResponses = async (format: 'docx' | 'pdf' | 'xlsx') => {
+  const exportResponses = async (format: 'rtf' | 'txt' | 'csv') => {
     if (!tenderId) return;
 
     try {
@@ -282,9 +282,9 @@ const NewTender = () => {
 
       // Create download link
       const blob = new Blob([data], { 
-        type: format === 'pdf' ? 'application/pdf' : 
-              format === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' :
-              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        type: format === 'txt' ? 'text/plain' : 
+              format === 'rtf' ? 'application/rtf' :
+              'text/csv'
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -468,17 +468,17 @@ const NewTender = () => {
                 </p>
               </div>
               <div className="flex space-x-2">
-                <Button onClick={() => exportResponses('docx')} variant="outline">
+                <Button onClick={() => exportResponses('rtf')} variant="outline">
                   <Download className="h-4 w-4 mr-2" />
-                  Export DOCX
+                  Export RTF
                 </Button>
-                <Button onClick={() => exportResponses('pdf')} variant="outline">
+                <Button onClick={() => exportResponses('txt')} variant="outline">
                   <Download className="h-4 w-4 mr-2" />
-                  Export PDF
+                  Export TXT
                 </Button>
-                <Button onClick={() => exportResponses('xlsx')} variant="outline">
+                <Button onClick={() => exportResponses('csv')} variant="outline">
                   <Download className="h-4 w-4 mr-2" />
-                  Export XLSX
+                  Export CSV
                 </Button>
                 <Button onClick={finalizeTender} disabled={questions.some(q => !q.is_approved)}>
                   <Save className="h-4 w-4 mr-2" />
@@ -612,9 +612,9 @@ const NewTender = () => {
                   <Button onClick={() => navigate('/dashboard')}>
                     Return to Dashboard
                   </Button>
-                  <Button onClick={() => exportResponses('pdf')} variant="outline">
+                  <Button onClick={() => exportResponses('txt')} variant="outline">
                     <Download className="h-4 w-4 mr-2" />
-                    Download Final PDF
+                    Download Final TXT
                   </Button>
                 </div>
               </CardContent>
