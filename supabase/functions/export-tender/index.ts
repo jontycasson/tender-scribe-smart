@@ -51,19 +51,19 @@ serve(async (req) => {
     let filename: string;
 
     switch (normalizedFormat) {
-      case 'pdf':
-        // For now, return as text that can be copied to a PDF generator
+      case 'txt':
+        // Generate plain text content
         responseContent = generateTextContent(tenderData, responsesData, profileData);
         contentType = 'text/plain';
         filename = `tender-response.txt`;
         break;
-      case 'docx':
+      case 'rtf':
         // Generate RTF format that Word can open
         responseContent = generateRTF(tenderData, responsesData, profileData);
         contentType = 'application/rtf';
         filename = `tender-response.rtf`;
         break;
-      case 'xlsx':
+      case 'csv':
         // Generate proper CSV that Excel can import
         responseContent = generateCSV(tenderData, responsesData, profileData);
         contentType = 'text/csv';
