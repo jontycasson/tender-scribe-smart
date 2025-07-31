@@ -9,6 +9,7 @@ import Onboarding from "./pages/Onboarding";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import NewTender from "./pages/NewTender";
+import TenderDetails from "./pages/TenderDetails";
 import { AuthProvider } from "@/hooks/useAuth";
 
 const queryClient = new QueryClient();
@@ -26,6 +27,7 @@ const App = () => (
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/new-tender" element={<NewTender />} />
+            <Route path="/tender/:id" element={<TenderDetails />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

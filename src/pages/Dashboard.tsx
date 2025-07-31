@@ -170,7 +170,7 @@ const Dashboard = () => {
                           </div>
                           <div className="flex items-end">
                             <Button variant="outline" size="sm" asChild>
-                              <Link to={`/new-tender?id=${tender.id}`}>
+                              <Link to={`/tender/${tender.id}`}>
                                 <FileText className="h-4 w-4 mr-2" />
                                 View Details
                               </Link>
