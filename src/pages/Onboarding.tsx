@@ -5,6 +5,7 @@ import { CompanyProfileData } from "@/lib/validations/onboarding";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { Navigation } from "@/components/Navigation";
 
 const Onboarding = () => {
   const navigate = useNavigate();
@@ -83,7 +84,12 @@ const Onboarding = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <OnboardingForm onComplete={handleOnboardingComplete} />
+      <Navigation />
+      <div className="flex items-center justify-center p-6 min-h-[calc(100vh-80px)]">
+        <div className="max-w-2xl w-full">
+          <OnboardingForm onComplete={handleOnboardingComplete} />
+        </div>
+      </div>
     </div>
   );
 };

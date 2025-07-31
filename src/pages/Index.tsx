@@ -1,12 +1,27 @@
 import { Button } from "@/components/ui/button";
 import { Building2, ArrowRight, FileText, Users, Shield } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { Navigation } from "@/components/Navigation";
+import { useAuth } from "@/hooks/useAuth";
 
 const Index = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const handleDashboardClick = () => {
+    if (user) {
+      navigate("/dashboard");
+    } else {
+      navigate("/auth");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
+      <Navigation />
+      
       {/* Hero Section */}
-      <div className="flex flex-col items-center justify-center min-h-screen px-6">
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] px-6">
         <div className="text-center max-w-4xl mx-auto">
           <div className="flex items-center justify-center mb-6">
             <Building2 className="h-12 w-12 text-primary mr-4" />
@@ -25,10 +40,8 @@ const Index = () => {
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Link>
             </Button>
-            <Button variant="outline" size="lg" asChild>
-              <Link to="/dashboard">
-                View Dashboard
-              </Link>
+            <Button variant="outline" size="lg" onClick={handleDashboardClick}>
+              {user ? "View Dashboard" : "View Dashboard (Sign In Required)"}
             </Button>
           </div>
           

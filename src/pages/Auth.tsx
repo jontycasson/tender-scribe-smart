@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2 } from "lucide-react";
+import { Building2, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -76,15 +76,25 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-6">
-      <div className="max-w-md w-full">
-        <div className="text-center mb-8">
-          <div className="flex items-center justify-center mb-4">
-            <Building2 className="h-8 w-8 text-primary mr-2" />
-            <h1 className="text-2xl font-bold">TenderFlow</h1>
+    <div className="min-h-screen bg-background">
+      <div className="flex items-center justify-between p-6 border-b">
+        <Link to="/" className="flex items-center space-x-4 hover:opacity-80 transition-opacity">
+          <Building2 className="h-8 w-8 text-primary" />
+          <h1 className="text-2xl font-bold">TenderFlow</h1>
+        </Link>
+        <Button variant="outline" asChild>
+          <Link to="/">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Home
+          </Link>
+        </Button>
+      </div>
+      
+      <div className="flex items-center justify-center p-6 min-h-[calc(100vh-80px)]">
+        <div className="max-w-md w-full">
+          <div className="text-center mb-8">
+            <p className="text-muted-foreground">Sign in to your account or create a new one</p>
           </div>
-          <p className="text-muted-foreground">Sign in to your account or create a new one</p>
-        </div>
 
         <Tabs defaultValue="signin" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
@@ -163,6 +173,7 @@ const Auth = () => {
             </Card>
           </TabsContent>
         </Tabs>
+        </div>
       </div>
     </div>
   );

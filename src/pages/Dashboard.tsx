@@ -3,11 +3,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Plus, FileText, Calendar, Building2, Settings, Upload } from "lucide-react";
+import { Plus, FileText, Calendar, Building2, Settings } from "lucide-react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { Navigation } from "@/components/Navigation";
 
 
 const Dashboard = () => {
@@ -87,28 +87,7 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b bg-card">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Building2 className="h-8 w-8 text-primary" />
-              <h1 className="text-2xl font-bold">TenderFlow</h1>
-            </div>
-            <div className="flex items-center space-x-4">
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/new-tender">
-                  <Upload className="h-4 w-4 mr-2" />
-                  New Tender
-                </Link>
-              </Button>
-              <Avatar>
-                <AvatarFallback>TS</AvatarFallback>
-              </Avatar>
-            </div>
-          </div>
-        </div>
-      </header>
+      <Navigation showNewTenderButton={true} />
 
       <div className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-8">

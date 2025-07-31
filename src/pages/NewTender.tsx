@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Upload, FileText, Download, Save, Check, X, Building2, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { Navigation } from "@/components/Navigation";
 
 interface Question {
   id: string;
@@ -327,28 +328,20 @@ const NewTender = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b bg-card">
+      <Navigation />
+      
+      {/* Progress indicators */}
+      <div className="border-b bg-card">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => navigate(user ? '/dashboard' : '/')}
-              >
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                {user ? 'Back to Dashboard' : 'Back to Home'}
-              </Button>
-              <Button 
-                variant="ghost" 
-                onClick={() => navigate('/')}
-                className="flex items-center space-x-2"
-              >
-                <Building2 className="h-8 w-8 text-primary" />
-                <span className="text-2xl font-bold">TenderFlow</span>
-              </Button>
-            </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => navigate(user ? '/dashboard' : '/')}
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              {user ? 'Back to Dashboard' : 'Back to Home'}
+            </Button>
             <div className="flex items-center space-x-2">
               <Badge variant={currentStep === 'upload' ? 'default' : 'secondary'}>Upload</Badge>
               <Badge variant={currentStep === 'review' ? 'default' : 'secondary'}>Review</Badge>
@@ -356,7 +349,7 @@ const NewTender = () => {
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
         {currentStep === 'upload' && (
