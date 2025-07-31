@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { Form } from "@/components/ui/form";
 import { CompanyProfileData, companyProfileSchema } from "@/lib/validations/onboarding";
 import { BasicInfoStep } from "./steps/BasicInfoStep";
 import { ServicesStep } from "./steps/ServicesStep";
@@ -104,32 +105,34 @@ export function OnboardingForm({ onComplete }: OnboardingFormProps) {
         </CardHeader>
         
         <CardContent className="space-y-6">
-          <form onSubmit={handleSubmit}>
-            <CurrentStepComponent form={form} />
-            
-            <div className="flex justify-between pt-6">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handlePrevious}
-                disabled={currentStep === 0}
-              >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Previous
-              </Button>
+          <Form {...form}>
+            <form onSubmit={handleSubmit}>
+              <CurrentStepComponent form={form} />
               
-              {currentStep === steps.length - 1 ? (
-                <Button type="submit">
-                  Complete Setup
+              <div className="flex justify-between pt-6">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handlePrevious}
+                  disabled={currentStep === 0}
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Previous
                 </Button>
-              ) : (
-                <Button type="button" onClick={handleNext}>
-                  Next
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              )}
-            </div>
-          </form>
+                
+                {currentStep === steps.length - 1 ? (
+                  <Button type="submit">
+                    Complete Setup
+                  </Button>
+                ) : (
+                  <Button type="button" onClick={handleNext}>
+                    Next
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                )}
+              </div>
+            </form>
+          </Form>
         </CardContent>
       </Card>
     </div>
