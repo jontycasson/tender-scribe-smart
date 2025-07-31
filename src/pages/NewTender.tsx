@@ -74,13 +74,32 @@ const NewTender = () => {
   };
 
   const uploadAndProcessTender = async () => {
-    if (!file || !user) {
-      console.error('Missing file or user:', { file: !!file, user: !!user });
+    console.log('Upload attempt:', { 
+      hasFile: !!file, 
+      fileName: file?.name, 
+      fileSize: file?.size,
+      hasUser: !!user, 
+      userId: user?.id 
+    });
+
+    if (!file) {
+      console.error('No file selected');
       toast({
-        title: "Error",
-        description: "Please select a file and ensure you're logged in.",
+        title: "No file selected",
+        description: "Please select a file to upload.",
         variant: "destructive",
       });
+      return;
+    }
+
+    if (!user) {
+      console.error('User not authenticated');
+      toast({
+        title: "Authentication required",
+        description: "Please log in to upload files.",
+        variant: "destructive",
+      });
+      navigate('/auth');
       return;
     }
 
@@ -313,12 +332,22 @@ const NewTender = () => {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard')}>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => navigate(user ? '/dashboard' : '/')}
+              >
                 <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Dashboard
+                {user ? 'Back to Dashboard' : 'Back to Home'}
               </Button>
-              <Building2 className="h-8 w-8 text-primary" />
-              <h1 className="text-2xl font-bold">New Tender Response</h1>
+              <Button 
+                variant="ghost" 
+                onClick={() => navigate('/')}
+                className="flex items-center space-x-2"
+              >
+                <Building2 className="h-8 w-8 text-primary" />
+                <span className="text-2xl font-bold">TenderFlow</span>
+              </Button>
             </div>
             <div className="flex items-center space-x-2">
               <Badge variant={currentStep === 'upload' ? 'default' : 'secondary'}>Upload</Badge>
@@ -332,6 +361,25 @@ const NewTender = () => {
       <div className="max-w-7xl mx-auto px-6 py-8">
         {currentStep === 'upload' && (
           <div className="max-w-2xl mx-auto">
+            {!user && (
+              <Card className="mb-6 border-orange-200 bg-orange-50 dark:bg-orange-950/20">
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-orange-800 dark:text-orange-200">
+                        Authentication Required
+                      </p>
+                      <p className="text-sm text-orange-600 dark:text-orange-300">
+                        Please log in to upload and process tender documents.
+                      </p>
+                    </div>
+                    <Button onClick={() => navigate('/auth')} variant="outline">
+                      Log In
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
             <Card>
               <CardHeader>
                 <CardTitle>Upload Tender Document</CardTitle>
