@@ -56,31 +56,29 @@ serve(async (req) => {
       console.log('Extracted questions from document:', questions.length);
     }
     
-    // If no questions found, use enhanced fallback questions
+    // If no questions found, return an error
     if (questions.length === 0) {
-      console.log('No questions extracted, using comprehensive fallback questions');
-      questions = [
-        "Please provide details about your company's experience with similar projects",
-        "What is your proposed timeline for project completion?",
-        "Describe your team's qualifications and expertise",
-        "What is your understanding of the project requirements?",
-        "How will you ensure quality control throughout the project?",
-        "What are your proposed pricing and payment terms?",
-        "Describe your risk management approach",
-        "How will you handle project communication and reporting?",
-        "What is your company's health and safety policy?",
-        "Describe your environmental management approach",
-        "What insurance coverage does your company maintain?",
-        "How do you handle subcontractor management?",
-        "What is your approach to risk assessment and mitigation?",
-        "Describe your quality assurance processes",
-        "What project management methodologies do you use?",
-        "How do you ensure compliance with relevant standards and regulations?",
-        "What is your company's track record with similar projects?",
-        "Describe your technical capabilities and resources",
-        "How do you handle change management during projects?",
-        "What is your approach to stakeholder communication and engagement?"
-      ];
+      console.log('No questions extracted from document');
+      
+      // Update tender status to indicate parsing failed
+      await supabase
+        .from('tenders')
+        .update({ 
+          status: 'error',
+          parsed_data: { error: 'No questions found in document' }
+        })
+        .eq('id', tenderId);
+
+      return new Response(
+        JSON.stringify({ 
+          error: 'No questions were found in the uploaded document. Please check that the document contains clear questions or requirements, and try uploading again.',
+          questionsFound: 0
+        }),
+        { 
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
     }
 
     // Update tender with parsed data
