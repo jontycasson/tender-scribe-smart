@@ -52,7 +52,9 @@ serve(async (req) => {
     let responseContent: string;
     let contentType: string;
 
-    switch (format) {
+    const normalizedFormat = format.toLowerCase();
+    
+    switch (normalizedFormat) {
       case 'pdf':
         // In a real implementation, you'd use a PDF generation service
         responseContent = exportContent;
@@ -69,14 +71,14 @@ serve(async (req) => {
         contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         break;
       default:
-        throw new Error('Unsupported format');
+        throw new Error(`Unsupported format: ${format}`);
     }
 
     return new Response(responseContent, {
       headers: {
         ...corsHeaders,
         'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="tender-response.${format}"`,
+        'Content-Disposition': `attachment; filename="tender-response.${normalizedFormat}"`,
       },
     });
 

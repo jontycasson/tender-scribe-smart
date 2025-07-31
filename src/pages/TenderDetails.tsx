@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, FileText, Calendar, Download, ChevronLeft, ChevronRight, CheckCircle, Trash2, FileDown } from "lucide-react";
+import { ArrowLeft, FileText, Calendar, Download, ChevronLeft, ChevronRight, CheckCircle, FileDown, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigation } from "@/components/Navigation";
@@ -43,7 +43,6 @@ const TenderDetails = () => {
   const [editingResponse, setEditingResponse] = useState<string | null>(null);
   const [editedAnswers, setEditedAnswers] = useState<{ [key: string]: string }>({});
   const [isApproving, setIsApproving] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   
   const responsesPerPage = 5;
@@ -98,6 +97,8 @@ const TenderDetails = () => {
     switch (status) {
       case "completed":
         return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300";
+      case "approved":
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300";
       case "draft":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
       case "processing":
@@ -116,6 +117,7 @@ const TenderDetails = () => {
   const getStatusDisplay = (status: string) => {
     switch (status) {
       case "completed": return "Completed";
+      case "approved": return "Approved";
       case "draft": return "Draft";
       case "processing": return "Processing";
       case "uploaded": return "Uploaded";
@@ -182,6 +184,10 @@ const TenderDetails = () => {
       ));
       
       setEditingResponse(null);
+      
+      // Update tender status if all responses are now approved
+      await updateTenderStatus();
+      
       toast({
         title: "Success",
         description: "Response updated successfully",
@@ -207,6 +213,10 @@ const TenderDetails = () => {
       if (error) throw error;
 
       setResponses(prev => prev.map(response => ({ ...response, is_approved: true })));
+      
+      // Update tender status to "approved" when all responses are approved
+      await updateTenderStatus();
+      
       toast({
         title: "Success",
         description: "All responses approved successfully",
@@ -223,57 +233,57 @@ const TenderDetails = () => {
     }
   };
 
-  const handleDeleteTender = async () => {
-    if (!tender || !window.confirm('Are you sure you want to delete this tender? This action cannot be undone.')) {
-      return;
-    }
-
-    setIsDeleting(true);
+  const handleReopenResponse = async (responseId: string) => {
     try {
-      // Delete file from storage
-      const { error: storageError } = await supabase.storage
-        .from('tender-documents')
-        .remove([tender.file_url]);
-
-      if (storageError) {
-        console.error('Error deleting file from storage:', storageError);
-        // Continue with database deletion even if file deletion fails
-      }
-
-      // Delete tender responses
-      const { error: responsesError } = await supabase
+      const { error } = await supabase
         .from('tender_responses')
-        .delete()
-        .eq('tender_id', id);
+        .update({ is_approved: false })
+        .eq('id', responseId);
 
-      if (responsesError) throw responsesError;
+      if (error) throw error;
 
-      // Delete tender
-      const { error: tenderError } = await supabase
-        .from('tenders')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', user?.id);
+      setResponses(prev => prev.map(response => 
+        response.id === responseId 
+          ? { ...response, is_approved: false }
+          : response
+      ));
 
-      if (tenderError) throw tenderError;
-
+      // Update tender status since not all responses are approved anymore
+      await updateTenderStatus();
+      
       toast({
         title: "Success",
-        description: "Tender deleted successfully",
+        description: "Response reopened for editing",
       });
-      
-      navigate('/dashboard');
     } catch (error) {
-      console.error('Error deleting tender:', error);
+      console.error('Error reopening response:', error);
       toast({
         title: "Error",
-        description: "Failed to delete tender",
+        description: "Failed to reopen response",
         variant: "destructive",
       });
-    } finally {
-      setIsDeleting(false);
     }
   };
+
+  const updateTenderStatus = async () => {
+    try {
+      // Check if all responses are approved
+      const allApproved = responses.every(response => response.is_approved);
+      const newStatus = allApproved ? 'approved' : 'draft';
+      
+      const { error } = await supabase
+        .from('tenders')
+        .update({ status: newStatus })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setTender(prev => prev ? { ...prev, status: newStatus } : null);
+    } catch (error) {
+      console.error('Error updating tender status:', error);
+    }
+  };
+
 
   const handleExport = async (format: 'PDF' | 'DOCX' | 'XLSX') => {
     if (!tender) return;
@@ -532,15 +542,6 @@ const TenderDetails = () => {
                         <FileDown className="h-4 w-4 mr-2" />
                         Export XLSX
                       </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={handleDeleteTender}
-                        disabled={isDeleting}
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        {isDeleting ? 'Deleting...' : 'Delete Tender'}
-                      </Button>
                     </div>
                   )}
                 </div>
@@ -567,12 +568,24 @@ const TenderDetails = () => {
                                 {response.question}
                               </p>
                             </div>
-                            {response.is_approved && (
-                              <Badge variant="secondary" className="ml-2">
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                Approved
-                              </Badge>
-                            )}
+                            <div className="flex items-center gap-2">
+                              {response.is_approved && (
+                                <Badge variant="secondary">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Approved
+                                </Badge>
+                              )}
+                              {response.is_approved && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleReopenResponse(response.id)}
+                                  className="h-6 w-6 p-0"
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         </CardHeader>
                         <CardContent>

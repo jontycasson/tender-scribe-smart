@@ -3,11 +3,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, FileText, Calendar, Building2, Settings } from "lucide-react";
+import { Plus, FileText, Calendar, Building2, Settings, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigation } from "@/components/Navigation";
+import { useToast } from "@/hooks/use-toast";
 
 
 const Dashboard = () => {
@@ -15,7 +16,9 @@ const Dashboard = () => {
   const [tenders, setTenders] = useState<any[]>([]);
   const [companyProfile, setCompanyProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [deletingTender, setDeletingTender] = useState<string | null>(null);
   const { user } = useAuth();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (user) {
@@ -60,6 +63,8 @@ const Dashboard = () => {
     switch (status) {
       case "completed":
         return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300";
+      case "approved":
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300";
       case "draft":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
       case "processing":
@@ -78,10 +83,64 @@ const Dashboard = () => {
   const getStatusDisplay = (status: string) => {
     switch (status) {
       case "completed": return "Completed";
+      case "approved": return "Approved";
       case "draft": return "Draft";
       case "processing": return "Processing";
       case "uploaded": return "Uploaded";
       default: return status;
+    }
+  };
+
+  const handleDeleteTender = async (tender: any) => {
+    if (!window.confirm('Are you sure you want to delete this tender? This action cannot be undone.')) {
+      return;
+    }
+
+    setDeletingTender(tender.id);
+    try {
+      // Delete file from storage
+      const { error: storageError } = await supabase.storage
+        .from('tender-documents')
+        .remove([tender.file_url]);
+
+      if (storageError) {
+        console.error('Error deleting file from storage:', storageError);
+        // Continue with database deletion even if file deletion fails
+      }
+
+      // Delete tender responses
+      const { error: responsesError } = await supabase
+        .from('tender_responses')
+        .delete()
+        .eq('tender_id', tender.id);
+
+      if (responsesError) throw responsesError;
+
+      // Delete tender
+      const { error: tenderError } = await supabase
+        .from('tenders')
+        .delete()
+        .eq('id', tender.id)
+        .eq('user_id', user?.id);
+
+      if (tenderError) throw tenderError;
+
+      // Update local state
+      setTenders(prev => prev.filter(t => t.id !== tender.id));
+      
+      toast({
+        title: "Success",
+        description: "Tender deleted successfully",
+      });
+    } catch (error) {
+      console.error('Error deleting tender:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete tender",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingTender(null);
     }
   };
 
@@ -168,12 +227,21 @@ const Dashboard = () => {
                               {formatDate(tender.created_at)}
                             </p>
                           </div>
-                          <div className="flex items-end">
+                          <div className="flex items-end gap-2">
                             <Button variant="outline" size="sm" asChild>
                               <Link to={`/tender/${tender.id}`}>
                                 <FileText className="h-4 w-4 mr-2" />
                                 View Details
                               </Link>
+                            </Button>
+                            <Button 
+                              variant="destructive" 
+                              size="sm"
+                              onClick={() => handleDeleteTender(tender)}
+                              disabled={deletingTender === tender.id}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              {deletingTender === tender.id ? 'Deleting...' : 'Delete'}
                             </Button>
                           </div>
                         </div>
