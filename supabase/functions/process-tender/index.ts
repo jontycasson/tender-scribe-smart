@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import pdfParse from "https://esm.sh/pdf-parse@1.1.1";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -27,55 +28,66 @@ serve(async (req) => {
 
     if (fileError) throw fileError;
 
-    // Convert file to base64 for Nanonets API
-    const arrayBuffer = await fileData.arrayBuffer();
-    const base64File = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-
-    // Try to extract text from the document for question extraction
+    // Parse PDF to extract text
     console.log('Processing document for question extraction:', filePath);
-    
-    // For PDF processing, we'll use a simple text extraction approach
-    // In a production environment, you'd want to use a proper PDF parsing library
     let extractedText = '';
+    let parseError = null;
     
     try {
-      // Convert the file buffer to text (this is a simplified approach)
-      // For better PDF parsing, consider using libraries like pdf-parse
-      const fileText = new TextDecoder().decode(arrayBuffer);
-      extractedText = fileText;
+      const arrayBuffer = await fileData.arrayBuffer();
+      const buffer = new Uint8Array(arrayBuffer);
+      
+      // Use pdf-parse to extract text from PDF
+      const pdfData = await pdfParse(buffer);
+      extractedText = pdfData.text;
       console.log('Extracted text length:', extractedText.length);
+      
+      if (extractedText.length === 0) {
+        throw new Error('No text found in PDF');
+      }
     } catch (error) {
-      console.log('Text extraction failed, using fallback questions:', error);
+      console.log('PDF parsing failed:', error);
+      parseError = error.message;
     }
     
     // Extract questions from the document text
     let questions: string[] = [];
+    let errorMessage = null;
     
-    if (extractedText) {
+    if (parseError) {
+      errorMessage = `Failed to parse PDF: ${parseError}`;
+    } else if (extractedText) {
       questions = extractQuestionsFromText(extractedText);
       console.log('Extracted questions from document:', questions.length);
+      
+      if (questions.length === 0) {
+        errorMessage = 'No numbered questions were found in the uploaded document. Please check that the document contains questions formatted with numbers (e.g., "1. What is your experience?").';
+      }
+    } else {
+      errorMessage = 'Could not extract text from the PDF document.';
     }
     
-    // If no questions found, return an error
-    if (questions.length === 0) {
-      console.log('No questions extracted from document');
+    // If parsing failed or no questions found, return error response with 200 status
+    if (errorMessage) {
+      console.log('Processing failed:', errorMessage);
       
       // Update tender status to indicate parsing failed
       await supabase
         .from('tenders')
         .update({ 
           status: 'error',
-          parsed_data: { error: 'No questions found in document' }
+          parsed_data: { error: errorMessage }
         })
         .eq('id', tenderId);
 
       return new Response(
         JSON.stringify({ 
-          error: 'No questions were found in the uploaded document. Please check that the document contains clear questions or requirements, and try uploading again.',
+          success: false,
+          error: errorMessage,
           questionsFound: 0
         }),
         { 
-          status: 400,
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         }
       );
@@ -144,9 +156,13 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in process-tender function:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        success: false,
+        error: `Processing failed: ${error.message}`,
+        questionsFound: 0
+      }),
       { 
-        status: 500,
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       }
     );
@@ -154,48 +170,55 @@ serve(async (req) => {
 });
 
 function extractQuestionsFromText(text: string): string[] {
-  // Enhanced question extraction with multiple patterns
+  // Extract numbered questions from the document text
   const questions: string[] = [];
   
-  // Split text into sentences and clean up
-  const sentences = text
-    .split(/[.!?\n\r]+/)
-    .map(s => s.trim())
-    .filter(s => s.length > 15); // Minimum length for meaningful questions
+  // Split text into lines and clean up
+  const lines = text
+    .split(/\n/)
+    .map(line => line.trim())
+    .filter(line => line.length > 10); // Minimum length for meaningful content
   
-  for (const sentence of sentences) {
-    const lowerSentence = sentence.toLowerCase();
-    
-    // Look for explicit questions (ending with ?)
-    if (sentence.includes('?')) {
-      questions.push(sentence + (sentence.endsWith('?') ? '' : '?'));
+  // Look for lines that start with a number and end with a question mark
+  // Pattern matches: "1. What is...", "1) How do...", "Question 1: Why...", etc.
+  const numberedQuestionPattern = /^(?:\d+[\.\)\:]?\s*(?:question\s*)?\s*)(.*\?)\s*$/i;
+  
+  for (const line of lines) {
+    const match = line.match(numberedQuestionPattern);
+    if (match) {
+      const questionText = match[1].trim();
+      if (questionText.length > 10) { // Ensure it's a meaningful question
+        questions.push(questionText);
+      }
       continue;
     }
     
-    // Look for imperative statements that are effectively questions
-    const imperativePatterns = [
-      /^(please\s+)?(describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate)/i,
-      /^(what|how|when|where|why|which|who)/i,
-      /\b(requirements?\s+for|criteria\s+for|approach\s+to|method\s+for)\b/i,
-      /\b(must\s+provide|should\s+include|need\s+to\s+demonstrate|required\s+to)\b/i,
-      /\b(experience\s+in|capability\s+to|ability\s+to|qualified\s+to)\b/i
-    ];
-    
-    for (const pattern of imperativePatterns) {
-      if (pattern.test(sentence)) {
-        // Convert statement to question format if it doesn't end with ?
-        const questionText = sentence.endsWith('?') ? sentence : sentence + '?';
-        questions.push(questionText);
-        break;
+    // Also check for lines that start with numbers but don't end with ?
+    // and convert them to questions if they contain question words
+    const numberedLinePattern = /^(?:\d+[\.\)\:]?\s*(?:question\s*)?\s*)(.*)/i;
+    const lineMatch = line.match(numberedLinePattern);
+    if (lineMatch) {
+      const content = lineMatch[1].trim();
+      const lowerContent = content.toLowerCase();
+      
+      // Check if it contains question words or imperative statements
+      const questionIndicators = [
+        /^(what|how|when|where|why|which|who|describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate)/i,
+        /\b(experience|approach|method|capability|ability|requirements?|criteria)\b/i
+      ];
+      
+      if (questionIndicators.some(pattern => pattern.test(content))) {
+        const questionText = content.endsWith('?') ? content : content + '?';
+        if (questionText.length > 10) {
+          questions.push(questionText);
+        }
       }
     }
   }
   
-  // Remove duplicates and return all questions (no arbitrary limit)
-  const uniqueQuestions = [...new Set(questions)];
-  console.log(`Extracted ${uniqueQuestions.length} unique questions from document`);
+  console.log(`Extracted ${questions.length} numbered questions from document`);
   
-  return uniqueQuestions;
+  return questions;
 }
 
 async function generateAIResponse(question: string, profile: any, apiKey: string): Promise<string> {
