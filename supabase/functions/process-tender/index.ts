@@ -1,7 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import pdfParse from "https://esm.sh/pdf-parse@1.1.1";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -34,18 +33,52 @@ serve(async (req) => {
         throw new Error(`Failed to download file: ${fileError.message}`);
       }
 
-      // Parse PDF to extract text
-      console.log('Processing document for question extraction:', filePath);
-      const arrayBuffer = await fileData.arrayBuffer();
-      const buffer = new Uint8Array(arrayBuffer);
+      console.log('Processing document with Nanonets:', filePath);
       
-      // Use pdf-parse to extract text from PDF
-      const pdfData = await pdfParse(buffer);
-      const extractedText = pdfData.text;
+      // Get Nanonets API key and model ID from environment
+      const nanonetsApiKey = Deno.env.get('NANONETS_API_KEY');
+      if (!nanonetsApiKey) {
+        throw new Error('Nanonets API key not configured');
+      }
+
+      // Convert file to base64 for Nanonets API
+      const arrayBuffer = await fileData.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      const base64Data = btoa(String.fromCharCode(...uint8Array));
+
+      // Call Nanonets OCR API - using generic OCR model
+      const modelId = Deno.env.get('NANONETS_MODEL_ID') || 'd9d6c8b0-70b5-4b6a-a321-89b1b7bca5f9'; // Generic OCR model
+      const nanonetsResponse = await fetch(`https://app.nanonets.com/api/v2/OCR/Model/${modelId}/LabelFile/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${btoa(nanonetsApiKey + ':')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          file: `data:application/pdf;base64,${base64Data}`,
+        }),
+      });
+
+      if (!nanonetsResponse.ok) {
+        throw new Error(`Nanonets API failed: ${nanonetsResponse.status}`);
+      }
+
+      const nanonetsData = await nanonetsResponse.json();
+      console.log('Nanonets response received');
+
+      // Extract text from Nanonets response
+      let extractedText = '';
+      if (nanonetsData.result && nanonetsData.result[0] && nanonetsData.result[0].prediction) {
+        // Extract text from OCR predictions
+        extractedText = nanonetsData.result[0].prediction
+          .map((pred: any) => pred.ocr_text || '')
+          .join(' ');
+      }
+      
       console.log('Extracted text length:', extractedText.length);
       
       if (extractedText.length === 0) {
-        throw new Error('No text found in PDF');
+        throw new Error('No text found in document');
       }
 
       // Extract questions from the document text
