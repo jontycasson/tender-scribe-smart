@@ -54,83 +54,126 @@ const NewTender = () => {
   };
 
   const uploadAndProcessTender = async () => {
-    if (!file || !user) return;
+    if (!file || !user) {
+      console.error('Missing file or user:', { file: !!file, user: !!user });
+      toast({
+        title: "Error",
+        description: "Please select a file and ensure you're logged in.",
+        variant: "destructive",
+      });
+      return;
+    }
 
+    console.log('Starting upload and process for file:', file.name);
     setUploading(true);
+    
     try {
       // Upload file to storage
       const fileName = `${Date.now()}-${file.name}`;
+      console.log('Uploading file with name:', fileName);
+      
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('tender-documents')
         .upload(fileName, file);
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('Storage upload error:', uploadError);
+        throw uploadError;
+      }
+
+      console.log('File uploaded successfully:', uploadData);
 
       // Create tender record
+      const tenderRecord = {
+        user_id: user.id,
+        title: tenderTitle || file.name.replace(/\.[^/.]+$/, ""),
+        original_filename: file.name,
+        file_url: uploadData.path,
+        status: 'processing'
+      };
+      
+      console.log('Creating tender record:', tenderRecord);
+      
       const { data: tenderData, error: tenderError } = await supabase
         .from('tenders')
-        .insert({
-          user_id: user.id,
-          title: tenderTitle || file.name.replace(/\.[^/.]+$/, ""),
-          original_filename: file.name,
-          file_url: uploadData.path,
-          status: 'processing'
-        })
+        .insert(tenderRecord)
         .select()
         .single();
 
-      if (tenderError) throw tenderError;
+      if (tenderError) {
+        console.error('Tender creation error:', tenderError);
+        throw tenderError;
+      }
 
+      console.log('Tender created successfully:', tenderData);
       setTenderId(tenderData.id);
       setCurrentStep('review');
       
-      // Process document with Nanonets and generate responses
+      // Process document with AI and generate responses
       await processDocument(tenderData.id, uploadData.path);
 
     } catch (error) {
-      console.error('Upload error:', error);
+      console.error('Upload and process error:', error);
       toast({
         title: "Upload failed",
-        description: "Failed to upload tender document. Please try again.",
+        description: error.message || "Failed to upload tender document. Please try again.",
         variant: "destructive",
       });
+      setCurrentStep('upload'); // Reset to upload step on error
     } finally {
       setUploading(false);
     }
   };
 
   const processDocument = async (tenderId: string, filePath: string) => {
+    console.log('Starting document processing for tender:', tenderId, 'file:', filePath);
     setProcessing(true);
+    
     try {
       // Call edge function to process document
+      console.log('Calling process-tender edge function...');
       const { data, error } = await supabase.functions.invoke('process-tender', {
         body: { tenderId, filePath }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Edge function error:', error);
+        throw error;
+      }
+
+      console.log('Edge function response:', data);
+
+      // Wait a moment for the database to be updated
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Fetch the generated questions and responses
+      console.log('Fetching tender responses...');
       const { data: responsesData, error: responsesError } = await supabase
         .from('tender_responses')
         .select('*')
         .eq('tender_id', tenderId);
 
-      if (responsesError) throw responsesError;
+      if (responsesError) {
+        console.error('Response fetch error:', responsesError);
+        throw responsesError;
+      }
 
+      console.log('Fetched responses:', responsesData);
       setQuestions(responsesData || []);
       
       toast({
         title: "Document processed",
-        description: "AI responses have been generated. Please review and edit as needed.",
+        description: `Generated ${responsesData?.length || 0} AI responses. Please review and edit as needed.`,
       });
 
     } catch (error) {
       console.error('Processing error:', error);
       toast({
-        title: "Processing failed",
-        description: "Failed to process document. Please try again.",
+        title: "Processing failed", 
+        description: error.message || "Failed to process document. Please try again.",
         variant: "destructive",
       });
+      setCurrentStep('upload'); // Reset to upload step on error
     } finally {
       setProcessing(false);
     }
