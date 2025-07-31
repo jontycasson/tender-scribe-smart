@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, FileText, Calendar, Download, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, FileText, Calendar, Download, ChevronLeft, ChevronRight, CheckCircle, Trash2, FileDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigation } from "@/components/Navigation";
@@ -42,6 +42,9 @@ const TenderDetails = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [editingResponse, setEditingResponse] = useState<string | null>(null);
   const [editedAnswers, setEditedAnswers] = useState<{ [key: string]: string }>({});
+  const [isApproving, setIsApproving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   
   const responsesPerPage = 5;
 
@@ -69,7 +72,7 @@ const TenderDetails = () => {
       if (tenderError) throw tenderError;
       setTender(tenderData);
 
-      // Fetch tender responses
+      // Fetch tender responses - maintain original document order
       const { data: responsesData, error: responsesError } = await supabase
         .from('tender_responses')
         .select('*')
@@ -190,6 +193,131 @@ const TenderDetails = () => {
         description: "Failed to update response",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleAcceptAllResponses = async () => {
+    setIsApproving(true);
+    try {
+      const { error } = await supabase
+        .from('tender_responses')
+        .update({ is_approved: true })
+        .eq('tender_id', id);
+
+      if (error) throw error;
+
+      setResponses(prev => prev.map(response => ({ ...response, is_approved: true })));
+      toast({
+        title: "Success",
+        description: "All responses approved successfully",
+      });
+    } catch (error) {
+      console.error('Error approving all responses:', error);
+      toast({
+        title: "Error",
+        description: "Failed to approve all responses",
+        variant: "destructive",
+      });
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  const handleDeleteTender = async () => {
+    if (!tender || !window.confirm('Are you sure you want to delete this tender? This action cannot be undone.')) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      // Delete file from storage
+      const { error: storageError } = await supabase.storage
+        .from('tender-documents')
+        .remove([tender.file_url]);
+
+      if (storageError) {
+        console.error('Error deleting file from storage:', storageError);
+        // Continue with database deletion even if file deletion fails
+      }
+
+      // Delete tender responses
+      const { error: responsesError } = await supabase
+        .from('tender_responses')
+        .delete()
+        .eq('tender_id', id);
+
+      if (responsesError) throw responsesError;
+
+      // Delete tender
+      const { error: tenderError } = await supabase
+        .from('tenders')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user?.id);
+
+      if (tenderError) throw tenderError;
+
+      toast({
+        title: "Success",
+        description: "Tender deleted successfully",
+      });
+      
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Error deleting tender:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete tender",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleExport = async (format: 'PDF' | 'DOCX' | 'XLSX') => {
+    if (!tender) return;
+    
+    setIsExporting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('export-tender', {
+        body: {
+          tenderId: tender.id,
+          format: format
+        }
+      });
+
+      if (error) throw error;
+
+      // Create download link
+      const blob = new Blob([data], { 
+        type: format === 'PDF' ? 'application/pdf' : 
+              format === 'DOCX' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' :
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${tender.title}_responses.${format.toLowerCase()}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Success",
+        description: `Export completed successfully`,
+      });
+    } catch (error) {
+      console.error('Error exporting:', error);
+      toast({
+        title: "Error",
+        description: "Failed to export responses",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -362,9 +490,60 @@ const TenderDetails = () => {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-semibold">Questions & Responses</h3>
-                <p className="text-muted-foreground">
-                  {responses.length} questions total
-                </p>
+                <div className="flex items-center gap-4">
+                  <p className="text-muted-foreground">
+                    {responses.length} questions total
+                  </p>
+                  {responses.length > 0 && (
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAcceptAllResponses}
+                        disabled={isApproving}
+                      >
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        {isApproving ? 'Approving...' : 'Accept All AI Responses'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleExport('PDF')}
+                        disabled={isExporting}
+                      >
+                        <FileDown className="h-4 w-4 mr-2" />
+                        Export PDF
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleExport('DOCX')}
+                        disabled={isExporting}
+                      >
+                        <FileDown className="h-4 w-4 mr-2" />
+                        Export DOCX
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleExport('XLSX')}
+                        disabled={isExporting}
+                      >
+                        <FileDown className="h-4 w-4 mr-2" />
+                        Export XLSX
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleDeleteTender}
+                        disabled={isDeleting}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        {isDeleting ? 'Deleting...' : 'Delete Tender'}
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {responses.length === 0 ? (
@@ -379,12 +558,22 @@ const TenderDetails = () => {
                     {currentResponses.map((response, index) => (
                       <Card key={response.id}>
                         <CardHeader>
-                          <CardTitle className="text-base">
-                            Question {startIndex + index + 1}
-                          </CardTitle>
-                          <p className="text-sm text-muted-foreground">
-                            {response.question}
-                          </p>
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <CardTitle className="text-base">
+                                Question {startIndex + index + 1}
+                              </CardTitle>
+                              <p className="text-sm text-muted-foreground mt-2">
+                                {response.question}
+                              </p>
+                            </div>
+                            {response.is_approved && (
+                              <Badge variant="secondary" className="ml-2">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Approved
+                              </Badge>
+                            )}
+                          </div>
                         </CardHeader>
                         <CardContent>
                           {editingResponse === response.id ? (
