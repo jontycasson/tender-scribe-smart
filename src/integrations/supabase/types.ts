@@ -14,7 +14,60 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      company_profiles: {
+        Row: {
+          accreditations: string | null
+          company_name: string
+          created_at: string
+          id: string
+          industry: string
+          mission: string
+          past_projects: string
+          policies: string | null
+          services_offered: string[]
+          specializations: string
+          team_size: string
+          updated_at: string
+          user_id: string
+          values: string
+          years_in_business: string
+        }
+        Insert: {
+          accreditations?: string | null
+          company_name: string
+          created_at?: string
+          id?: string
+          industry: string
+          mission: string
+          past_projects: string
+          policies?: string | null
+          services_offered?: string[]
+          specializations: string
+          team_size: string
+          updated_at?: string
+          user_id: string
+          values: string
+          years_in_business: string
+        }
+        Update: {
+          accreditations?: string | null
+          company_name?: string
+          created_at?: string
+          id?: string
+          industry?: string
+          mission?: string
+          past_projects?: string
+          policies?: string | null
+          services_offered?: string[]
+          specializations?: string
+          team_size?: string
+          updated_at?: string
+          user_id?: string
+          values?: string
+          years_in_business?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
