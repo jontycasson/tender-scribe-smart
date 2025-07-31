@@ -44,31 +44,30 @@ serve(async (req) => {
       .eq('user_id', tenderData.user_id)
       .single();
 
-    // Generate export content
-    const exportContent = generateExportContent(tenderData, responsesData, profileData);
-
-    // For this example, we'll return plain text
-    // In a real implementation, you'd use a document generation service
-    let responseContent: string;
-    let contentType: string;
-
     const normalizedFormat = format.toLowerCase();
     
+    let responseContent: string;
+    let contentType: string;
+    let filename: string;
+
     switch (normalizedFormat) {
       case 'pdf':
-        // In a real implementation, you'd use a PDF generation service
-        responseContent = exportContent;
-        contentType = 'application/pdf';
+        // For now, return as text that can be copied to a PDF generator
+        responseContent = generateTextContent(tenderData, responsesData, profileData);
+        contentType = 'text/plain';
+        filename = `tender-response.txt`;
         break;
       case 'docx':
-        // In a real implementation, you'd use a DOCX generation service
-        responseContent = exportContent;
-        contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        // Generate RTF format that Word can open
+        responseContent = generateRTF(tenderData, responsesData, profileData);
+        contentType = 'application/rtf';
+        filename = `tender-response.rtf`;
         break;
       case 'xlsx':
-        // In a real implementation, you'd use an XLSX generation service
-        responseContent = exportContent;
-        contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        // Generate proper CSV that Excel can import
+        responseContent = generateCSV(tenderData, responsesData, profileData);
+        contentType = 'text/csv';
+        filename = `tender-response.csv`;
         break;
       default:
         throw new Error(`Unsupported format: ${format}`);
@@ -78,7 +77,7 @@ serve(async (req) => {
       headers: {
         ...corsHeaders,
         'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="tender-response.${normalizedFormat}"`,
+        'Content-Disposition': `attachment; filename="${filename}"`,
       },
     });
 
@@ -94,48 +93,118 @@ serve(async (req) => {
   }
 });
 
-function generateExportContent(tender: any, responses: any[], profile: any): string {
+function generateTextContent(tender: any, responses: any[], profile: any): string {
   const date = new Date().toLocaleDateString();
   
-  let content = `
-TENDER RESPONSE
-================
+  let content = `TENDER RESPONSE\n`;
+  content += `================\n\n`;
+  content += `Tender Title: ${tender.title}\n`;
+  content += `Date: ${date}\n`;
+  content += `Company: ${profile?.company_name || 'N/A'}\n`;
+  content += `Status: ${tender.status}\n`;
+  content += `Value: ${tender.value ? `$${tender.value}` : 'Not specified'}\n`;
+  content += `Deadline: ${tender.deadline || 'Not specified'}\n\n`;
 
-Tender Title: ${tender.title}
-Date: ${date}
-Company: ${profile?.company_name || 'N/A'}
+  content += `COMPANY OVERVIEW\n`;
+  content += `================\n`;
+  content += `Industry: ${profile?.industry || 'N/A'}\n`;
+  content += `Team Size: ${profile?.team_size || 'N/A'}\n`;
+  content += `Years in Business: ${profile?.years_in_business || 'N/A'}\n`;
+  content += `Mission: ${profile?.mission || 'N/A'}\n\n`;
 
-COMPANY OVERVIEW
-================
-Industry: ${profile?.industry || 'N/A'}
-Team Size: ${profile?.team_size || 'N/A'}
-Years in Business: ${profile?.years_in_business || 'N/A'}
-Mission: ${profile?.mission || 'N/A'}
-
-RESPONSES
-=========
-
-`;
+  content += `RESPONSES\n`;
+  content += `=========\n\n`;
 
   responses.forEach((response, index) => {
-    const finalAnswer = response.user_edited_answer || response.ai_generated_answer;
-    content += `
-${index + 1}. ${response.question}
-
-${finalAnswer}
-
----
-
-`;
+    const finalAnswer = response.user_edited_answer || response.ai_generated_answer || 'No response provided';
+    content += `${index + 1}. ${response.question}\n\n`;
+    content += `Answer: ${finalAnswer}\n`;
+    content += `Status: ${response.is_approved ? 'Approved' : 'Draft'}\n`;
+    content += `\n${'='.repeat(50)}\n\n`;
   });
 
-  content += `
-COMPANY CONTACT INFORMATION
-===========================
-Please contact us for any clarifications or additional information.
-
-Generated on ${date} by TenderFlow
-`;
+  content += `COMPANY CONTACT INFORMATION\n`;
+  content += `===========================\n`;
+  content += `Please contact us for any clarifications or additional information.\n\n`;
+  content += `Generated on ${date} by TenderFlow\n`;
 
   return content;
+}
+
+function generateRTF(tender: any, responses: any[], profile: any): string {
+  const date = new Date().toLocaleDateString();
+  
+  let rtf = `{\\rtf1\\ansi\\deff0 {\\fonttbl {\\f0 Times New Roman;}}`;
+  rtf += `\\f0\\fs24`;
+  
+  // Title
+  rtf += `{\\b\\fs28 TENDER RESPONSE}\\par\\par`;
+  
+  // Basic Info
+  rtf += `{\\b Tender Title:} ${tender.title}\\par`;
+  rtf += `{\\b Date:} ${date}\\par`;
+  rtf += `{\\b Company:} ${profile?.company_name || 'N/A'}\\par`;
+  rtf += `{\\b Status:} ${tender.status}\\par`;
+  rtf += `{\\b Value:} ${tender.value ? `$${tender.value}` : 'Not specified'}\\par`;
+  rtf += `{\\b Deadline:} ${tender.deadline || 'Not specified'}\\par\\par`;
+  
+  // Company Overview
+  rtf += `{\\b\\fs26 COMPANY OVERVIEW}\\par`;
+  rtf += `{\\b Industry:} ${profile?.industry || 'N/A'}\\par`;
+  rtf += `{\\b Team Size:} ${profile?.team_size || 'N/A'}\\par`;
+  rtf += `{\\b Years in Business:} ${profile?.years_in_business || 'N/A'}\\par`;
+  rtf += `{\\b Mission:} ${profile?.mission || 'N/A'}\\par\\par`;
+  
+  // Responses
+  rtf += `{\\b\\fs26 RESPONSES}\\par\\par`;
+  
+  responses.forEach((response, index) => {
+    const finalAnswer = response.user_edited_answer || response.ai_generated_answer || 'No response provided';
+    rtf += `{\\b ${index + 1}. ${response.question.replace(/[{}\\]/g, '')}}\\par\\par`;
+    rtf += `{\\b Answer:} ${finalAnswer.replace(/[{}\\]/g, '')}\\par`;
+    rtf += `{\\b Status:} ${response.is_approved ? 'Approved' : 'Draft'}\\par\\par`;
+    rtf += `\\line\\par`;
+  });
+  
+  rtf += `{\\b COMPANY CONTACT INFORMATION}\\par`;
+  rtf += `Please contact us for any clarifications or additional information.\\par\\par`;
+  rtf += `Generated on ${date} by TenderFlow\\par`;
+  rtf += `}`;
+  
+  return rtf;
+}
+
+function generateCSV(tender: any, responses: any[], profile: any): string {
+  const date = new Date().toLocaleDateString();
+  
+  let csv = '"Section","Field","Value"\n';
+  
+  // Tender Information
+  csv += `"Tender Information","Title","${escapeCSV(tender.title)}"\n`;
+  csv += `"Tender Information","Date","${date}"\n`;
+  csv += `"Tender Information","Status","${tender.status}"\n`;
+  csv += `"Tender Information","Value","${tender.value ? `$${tender.value}` : 'Not specified'}"\n`;
+  csv += `"Tender Information","Deadline","${tender.deadline || 'Not specified'}"\n`;
+  
+  // Company Profile
+  csv += `"Company Profile","Company Name","${escapeCSV(profile?.company_name || 'N/A')}"\n`;
+  csv += `"Company Profile","Industry","${escapeCSV(profile?.industry || 'N/A')}"\n`;
+  csv += `"Company Profile","Team Size","${escapeCSV(profile?.team_size || 'N/A')}"\n`;
+  csv += `"Company Profile","Years in Business","${escapeCSV(profile?.years_in_business || 'N/A')}"\n`;
+  csv += `"Company Profile","Mission","${escapeCSV(profile?.mission || 'N/A')}"\n`;
+  
+  // Responses
+  responses.forEach((response, index) => {
+    const finalAnswer = response.user_edited_answer || response.ai_generated_answer || 'No response provided';
+    csv += `"Question ${index + 1}","Question","${escapeCSV(response.question)}"\n`;
+    csv += `"Question ${index + 1}","Answer","${escapeCSV(finalAnswer)}"\n`;
+    csv += `"Question ${index + 1}","Status","${response.is_approved ? 'Approved' : 'Draft'}"\n`;
+  });
+  
+  return csv;
+}
+
+function escapeCSV(text: string): string {
+  if (text == null) return '';
+  return text.toString().replace(/"/g, '""');
 }
