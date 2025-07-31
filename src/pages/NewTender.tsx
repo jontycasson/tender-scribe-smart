@@ -35,6 +35,22 @@ const NewTender = () => {
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     if (selectedFile) {
+      console.log('File selected:', { 
+        name: selectedFile.name, 
+        size: selectedFile.size, 
+        type: selectedFile.type 
+      });
+      
+      // Check file size (10MB limit)
+      if (selectedFile.size > 10 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: "Please select a file smaller than 10MB.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
       const allowedTypes = [
         'application/pdf',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -43,6 +59,10 @@ const NewTender = () => {
       
       if (allowedTypes.includes(selectedFile.type)) {
         setFile(selectedFile);
+        toast({
+          title: "File selected",
+          description: `${selectedFile.name} is ready to upload.`,
+        });
       } else {
         toast({
           title: "Invalid file type",
@@ -327,20 +347,24 @@ const NewTender = () => {
                   />
                 </div>
 
-                <div className="border-2 border-dashed border-muted rounded-lg p-8 text-center">
+                <div className="border-2 border-dashed border-muted rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer relative overflow-hidden">
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,.xlsx"
+                    onChange={handleFileSelect}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    id="file-upload"
+                  />
                   <Upload className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                   <div className="space-y-2">
-                    <p className="text-lg font-medium">Upload your tender document</p>
+                    <p className="text-lg font-medium">Click to upload your tender document</p>
                     <p className="text-muted-foreground">
                       Supports PDF, DOCX, and XLSX files up to 10MB
                     </p>
                   </div>
-                  <Input
-                    type="file"
-                    accept=".pdf,.docx,.xlsx"
-                    onChange={handleFileSelect}
-                    className="mt-4"
-                  />
+                  <Button type="button" variant="outline" className="mt-4 pointer-events-none">
+                    Choose File
+                  </Button>
                 </div>
 
                 {file && (
@@ -350,7 +374,9 @@ const NewTender = () => {
                       <div>
                         <p className="font-medium">{file.name}</p>
                         <p className="text-sm text-muted-foreground">
-                          {(file.size / 1024 / 1024).toFixed(2)} MB
+                          {file.size < 1024 * 1024 
+                            ? `${(file.size / 1024).toFixed(1)} KB` 
+                            : `${(file.size / 1024 / 1024).toFixed(2)} MB`}
                         </p>
                       </div>
                     </div>
@@ -366,11 +392,23 @@ const NewTender = () => {
 
                 <Button
                   onClick={uploadAndProcessTender}
-                  disabled={!file || uploading}
+                  disabled={!file || uploading || processing}
                   className="w-full"
                   size="lg"
                 >
-                  {uploading ? "Uploading..." : "Upload and Process"}
+                  {uploading ? (
+                    <div className="flex items-center space-x-2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Uploading...</span>
+                    </div>
+                  ) : processing ? (
+                    <div className="flex items-center space-x-2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Processing...</span>
+                    </div>
+                  ) : (
+                    "Upload and Process"
+                  )}
                 </Button>
               </CardContent>
             </Card>
