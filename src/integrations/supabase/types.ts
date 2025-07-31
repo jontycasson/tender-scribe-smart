@@ -68,6 +68,89 @@ export type Database = {
         }
         Relationships: []
       }
+      tender_responses: {
+        Row: {
+          ai_generated_answer: string | null
+          created_at: string
+          id: string
+          is_approved: boolean | null
+          question: string
+          tender_id: string
+          updated_at: string
+          user_edited_answer: string | null
+        }
+        Insert: {
+          ai_generated_answer?: string | null
+          created_at?: string
+          id?: string
+          is_approved?: boolean | null
+          question: string
+          tender_id: string
+          updated_at?: string
+          user_edited_answer?: string | null
+        }
+        Update: {
+          ai_generated_answer?: string | null
+          created_at?: string
+          id?: string
+          is_approved?: boolean | null
+          question?: string
+          tender_id?: string
+          updated_at?: string
+          user_edited_answer?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_responses_tender_id_fkey"
+            columns: ["tender_id"]
+            isOneToOne: false
+            referencedRelation: "tenders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenders: {
+        Row: {
+          created_at: string
+          deadline: string | null
+          file_url: string
+          id: string
+          original_filename: string
+          parsed_data: Json | null
+          status: string
+          title: string
+          updated_at: string
+          user_id: string
+          value: number | null
+        }
+        Insert: {
+          created_at?: string
+          deadline?: string | null
+          file_url: string
+          id?: string
+          original_filename: string
+          parsed_data?: Json | null
+          status?: string
+          title: string
+          updated_at?: string
+          user_id: string
+          value?: number | null
+        }
+        Update: {
+          created_at?: string
+          deadline?: string | null
+          file_url?: string
+          id?: string
+          original_filename?: string
+          parsed_data?: Json | null
+          status?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+          value?: number | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
