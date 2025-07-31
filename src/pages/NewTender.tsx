@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, FileText, Download, Save, Check, X, Building2, ArrowLeft } from "lucide-react";
+import { Upload, FileText, Download, Save, Check, X, Building2, ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigation } from "@/components/Navigation";
@@ -29,6 +29,8 @@ const NewTender = () => {
   const [tenderTitle, setTenderTitle] = useState("");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentStep, setCurrentStep] = useState<'upload' | 'review' | 'complete'>('upload');
+  const [currentPage, setCurrentPage] = useState(1);
+  const questionsPerPage = 5;
   const { toast } = useToast();
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -496,53 +498,102 @@ const NewTender = () => {
               </Card>
             ) : (
               <div className="space-y-6">
-                {questions.map((question, index) => (
-                  <Card key={question.id}>
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <CardTitle className="text-lg">Question {index + 1}</CardTitle>
-                        <Badge variant={question.is_approved ? "default" : "secondary"}>
-                          {question.is_approved ? "Approved" : "Pending Review"}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div>
-                        <Label className="text-sm font-medium text-muted-foreground">Question</Label>
-                        <p className="mt-1 p-3 bg-muted rounded-md">{question.question}</p>
-                      </div>
-
-                      <div>
-                        <Label className="text-sm font-medium text-muted-foreground">AI Generated Response</Label>
-                        <p className="mt-1 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-md text-sm">
-                          {question.ai_generated_answer}
-                        </p>
-                      </div>
-
-                      <div>
-                        <Label htmlFor={`answer-${question.id}`}>Your Response</Label>
-                        <Textarea
-                          id={`answer-${question.id}`}
-                          value={question.user_edited_answer || question.ai_generated_answer}
-                          onChange={(e) => updateResponse(question.id, e.target.value)}
-                          rows={4}
-                          className="mt-1"
-                        />
-                      </div>
-
-                      <div className="flex space-x-2">
+                {questions.length > 0 && (
+                  <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+                    <div className="flex items-center space-x-4">
+                      <span className="text-sm font-medium">
+                        Total Questions: {questions.length}
+                      </span>
+                      <Separator orientation="vertical" className="h-4" />
+                      <span className="text-sm text-muted-foreground">
+                        Approved: {questions.filter(q => q.is_approved).length}
+                      </span>
+                      <span className="text-sm text-muted-foreground">
+                        Pending: {questions.filter(q => !q.is_approved).length}
+                      </span>
+                    </div>
+                    {questions.length > questionsPerPage && (
+                      <div className="flex items-center space-x-2">
                         <Button
-                          onClick={() => approveResponse(question.id)}
-                          disabled={question.is_approved}
+                          variant="outline"
                           size="sm"
+                          onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                          disabled={currentPage === 1}
                         >
-                          <Check className="h-4 w-4 mr-2" />
-                          {question.is_approved ? "Approved" : "Approve Response"}
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <span className="text-sm font-medium">
+                          Page {currentPage} of {Math.ceil(questions.length / questionsPerPage)}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage(Math.min(Math.ceil(questions.length / questionsPerPage), currentPage + 1))}
+                          disabled={currentPage === Math.ceil(questions.length / questionsPerPage)}
+                        >
+                          <ChevronRight className="h-4 w-4" />
                         </Button>
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                    )}
+                  </div>
+                )}
+                
+                {(() => {
+                  const startIndex = (currentPage - 1) * questionsPerPage;
+                  const endIndex = startIndex + questionsPerPage;
+                  const currentQuestions = questions.slice(startIndex, endIndex);
+                  
+                  return currentQuestions.map((question, index) => {
+                    const globalIndex = startIndex + index + 1;
+                    return (
+                      <Card key={question.id}>
+                        <CardHeader>
+                          <div className="flex items-start justify-between">
+                            <CardTitle className="text-lg">Question {globalIndex}</CardTitle>
+                            <Badge variant={question.is_approved ? "default" : "secondary"}>
+                              {question.is_approved ? "Approved" : "Pending Review"}
+                            </Badge>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div>
+                            <Label className="text-sm font-medium text-muted-foreground">Question</Label>
+                            <p className="mt-1 p-3 bg-muted rounded-md">{question.question}</p>
+                          </div>
+
+                          <div>
+                            <Label className="text-sm font-medium text-muted-foreground">AI Generated Response</Label>
+                            <p className="mt-1 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-md text-sm">
+                              {question.ai_generated_answer}
+                            </p>
+                          </div>
+
+                          <div>
+                            <Label htmlFor={`answer-${question.id}`}>Your Response</Label>
+                            <Textarea
+                              id={`answer-${question.id}`}
+                              value={question.user_edited_answer || question.ai_generated_answer}
+                              onChange={(e) => updateResponse(question.id, e.target.value)}
+                              rows={4}
+                              className="mt-1"
+                            />
+                          </div>
+
+                          <div className="flex space-x-2">
+                            <Button
+                              onClick={() => approveResponse(question.id)}
+                              disabled={question.is_approved}
+                              size="sm"
+                            >
+                              <Check className="h-4 w-4 mr-2" />
+                              {question.is_approved ? "Approved" : "Approve Response"}
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  });
+                })()}
               </div>
             )}
           </div>

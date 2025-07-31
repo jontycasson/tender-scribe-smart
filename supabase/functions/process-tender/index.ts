@@ -31,22 +31,57 @@ serve(async (req) => {
     const arrayBuffer = await fileData.arrayBuffer();
     const base64File = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
 
-    // For now, use a simple fallback text extraction since Nanonets model ID needs configuration
-    // Generate sample questions for demonstration
-    console.log('Using fallback question generation for file:', filePath);
+    // Try to extract text from the document for question extraction
+    console.log('Processing document for question extraction:', filePath);
     
-    const sampleQuestions = [
-      "Please provide details about your company's experience with similar projects",
-      "What is your proposed timeline for project completion?",
-      "Describe your team's qualifications and expertise",
-      "What is your understanding of the project requirements?",
-      "How will you ensure quality control throughout the project?",
-      "What are your proposed pricing and payment terms?",
-      "Describe your risk management approach",
-      "How will you handle project communication and reporting?"
-    ];
+    // For PDF processing, we'll use a simple text extraction approach
+    // In a production environment, you'd want to use a proper PDF parsing library
+    let extractedText = '';
     
-    const questions = sampleQuestions;
+    try {
+      // Convert the file buffer to text (this is a simplified approach)
+      // For better PDF parsing, consider using libraries like pdf-parse
+      const fileText = new TextDecoder().decode(arrayBuffer);
+      extractedText = fileText;
+      console.log('Extracted text length:', extractedText.length);
+    } catch (error) {
+      console.log('Text extraction failed, using fallback questions:', error);
+    }
+    
+    // Extract questions from the document text
+    let questions: string[] = [];
+    
+    if (extractedText) {
+      questions = extractQuestionsFromText(extractedText);
+      console.log('Extracted questions from document:', questions.length);
+    }
+    
+    // If no questions found, use enhanced fallback questions
+    if (questions.length === 0) {
+      console.log('No questions extracted, using comprehensive fallback questions');
+      questions = [
+        "Please provide details about your company's experience with similar projects",
+        "What is your proposed timeline for project completion?",
+        "Describe your team's qualifications and expertise",
+        "What is your understanding of the project requirements?",
+        "How will you ensure quality control throughout the project?",
+        "What are your proposed pricing and payment terms?",
+        "Describe your risk management approach",
+        "How will you handle project communication and reporting?",
+        "What is your company's health and safety policy?",
+        "Describe your environmental management approach",
+        "What insurance coverage does your company maintain?",
+        "How do you handle subcontractor management?",
+        "What is your approach to risk assessment and mitigation?",
+        "Describe your quality assurance processes",
+        "What project management methodologies do you use?",
+        "How do you ensure compliance with relevant standards and regulations?",
+        "What is your company's track record with similar projects?",
+        "Describe your technical capabilities and resources",
+        "How do you handle change management during projects?",
+        "What is your approach to stakeholder communication and engagement?"
+      ];
+    }
 
     // Update tender with parsed data
     const { error: updateError } = await supabase
@@ -121,19 +156,48 @@ serve(async (req) => {
 });
 
 function extractQuestionsFromText(text: string): string[] {
-  // Simple question extraction - looks for sentences ending with ?
-  // In a real implementation, you'd use more sophisticated NLP
-  const sentences = text.split(/[.!?]+/);
-  const questions = sentences
-    .filter(sentence => sentence.includes('?') || 
-                       sentence.toLowerCase().includes('describe') ||
-                       sentence.toLowerCase().includes('explain') ||
-                       sentence.toLowerCase().includes('provide') ||
-                       sentence.toLowerCase().includes('list'))
-    .map(q => q.trim())
-    .filter(q => q.length > 10);
+  // Enhanced question extraction with multiple patterns
+  const questions: string[] = [];
+  
+  // Split text into sentences and clean up
+  const sentences = text
+    .split(/[.!?\n\r]+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 15); // Minimum length for meaningful questions
+  
+  for (const sentence of sentences) {
+    const lowerSentence = sentence.toLowerCase();
     
-  return questions.slice(0, 20); // Limit to 20 questions
+    // Look for explicit questions (ending with ?)
+    if (sentence.includes('?')) {
+      questions.push(sentence + (sentence.endsWith('?') ? '' : '?'));
+      continue;
+    }
+    
+    // Look for imperative statements that are effectively questions
+    const imperativePatterns = [
+      /^(please\s+)?(describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate)/i,
+      /^(what|how|when|where|why|which|who)/i,
+      /\b(requirements?\s+for|criteria\s+for|approach\s+to|method\s+for)\b/i,
+      /\b(must\s+provide|should\s+include|need\s+to\s+demonstrate|required\s+to)\b/i,
+      /\b(experience\s+in|capability\s+to|ability\s+to|qualified\s+to)\b/i
+    ];
+    
+    for (const pattern of imperativePatterns) {
+      if (pattern.test(sentence)) {
+        // Convert statement to question format if it doesn't end with ?
+        const questionText = sentence.endsWith('?') ? sentence : sentence + '?';
+        questions.push(questionText);
+        break;
+      }
+    }
+  }
+  
+  // Remove duplicates and return all questions (no arbitrary limit)
+  const uniqueQuestions = [...new Set(questions)];
+  console.log(`Extracted ${uniqueQuestions.length} unique questions from document`);
+  
+  return uniqueQuestions;
 }
 
 async function generateAIResponse(question: string, profile: any, apiKey: string): Promise<string> {
