@@ -21,50 +21,43 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get file from storage
-    const { data: fileData, error: fileError } = await supabase.storage
-      .from('tender-documents')
-      .download(filePath);
+    let questions: string[] = [];
+    let errorMessage = null;
 
-    if (fileError) throw fileError;
-
-    // Parse PDF to extract text
-    console.log('Processing document for question extraction:', filePath);
-    let extractedText = '';
-    let parseError = null;
-    
     try {
+      // Get file from storage
+      const { data: fileData, error: fileError } = await supabase.storage
+        .from('tender-documents')
+        .download(filePath);
+
+      if (fileError) {
+        throw new Error(`Failed to download file: ${fileError.message}`);
+      }
+
+      // Parse PDF to extract text
+      console.log('Processing document for question extraction:', filePath);
       const arrayBuffer = await fileData.arrayBuffer();
       const buffer = new Uint8Array(arrayBuffer);
       
       // Use pdf-parse to extract text from PDF
       const pdfData = await pdfParse(buffer);
-      extractedText = pdfData.text;
+      const extractedText = pdfData.text;
       console.log('Extracted text length:', extractedText.length);
       
       if (extractedText.length === 0) {
         throw new Error('No text found in PDF');
       }
-    } catch (error) {
-      console.log('PDF parsing failed:', error);
-      parseError = error.message;
-    }
-    
-    // Extract questions from the document text
-    let questions: string[] = [];
-    let errorMessage = null;
-    
-    if (parseError) {
-      errorMessage = `Failed to parse PDF: ${parseError}`;
-    } else if (extractedText) {
+
+      // Extract questions from the document text
       questions = extractQuestionsFromText(extractedText);
       console.log('Extracted questions from document:', questions.length);
       
       if (questions.length === 0) {
         errorMessage = 'No numbered questions were found in the uploaded document. Please check that the document contains questions formatted with numbers (e.g., "1. What is your experience?").';
       }
-    } else {
-      errorMessage = 'Could not extract text from the PDF document.';
+    } catch (error) {
+      console.error('Error processing document:', error);
+      errorMessage = `Failed to extract questions: ${error.message}`;
     }
     
     // If parsing failed or no questions found, return error response with 200 status
@@ -72,19 +65,21 @@ serve(async (req) => {
       console.log('Processing failed:', errorMessage);
       
       // Update tender status to indicate parsing failed
-      await supabase
-        .from('tenders')
-        .update({ 
-          status: 'error',
-          parsed_data: { error: errorMessage }
-        })
-        .eq('id', tenderId);
+      try {
+        await supabase
+          .from('tenders')
+          .update({ 
+            status: 'error',
+            parsed_data: { error: errorMessage }
+          })
+          .eq('id', tenderId);
+      } catch (updateError) {
+        console.error('Failed to update tender status:', updateError);
+      }
 
       return new Response(
         JSON.stringify({ 
-          success: false,
-          error: errorMessage,
-          questionsFound: 0
+          error: errorMessage
         }),
         { 
           status: 200,
@@ -93,73 +88,87 @@ serve(async (req) => {
       );
     }
 
-    // Update tender with parsed data
-    const { error: updateError } = await supabase
-      .from('tenders')
-      .update({ 
-        parsed_data: { questions },
-        status: 'parsed'
-      })
-      .eq('id', tenderId);
+    try {
+      // Update tender with parsed data
+      const { error: updateError } = await supabase
+        .from('tenders')
+        .update({ 
+          parsed_data: { questions },
+          status: 'parsed'
+        })
+        .eq('id', tenderId);
 
-    if (updateError) throw updateError;
+      if (updateError) throw updateError;
 
-    // Get user's company profile for personalized responses
-    const { data: tenderData } = await supabase
-      .from('tenders')
-      .select('user_id')
-      .eq('id', tenderId)
-      .single();
+      // Get user's company profile for personalized responses
+      const { data: tenderData } = await supabase
+        .from('tenders')
+        .select('user_id')
+        .eq('id', tenderId)
+        .single();
 
-    const { data: profileData } = await supabase
-      .from('company_profiles')
-      .select('*')
-      .eq('user_id', tenderData.user_id)
-      .maybeSingle();
+      const { data: profileData } = await supabase
+        .from('company_profiles')
+        .select('*')
+        .eq('user_id', tenderData.user_id)
+        .maybeSingle();
 
-    // Generate AI responses for each question
-    const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
-    
-    for (const question of questions) {
-      const aiResponse = await generateAIResponse(question, profileData, openAIApiKey);
+      // Generate AI responses for each question
+      const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
       
-      // Save question and AI response to database
-      const { error: responseError } = await supabase
-        .from('tender_responses')
-        .insert({
-          tender_id: tenderId,
-          question: question,
-          ai_generated_answer: aiResponse,
-          is_approved: false
-        });
+      for (const question of questions) {
+        const aiResponse = await generateAIResponse(question, profileData, openAIApiKey);
+        
+        // Save question and AI response to database
+        const { error: responseError } = await supabase
+          .from('tender_responses')
+          .insert({
+            tender_id: tenderId,
+            question: question,
+            ai_generated_answer: aiResponse,
+            is_approved: false
+          });
 
-      if (responseError) {
-        console.error('Error saving response:', responseError);
+        if (responseError) {
+          console.error('Error saving response:', responseError);
+        }
       }
+
+      // Update tender status
+      await supabase
+        .from('tenders')
+        .update({ status: 'draft' })
+        .eq('id', tenderId);
+
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          questionsFound: questions.length,
+          message: 'Document processed successfully' 
+        }),
+        { 
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    } catch (error) {
+      console.error('Error processing tender responses:', error);
+      return new Response(
+        JSON.stringify({ 
+          error: `Failed to process tender responses: ${error.message}`
+        }),
+        { 
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
     }
-
-    // Update tender status
-    await supabase
-      .from('tenders')
-      .update({ status: 'draft' })
-      .eq('id', tenderId);
-
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        questionsFound: questions.length,
-        message: 'Document processed successfully' 
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
 
   } catch (error) {
     console.error('Error in process-tender function:', error);
     return new Response(
       JSON.stringify({ 
-        success: false,
-        error: `Processing failed: ${error.message}`,
-        questionsFound: 0
+        error: `Processing failed: ${error.message}`
       }),
       { 
         status: 200,
