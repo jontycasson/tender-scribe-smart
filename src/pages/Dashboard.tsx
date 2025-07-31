@@ -1,61 +1,87 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Plus, FileText, Calendar, Building2, Settings, Upload } from "lucide-react";
+import { Link } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
-// Mock data for demonstration
-const recentTenders = [
-  {
-    id: 1,
-    title: "City Infrastructure Project",
-    status: "In Progress",
-    deadline: "2024-02-15",
-    value: "$2.5M",
-    submittedAt: "2024-01-20",
-  },
-  {
-    id: 2,
-    title: "Software Development Services",
-    status: "Submitted",
-    deadline: "2024-01-30",
-    value: "$150K",
-    submittedAt: "2024-01-18",
-  },
-  {
-    id: 3,
-    title: "Environmental Assessment",
-    status: "Draft",
-    deadline: "2024-02-20",
-    value: "$75K",
-    submittedAt: null,
-  },
-];
-
-const companyProfile = {
-  name: "TechFlow Solutions",
-  industry: "IT & Technology",
-  teamSize: "21-50 employees",
-  yearsInBusiness: "6-10 years",
-  services: ["Software Development", "Consulting", "Project Management"],
-  mission: "To deliver innovative technology solutions that drive business growth and efficiency.",
-};
 
 const Dashboard = () => {
   const [activeTab, setActiveTab] = useState("tenders");
+  const [tenders, setTenders] = useState<any[]>([]);
+  const [companyProfile, setCompanyProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      fetchTenders();
+      fetchCompanyProfile();
+    }
+  }, [user]);
+
+  const fetchTenders = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('tenders')
+        .select('*')
+        .eq('user_id', user?.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setTenders(data || []);
+    } catch (error) {
+      console.error('Error fetching tenders:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchCompanyProfile = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('company_profiles')
+        .select('*')
+        .eq('user_id', user?.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      setCompanyProfile(data);
+    } catch (error) {
+      console.error('Error fetching company profile:', error);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "Submitted":
+      case "completed":
         return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300";
-      case "In Progress":
+      case "draft":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
-      case "Draft":
+      case "processing":
         return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300";
+      case "uploaded":
+        return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300";
       default:
         return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300";
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString();
+  };
+
+  const getStatusDisplay = (status: string) => {
+    switch (status) {
+      case "completed": return "Completed";
+      case "draft": return "Draft";
+      case "processing": return "Processing";
+      case "uploaded": return "Uploaded";
+      default: return status;
     }
   };
 
@@ -70,9 +96,11 @@ const Dashboard = () => {
               <h1 className="text-2xl font-bold">TenderFlow</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <Button variant="outline" size="sm">
-                <Upload className="h-4 w-4 mr-2" />
-                Upload Tender
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/new-tender">
+                  <Upload className="h-4 w-4 mr-2" />
+                  New Tender
+                </Link>
               </Button>
               <Avatar>
                 <AvatarFallback>TS</AvatarFallback>
@@ -100,53 +128,81 @@ const Dashboard = () => {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-semibold">Recent Tenders</h3>
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Tender Response
+                <Button asChild>
+                  <Link to="/new-tender">
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Tender Response
+                  </Link>
                 </Button>
               </div>
 
-              <div className="grid gap-4">
-                {recentTenders.map((tender) => (
-                  <Card key={tender.id}>
-                    <CardHeader className="pb-3">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-lg">{tender.title}</CardTitle>
-                        <Badge className={getStatusColor(tender.status)}>
-                          {tender.status}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <p className="text-muted-foreground">Value</p>
-                          <p className="font-medium">{tender.value}</p>
+              {loading ? (
+                <Card>
+                  <CardContent className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  </CardContent>
+                </Card>
+              ) : tenders.length === 0 ? (
+                <Card>
+                  <CardContent className="text-center py-8">
+                    <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-medium mb-2">No tenders yet</h3>
+                    <p className="text-muted-foreground mb-4">
+                      Start by uploading your first tender document to generate AI-powered responses.
+                    </p>
+                    <Button asChild>
+                      <Link to="/new-tender">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Create First Tender
+                      </Link>
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid gap-4">
+                  {tenders.map((tender) => (
+                    <Card key={tender.id}>
+                      <CardHeader className="pb-3">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-lg">{tender.title}</CardTitle>
+                          <Badge className={getStatusColor(tender.status)}>
+                            {getStatusDisplay(tender.status)}
+                          </Badge>
                         </div>
-                        <div>
-                          <p className="text-muted-foreground">Deadline</p>
-                          <p className="font-medium flex items-center">
-                            <Calendar className="h-4 w-4 mr-1" />
-                            {tender.deadline}
-                          </p>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <p className="text-muted-foreground">Value</p>
+                            <p className="font-medium">{tender.value ? `$${tender.value}` : 'Not specified'}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Deadline</p>
+                            <p className="font-medium flex items-center">
+                              <Calendar className="h-4 w-4 mr-1" />
+                              {tender.deadline ? formatDate(tender.deadline) : 'Not specified'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Created</p>
+                            <p className="font-medium">
+                              {formatDate(tender.created_at)}
+                            </p>
+                          </div>
+                          <div className="flex items-end">
+                            <Button variant="outline" size="sm" asChild>
+                              <Link to={`/new-tender?id=${tender.id}`}>
+                                <FileText className="h-4 w-4 mr-2" />
+                                View Details
+                              </Link>
+                            </Button>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-muted-foreground">Submitted</p>
-                          <p className="font-medium">
-                            {tender.submittedAt || "Not submitted"}
-                          </p>
-                        </div>
-                        <div className="flex items-end">
-                          <Button variant="outline" size="sm">
-                            <FileText className="h-4 w-4 mr-2" />
-                            View Details
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </div>
           </TabsContent>
 
@@ -154,61 +210,81 @@ const Dashboard = () => {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-semibold">Company Profile</h3>
-                <Button variant="outline">
-                  <Settings className="h-4 w-4 mr-2" />
-                  Edit Profile
+                <Button variant="outline" asChild>
+                  <Link to="/onboarding">
+                    <Settings className="h-4 w-4 mr-2" />
+                    Edit Profile
+                  </Link>
                 </Button>
               </div>
 
-              <div className="grid gap-6 md:grid-cols-2">
+              {!companyProfile ? (
                 <Card>
-                  <CardHeader>
-                    <CardTitle>Basic Information</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Company Name</p>
-                      <p className="font-medium">{companyProfile.name}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Industry</p>
-                      <p className="font-medium">{companyProfile.industry}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Team Size</p>
-                      <p className="font-medium">{companyProfile.teamSize}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Years in Business</p>
-                      <p className="font-medium">{companyProfile.yearsInBusiness}</p>
-                    </div>
+                  <CardContent className="text-center py-8">
+                    <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-medium mb-2">Complete your company profile</h3>
+                    <p className="text-muted-foreground mb-4">
+                      Set up your company profile to generate better AI responses for tenders.
+                    </p>
+                    <Button asChild>
+                      <Link to="/onboarding">
+                        <Settings className="h-4 w-4 mr-2" />
+                        Complete Profile
+                      </Link>
+                    </Button>
                   </CardContent>
                 </Card>
+              ) : (
+                <div className="grid gap-6 md:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Basic Information</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Company Name</p>
+                        <p className="font-medium">{companyProfile.company_name}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Industry</p>
+                        <p className="font-medium">{companyProfile.industry}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Team Size</p>
+                        <p className="font-medium">{companyProfile.team_size}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Years in Business</p>
+                        <p className="font-medium">{companyProfile.years_in_business}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
 
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Services Offered</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-wrap gap-2">
-                      {companyProfile.services.map((service) => (
-                        <Badge key={service} variant="secondary">
-                          {service}
-                        </Badge>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Services Offered</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-wrap gap-2">
+                        {companyProfile.services_offered?.map((service: string) => (
+                          <Badge key={service} variant="secondary">
+                            {service}
+                          </Badge>
+                        )) || <p className="text-muted-foreground">No services listed</p>}
+                      </div>
+                    </CardContent>
+                  </Card>
 
-                <Card className="md:col-span-2">
-                  <CardHeader>
-                    <CardTitle>Mission Statement</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-muted-foreground">{companyProfile.mission}</p>
-                  </CardContent>
-                </Card>
-              </div>
+                  <Card className="md:col-span-2">
+                    <CardHeader>
+                      <CardTitle>Mission Statement</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-muted-foreground">{companyProfile.mission}</p>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>
