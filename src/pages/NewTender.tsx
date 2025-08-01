@@ -201,11 +201,46 @@ const NewTender = () => {
       }
 
       console.log('Fetched responses:', responsesData);
-      setQuestions(responsesData || []);
+      
+      // Check if processing returned an error
+      const { data: tenderData, error: tenderFetchError } = await supabase
+        .from('tenders')
+        .select('status, parsed_data')
+        .eq('id', tenderId)
+        .single();
+
+      if (tenderFetchError) {
+        console.error('Tender fetch error:', tenderFetchError);
+        throw tenderFetchError;
+      }
+
+      if (tenderData.status === 'error' || (tenderData.parsed_data && typeof tenderData.parsed_data === 'object' && 'error' in tenderData.parsed_data)) {
+        const parsedData = tenderData.parsed_data as { error?: string } | null;
+        const errorMessage = parsedData?.error || "Failed to extract questions from document";
+        toast({
+          title: "Extraction failed",
+          description: "We couldn't extract questions from your document. Please check that your document has numbered questions (e.g., '1. Describe your experience').",
+          variant: "destructive",
+        });
+        setCurrentStep('upload'); // Stay on upload step
+        return;
+      }
+
+      if (!responsesData || responsesData.length === 0) {
+        toast({
+          title: "No questions found",
+          description: "No questions could be extracted from the uploaded document.",
+          variant: "destructive",
+        });
+        setCurrentStep('upload'); // Stay on upload step
+        return;
+      }
+
+      setQuestions(responsesData);
       
       toast({
         title: "Document processed",
-        description: `Generated ${responsesData?.length || 0} AI responses. Please review and edit as needed.`,
+        description: `Generated ${responsesData.length} AI responses. Please review and edit as needed.`,
       });
 
     } catch (error) {

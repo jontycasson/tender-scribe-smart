@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, FileText, Calendar, Building2, Settings, Trash2 } from "lucide-react";
+import { Plus, FileText, Calendar, Building2, Settings, Trash2, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -17,6 +17,7 @@ const Dashboard = () => {
   const [companyProfile, setCompanyProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [deletingTender, setDeletingTender] = useState<string | null>(null);
+  const [reprocessingTender, setReprocessingTender] = useState<string | null>(null);
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -71,6 +72,8 @@ const Dashboard = () => {
         return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300";
       case "uploaded":
         return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300";
+      case "error":
+        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300";
       default:
         return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300";
     }
@@ -87,6 +90,7 @@ const Dashboard = () => {
       case "draft": return "Draft";
       case "processing": return "Processing";
       case "uploaded": return "Uploaded";
+      case "error": return "Error";
       default: return status;
     }
   };
@@ -141,6 +145,62 @@ const Dashboard = () => {
       });
     } finally {
       setDeletingTender(null);
+    }
+  };
+
+  const handleReprocessTender = async (tender: any) => {
+    setReprocessingTender(tender.id);
+    try {
+      // Update tender status to processing
+      const { error: updateError } = await supabase
+        .from('tenders')
+        .update({ status: 'processing', parsed_data: null })
+        .eq('id', tender.id)
+        .eq('user_id', user?.id);
+
+      if (updateError) throw updateError;
+
+      // Delete existing responses
+      const { error: deleteError } = await supabase
+        .from('tender_responses')
+        .delete()
+        .eq('tender_id', tender.id);
+
+      if (deleteError) throw deleteError;
+
+      // Call edge function to reprocess document
+      const { data, error } = await supabase.functions.invoke('process-tender', {
+        body: { tenderId: tender.id, filePath: tender.file_url }
+      });
+
+      if (error) throw error;
+
+      // Update local state
+      setTenders(prev => prev.map(t => 
+        t.id === tender.id 
+          ? { ...t, status: 'processing', parsed_data: null }
+          : t
+      ));
+
+      toast({
+        title: "Reprocessing started",
+        description: "Document is being reprocessed. Please check back in a few moments.",
+      });
+
+      // Refresh tenders after a delay to show updated status
+      setTimeout(() => {
+        fetchTenders();
+      }, 3000);
+
+    } catch (error) {
+      console.error('Error reprocessing tender:', error);
+      toast({
+        title: "Reprocessing failed",
+        description: error.message || "Failed to reprocess document. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setReprocessingTender(null);
     }
   };
 
@@ -234,6 +294,17 @@ const Dashboard = () => {
                                 View Details
                               </Link>
                             </Button>
+                            {tender.status === 'error' && (
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => handleReprocessTender(tender)}
+                                disabled={reprocessingTender === tender.id}
+                              >
+                                <RefreshCw className="h-4 w-4 mr-2" />
+                                {reprocessingTender === tender.id ? 'Reprocessing...' : 'Reprocess'}
+                              </Button>
+                            )}
                             <Button 
                               variant="destructive" 
                               size="sm"

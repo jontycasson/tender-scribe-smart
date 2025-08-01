@@ -52,37 +52,48 @@ serve(async (req) => {
         ? `https://app.nanonets.com/api/v2/OCR/Model/${modelId}/LabelFile/`
         : 'https://app.nanonets.com/api/v2/OCR/FullText/';
       
+      const formData = new FormData();
+      const blob = new Blob([uint8Array], { type: 'application/pdf' });
+      formData.append('file', blob, filePath.split('/').pop() || 'document.pdf');
+
+      console.log(`Calling Nanonets API: ${apiUrl}`);
       const nanonetsResponse = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Basic ${btoa(nanonetsApiKey + ':')}`,
-          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          file: `data:application/pdf;base64,${base64Data}`,
-        }),
+        body: formData,
       });
 
+      console.log(`Nanonets response status: ${nanonetsResponse.status}`);
+
       if (!nanonetsResponse.ok) {
+        const errorText = await nanonetsResponse.text();
+        console.error(`Nanonets API failed: ${nanonetsResponse.status} - ${errorText}`);
         throw new Error(`Nanonets API failed: ${nanonetsResponse.status}`);
       }
 
       const nanonetsData = await nanonetsResponse.json();
-      console.log('Nanonets response received');
+      console.log('Nanonets response structure:', JSON.stringify(nanonetsData, null, 2));
 
       // Extract text from Nanonets response
       let extractedText = '';
-      if (nanonetsData.result && nanonetsData.result[0] && nanonetsData.result[0].prediction) {
-        // Extract text from OCR predictions
-        extractedText = nanonetsData.result[0].prediction
-          .map((pred: any) => pred.ocr_text || '')
-          .join(' ');
+      if (nanonetsData.result && Array.isArray(nanonetsData.result)) {
+        extractedText = nanonetsData.result
+          .map((item: any) => item.ocr_text || '')
+          .join('\n')
+          .trim();
+      } else if (nanonetsData.message) {
+        extractedText = nanonetsData.message;
+      } else if (typeof nanonetsData === 'string') {
+        extractedText = nanonetsData;
       }
-      
+
       console.log('Extracted text length:', extractedText.length);
-      
-      if (extractedText.length === 0) {
-        throw new Error('No text found in document');
+      console.log('First 500 characters:', extractedText.substring(0, 500));
+
+      if (!extractedText || extractedText.length < 10) {
+        throw new Error('No meaningful text extracted from document. The document may be corrupted or contain no readable text.');
       }
 
       // Extract questions from the document text
@@ -90,11 +101,11 @@ serve(async (req) => {
       console.log('Extracted questions from document:', questions.length);
       
       if (questions.length === 0) {
-        errorMessage = 'No numbered questions were found in the uploaded document. Please check that the document contains questions formatted with numbers (e.g., "1. What is your experience?").';
+        errorMessage = 'No questions found in document. Please ensure your document contains numbered questions (e.g., "1. What is your experience?").';
       }
     } catch (error) {
       console.error('Error processing document:', error);
-      errorMessage = `Failed to extract questions: ${error.message}`;
+      errorMessage = error.message || 'Unknown error occurred during processing';
     }
     
     // If parsing failed or no questions found, return error response with 200 status
@@ -203,10 +214,27 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error in process-tender function:', error);
+    
+    // Update tender status to error
+    try {
+      const { tenderId } = await req.json();
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const supabase = createClient(supabaseUrl, supabaseKey);
+      
+      await supabase
+        .from('tenders')
+        .update({ 
+          status: 'error',
+          parsed_data: { error: error.message || 'Unknown error occurred during processing' }
+        })
+        .eq('id', tenderId);
+    } catch (updateError) {
+      console.error('Failed to update tender status:', updateError);
+    }
+    
     return new Response(
-      JSON.stringify({ 
-        error: `Processing failed: ${error.message}`
-      }),
+      JSON.stringify({ error: 'Failed to extract questions' }),
       { 
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
