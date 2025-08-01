@@ -96,12 +96,20 @@ serve(async (req) => {
         throw new Error('No meaningful text extracted from document. The document may be corrupted or contain no readable text.');
       }
 
-      // Extract questions from the document text
+      // Extract questions from the document text with improved algorithm
       questions = extractQuestionsFromText(extractedText);
       console.log('Extracted questions from document:', questions.length);
       
       if (questions.length === 0) {
-        errorMessage = 'No questions found in document. Please ensure your document contains numbered questions (e.g., "1. What is your experience?").';
+        errorMessage = `We couldn't extract questions from your document.
+
+This can happen if the questions are:
+- Embedded in paragraphs
+- Not clearly separated (bullets, headers, tables)
+- Formatted in an unusual way
+
+✅ Try reprocessing using the 'Reprocess' button.
+💡 If needed, use our manual question selector to mark them directly.`;
       }
     } catch (error) {
       console.error('Error processing document:', error);
@@ -244,53 +252,150 @@ serve(async (req) => {
 });
 
 function extractQuestionsFromText(text: string): string[] {
-  // Extract numbered questions from the document text
   const questions: string[] = [];
   
   // Split text into lines and clean up
   const lines = text
     .split(/\n/)
     .map(line => line.trim())
-    .filter(line => line.length > 10); // Minimum length for meaningful content
+    .filter(line => line.length > 5);
   
-  // Look for lines that start with a number and end with a question mark
-  // Pattern matches: "1. What is...", "1) How do...", "Question 1: Why...", etc.
-  const numberedQuestionPattern = /^(?:\d+[\.\)\:]?\s*(?:question\s*)?\s*)(.*\?)\s*$/i;
-  
-  for (const line of lines) {
-    const match = line.match(numberedQuestionPattern);
-    if (match) {
-      const questionText = match[1].trim();
-      if (questionText.length > 10) { // Ensure it's a meaningful question
-        questions.push(questionText);
+  // Enhanced extraction patterns
+  const extractionPatterns = [
+    // 1. Numbered questions (1. What is..., 1) How do..., Question 1: Why...)
+    {
+      pattern: /^(?:\d+[\.\)\:]?\s*(?:question\s*)?\s*)(.*)/i,
+      confidence: 0.9,
+      process: (match: RegExpMatchArray, line: string) => {
+        const content = match[1].trim();
+        if (content.endsWith('?')) return content;
+        
+        // Check for question indicators
+        const questionWords = /^(what|how|when|where|why|which|who|describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate|give|show|present)/i;
+        const businessTerms = /\b(experience|approach|method|capability|ability|requirements?|criteria|strategy|plan|proposal|solution|process|procedure|compliance|certification|qualification)/i;
+        
+        if (questionWords.test(content) || businessTerms.test(content)) {
+          return content.endsWith('?') ? content : content + '?';
+        }
+        return null;
       }
-      continue;
+    },
+    
+    // 2. Bullet points (• What is..., - How do..., * Describe...)
+    {
+      pattern: /^[•\-\*\+]\s+(.+)/,
+      confidence: 0.8,
+      process: (match: RegExpMatchArray) => {
+        const content = match[1].trim();
+        const questionWords = /^(what|how|when|where|why|which|who|describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate)/i;
+        
+        if (content.endsWith('?') || questionWords.test(content)) {
+          return content.endsWith('?') ? content : content + '?';
+        }
+        return null;
+      }
+    },
+    
+    // 3. Direct questions (sentences ending with ?)
+    {
+      pattern: /^(.+\?)$/,
+      confidence: 0.7,
+      process: (match: RegExpMatchArray) => {
+        const content = match[1].trim();
+        // Filter out obvious non-questions
+        const excludePatterns = /^(did you know|isn't it|right\?|ok\?|yes\?|no\?)$/i;
+        if (!excludePatterns.test(content) && content.length > 15) {
+          return content;
+        }
+        return null;
+      }
+    },
+    
+    // 4. Markdown headers that are questions (### What is your approach?)
+    {
+      pattern: /^#{1,6}\s+(.+)/,
+      confidence: 0.6,
+      process: (match: RegExpMatchArray) => {
+        const content = match[1].trim();
+        const questionWords = /^(what|how|when|where|why|which|who)/i;
+        
+        if (content.endsWith('?') || questionWords.test(content)) {
+          return content.endsWith('?') ? content : content + '?';
+        }
+        return null;
+      }
+    },
+    
+    // 5. Bold/formatted text that asks questions
+    {
+      pattern: /^\*\*(.+)\*\*$|^__(.+)__$/,
+      confidence: 0.5,
+      process: (match: RegExpMatchArray) => {
+        const content = (match[1] || match[2] || '').trim();
+        const questionWords = /^(what|how|when|where|why|which|who|describe|explain|provide)/i;
+        
+        if (content.endsWith('?') || questionWords.test(content)) {
+          return content.endsWith('?') ? content : content + '?';
+        }
+        return null;
+      }
+    }
+  ];
+  
+  // Process each line with all patterns
+  for (const line of lines) {
+    let bestMatch = null;
+    let bestConfidence = 0;
+    
+    for (const extractor of extractionPatterns) {
+      const match = line.match(extractor.pattern);
+      if (match && extractor.confidence > bestConfidence) {
+        const processed = extractor.process(match, line);
+        if (processed && processed.length > 10) {
+          bestMatch = processed;
+          bestConfidence = extractor.confidence;
+        }
+      }
     }
     
-    // Also check for lines that start with numbers but don't end with ?
-    // and convert them to questions if they contain question words
-    const numberedLinePattern = /^(?:\d+[\.\)\:]?\s*(?:question\s*)?\s*)(.*)/i;
-    const lineMatch = line.match(numberedLinePattern);
-    if (lineMatch) {
-      const content = lineMatch[1].trim();
-      const lowerContent = content.toLowerCase();
+    // Only include if confidence is above threshold
+    if (bestMatch && bestConfidence >= 0.6) {
+      // Avoid duplicates
+      const normalizedQuestion = bestMatch.toLowerCase().trim();
+      const isDuplicate = questions.some(q => 
+        q.toLowerCase().trim() === normalizedQuestion ||
+        q.toLowerCase().includes(normalizedQuestion) ||
+        normalizedQuestion.includes(q.toLowerCase())
+      );
       
-      // Check if it contains question words or imperative statements
-      const questionIndicators = [
-        /^(what|how|when|where|why|which|who|describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate)/i,
-        /\b(experience|approach|method|capability|ability|requirements?|criteria)\b/i
-      ];
-      
-      if (questionIndicators.some(pattern => pattern.test(content))) {
-        const questionText = content.endsWith('?') ? content : content + '?';
-        if (questionText.length > 10) {
+      if (!isDuplicate) {
+        questions.push(bestMatch);
+        console.log(`Extracted question (confidence: ${bestConfidence}): ${bestMatch.substring(0, 100)}...`);
+      }
+    }
+  }
+  
+  // Fallback: Try to extract from tables or structured content
+  if (questions.length === 0) {
+    console.log('No questions found with primary patterns, trying fallback extraction...');
+    
+    // Look for any content that resembles tender questions
+    const fallbackPattern = /\b(tender|rfp|proposal|bid|quote|submission)\b.*?\b(what|how|describe|provide|explain|detail|specify|list|outline|demonstrate|give|show|present)\b[^.]*[.?]?/gi;
+    const fallbackMatches = text.match(fallbackPattern);
+    
+    if (fallbackMatches) {
+      for (const match of fallbackMatches) {
+        const cleaned = match.trim();
+        if (cleaned.length > 20 && cleaned.length < 500) {
+          const questionText = cleaned.endsWith('?') ? cleaned : cleaned + '?';
           questions.push(questionText);
+          console.log(`Fallback extraction: ${questionText.substring(0, 100)}...`);
         }
       }
     }
   }
   
-  console.log(`Extracted ${questions.length} numbered questions from document`);
+  console.log(`Extracted ${questions.length} questions from document using enhanced algorithm`);
   
   return questions;
 }
