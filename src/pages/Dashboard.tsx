@@ -287,7 +287,7 @@ const Dashboard = () => {
                               {formatDate(tender.created_at)}
                             </p>
                           </div>
-                          <div className="flex items-end gap-2">
+                          <div className="flex items-center justify-end gap-3">
                             <Button variant="outline" size="sm" asChild>
                               <Link to={`/tender/${tender.id}`}>
                                 <FileText className="h-4 w-4 mr-2" />
