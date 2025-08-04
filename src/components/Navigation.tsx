@@ -40,7 +40,7 @@ export const Navigation = ({ showNewTenderButton = false }: NavigationProps) => 
         <div className="flex items-center justify-between">
           <Link to="/" className="flex items-center space-x-4 hover:opacity-80 transition-opacity">
             <Building2 className="h-8 w-8 text-primary" />
-            <h1 className="text-2xl font-bold">TenderFlow</h1>
+            <h1 className="text-2xl font-bold">Proposal.fit</h1>
           </Link>
 
           <div className="flex items-center space-x-4">
