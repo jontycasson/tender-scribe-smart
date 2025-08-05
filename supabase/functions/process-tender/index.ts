@@ -202,15 +202,11 @@ serve(async (req) => {
       console.log('Extracted questions from document:', questions.length);
       
       if (questions.length === 0) {
-        errorMessage = `We couldn't extract questions from your document.
+        errorMessage = `❌ **We couldn't extract structured questions from your document.**
 
-This can happen if the questions are:
-- Embedded in paragraphs
-- Not clearly separated (bullets, headers, tables)
-- Formatted in an unusual way
+Please ensure your questions are marked clearly with bullets, numbers, or labelled headers (e.g., \`Q1\`, \`1.\`, \`-\`, \`•\`).
 
-✅ Try reprocessing using the 'Reprocess' button.
-💡 If needed, use our manual question selector to mark them directly.`;
+Could not detect structured questions. Try uploading a clearer format or manually tagging questions.`;
       }
     } catch (error) {
       console.error('Error processing document:', error);
@@ -361,9 +357,9 @@ function extractQuestionsFromText(text: string): string[] {
     .map(line => line.trim())
     .filter(line => line.length > 5);
   
-  // Enhanced extraction patterns
+  // Enhanced extraction patterns - supporting multiple formatting styles
   const extractionPatterns = [
-    // 1. Numbered questions (1. What is..., 1) How do..., Question 1: Why...)
+    // 1. Numbered questions (1. What is..., 1) How do..., 2: Why..., Question 1: etc.)
     {
       pattern: /^(?:\d+[\.\)\:]?\s*(?:question\s*)?\s*)(.*)/i,
       confidence: 0.9,
@@ -381,8 +377,46 @@ function extractQuestionsFromText(text: string): string[] {
         return null;
       }
     },
+
+    // 2. Lettered questions (A. What is..., B) How do..., C: Why...)
+    {
+      pattern: /^(?:[A-Z][\.\)\:]?\s*)(.*)/i,
+      confidence: 0.9,
+      process: (match: RegExpMatchArray, line: string) => {
+        const content = match[1].trim();
+        if (content.endsWith('?')) return content;
+        
+        // Check for question indicators
+        const questionWords = /^(what|how|when|where|why|which|who|describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate|give|show|present)/i;
+        const businessTerms = /\b(experience|approach|method|capability|ability|requirements?|criteria|strategy|plan|proposal|solution|process|procedure|compliance|certification|qualification)/i;
+        
+        if (questionWords.test(content) || businessTerms.test(content)) {
+          return content.endsWith('?') ? content : content + '?';
+        }
+        return null;
+      }
+    },
+
+    // 3. Labeled questions (Q:, Q1., Question 1:, etc.)
+    {
+      pattern: /^(?:Q[0-9]*[\.\:]?\s*(?:question\s*[0-9]*[\.\:]?)?\s*)(.*)/i,
+      confidence: 0.95,
+      process: (match: RegExpMatchArray, line: string) => {
+        const content = match[1].trim();
+        if (content.endsWith('?')) return content;
+        
+        // Q-prefixed items are very likely to be questions
+        const questionWords = /^(what|how|when|where|why|which|who|describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate|give|show|present)/i;
+        const businessTerms = /\b(experience|approach|method|capability|ability|requirements?|criteria|strategy|plan|proposal|solution|process|procedure|compliance|certification|qualification)/i;
+        
+        if (questionWords.test(content) || businessTerms.test(content) || content.length > 10) {
+          return content.endsWith('?') ? content : content + '?';
+        }
+        return null;
+      }
+    },
     
-    // 2. Bullet points (• What is..., - How do..., * Describe...)
+    // 4. Bullet points (• What is..., - How do..., * Describe...)
     {
       pattern: /^[•\-\*\+]\s+(.+)/,
       confidence: 0.8,
