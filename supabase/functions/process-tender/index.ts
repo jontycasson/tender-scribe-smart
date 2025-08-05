@@ -41,12 +41,11 @@ serve(async (req) => {
         throw new Error('Nanonets API key not configured');
       }
 
-      // Convert file to base64 for Nanonets API
+      // Convert file to form data for Nanonets API
       const arrayBuffer = await fileData.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
-      const base64Data = btoa(String.fromCharCode(...uint8Array));
-
-      // Call Nanonets OCR API - use generic endpoint if no specific model ID
+      
+      // Call Nanonets OCR API with retry logic
       const modelId = Deno.env.get('NANONETS_MODEL_ID');
       const apiUrl = modelId 
         ? `https://app.nanonets.com/api/v2/OCR/Model/${modelId}/LabelFile/`
@@ -57,36 +56,138 @@ serve(async (req) => {
       formData.append('file', blob, filePath.split('/').pop() || 'document.pdf');
 
       console.log(`Calling Nanonets API: ${apiUrl}`);
-      const nanonetsResponse = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${btoa(nanonetsApiKey + ':')}`,
-        },
-        body: formData,
-      });
+      
+      // Retry logic for Nanonets API calls
+      let nanonetsData;
+      let lastError;
+      const maxRetries = 3;
+      
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`Nanonets attempt ${attempt}/${maxRetries}`);
+          
+          const nanonetsResponse = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Basic ${btoa(nanonetsApiKey + ':')}`,
+            },
+            body: formData,
+            // Add timeout to prevent hanging
+            signal: AbortSignal.timeout(120000), // 2 minutes timeout
+          });
 
-      console.log(`Nanonets response status: ${nanonetsResponse.status}`);
+          console.log(`Nanonets response status: ${nanonetsResponse.status}`);
 
-      if (!nanonetsResponse.ok) {
-        const errorText = await nanonetsResponse.text();
-        console.error(`Nanonets API failed: ${nanonetsResponse.status} - ${errorText}`);
-        throw new Error(`Nanonets API failed: ${nanonetsResponse.status}`);
+          if (!nanonetsResponse.ok) {
+            const errorText = await nanonetsResponse.text();
+            console.error(`Nanonets API failed on attempt ${attempt}: ${nanonetsResponse.status} - ${errorText}`);
+            
+            // For 4xx errors, don't retry as they indicate client errors
+            if (nanonetsResponse.status >= 400 && nanonetsResponse.status < 500) {
+              throw new Error(`Nanonets API client error: ${nanonetsResponse.status} - ${errorText}`);
+            }
+            
+            // For 5xx errors, retry
+            lastError = new Error(`Nanonets API server error: ${nanonetsResponse.status} - ${errorText}`);
+            
+            if (attempt === maxRetries) {
+              throw lastError;
+            }
+            
+            // Wait before retry (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+            continue;
+          }
+
+          nanonetsData = await nanonetsResponse.json();
+          console.log('Nanonets response structure:', JSON.stringify(nanonetsData, null, 2));
+          
+          // Validate response structure
+          if (!nanonetsData) {
+            throw new Error('Empty response from Nanonets API');
+          }
+          
+          // Check for common error patterns in response
+          if (nanonetsData.error || nanonetsData.message?.includes('error')) {
+            throw new Error(`Nanonets API error: ${nanonetsData.error || nanonetsData.message}`);
+          }
+          
+          // Success - break out of retry loop
+          break;
+          
+        } catch (error) {
+          console.error(`Nanonets attempt ${attempt} failed:`, error);
+          lastError = error;
+          
+          if (attempt === maxRetries) {
+            throw error;
+          }
+          
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+        }
       }
 
-      const nanonetsData = await nanonetsResponse.json();
-      console.log('Nanonets response structure:', JSON.stringify(nanonetsData, null, 2));
-
-      // Extract text from Nanonets response
+      // Extract text from Nanonets response with enhanced parsing
       let extractedText = '';
-      if (nanonetsData.result && Array.isArray(nanonetsData.result)) {
-        extractedText = nanonetsData.result
-          .map((item: any) => item.ocr_text || '')
-          .join('\n')
+      
+      try {
+        if (nanonetsData.result && Array.isArray(nanonetsData.result)) {
+          // Standard Nanonets OCR response format
+          extractedText = nanonetsData.result
+            .map((item: any) => {
+              // Handle different result item formats
+              if (typeof item === 'string') return item;
+              if (item.ocr_text) return item.ocr_text;
+              if (item.text) return item.text;
+              if (item.prediction) return item.prediction;
+              return '';
+            })
+            .filter(text => text.trim().length > 0)
+            .join('\n')
+            .trim();
+        } else if (nanonetsData.message && typeof nanonetsData.message === 'string') {
+          // Sometimes the text is in the message field
+          extractedText = nanonetsData.message;
+        } else if (nanonetsData.text && typeof nanonetsData.text === 'string') {
+          // Alternative text field
+          extractedText = nanonetsData.text;
+        } else if (nanonetsData.content && typeof nanonetsData.content === 'string') {
+          // Another possible field name
+          extractedText = nanonetsData.content;
+        } else if (typeof nanonetsData === 'string') {
+          // Direct string response
+          extractedText = nanonetsData;
+        } else if (nanonetsData.predictions && Array.isArray(nanonetsData.predictions)) {
+          // Alternative predictions format
+          extractedText = nanonetsData.predictions
+            .map((pred: any) => pred.text || pred.ocr_text || '')
+            .filter(text => text.trim().length > 0)
+            .join('\n')
+            .trim();
+        }
+        
+        // Clean up the extracted text
+        extractedText = extractedText
+          .replace(/\r\n/g, '\n')
+          .replace(/\r/g, '\n')
+          .replace(/\n{3,}/g, '\n\n')
           .trim();
-      } else if (nanonetsData.message) {
-        extractedText = nanonetsData.message;
-      } else if (typeof nanonetsData === 'string') {
-        extractedText = nanonetsData;
+          
+        console.log('Text extraction successful. Extracted text length:', extractedText.length);
+        console.log('Text extraction method used:', 
+          nanonetsData.result ? 'result array' :
+          nanonetsData.message ? 'message field' :
+          nanonetsData.text ? 'text field' :
+          nanonetsData.content ? 'content field' :
+          nanonetsData.predictions ? 'predictions array' :
+          typeof nanonetsData === 'string' ? 'direct string' : 'unknown'
+        );
+        
+      } catch (textExtractionError) {
+        console.error('Error extracting text from Nanonets response:', textExtractionError);
+        console.log('Full Nanonets response for debugging:', JSON.stringify(nanonetsData, null, 2));
+        throw new Error(`Failed to extract text from Nanonets response: ${textExtractionError.message}`);
       }
 
       console.log('Extracted text length:', extractedText.length);
