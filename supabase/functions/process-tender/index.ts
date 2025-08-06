@@ -41,12 +41,18 @@ serve(async (req) => {
         throw new Error('Nanonets API key not configured');
       }
 
+      const modelId = Deno.env.get('NANONETS_MODEL_ID');
+      if (!modelId) {
+        throw new Error('Nanonets Model ID not configured');
+      }
+
+      console.log(`Using Model ID: ${modelId}`);
+
       // Convert file to form data for Nanonets API
       const arrayBuffer = await fileData.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
       
       // Call Nanonets OCR API with custom model for tender documents
-      const modelId = Deno.env.get('NANONETS_MODEL_ID') || '71903d6a-b333-4893-a9b3-f52ad90a9c9f';
       const apiUrl = `https://app.nanonets.com/api/v2/OCR/Model/${modelId}/LabelFile/`;
       
       const formData = new FormData();
