@@ -149,7 +149,7 @@ const NewTender = () => {
 
       console.log('Tender created successfully:', tenderData);
       setTenderId(tenderData.id);
-      setCurrentStep('review');
+      // Don't navigate to review step yet - wait for processing to complete
       
       // Process document with AI and generate responses
       await processDocument(tenderData.id, uploadData.path);
@@ -219,7 +219,7 @@ const NewTender = () => {
         const errorMessage = parsedData?.error || "Failed to extract questions from document";
         toast({
           title: "Extraction failed",
-          description: "We couldn't extract questions from your document. Please check that your document has numbered questions (e.g., '1. Describe your experience').",
+          description: errorMessage.includes('❌') ? errorMessage : "We couldn't extract questions from your document. Please check that your document has numbered questions (e.g., '1. Describe your experience').",
           variant: "destructive",
         });
         setCurrentStep('upload'); // Stay on upload step
@@ -237,6 +237,7 @@ const NewTender = () => {
       }
 
       setQuestions(responsesData);
+      setCurrentStep('review'); // Only navigate to review step on successful processing
       
       toast({
         title: "Document processed",

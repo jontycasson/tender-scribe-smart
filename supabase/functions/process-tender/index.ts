@@ -35,13 +35,13 @@ serve(async (req) => {
 
       console.log('Processing document with Nanonets:', filePath);
       
-      // Get Nanonets API key and model ID from environment
-      const nanonetsApiKey = Deno.env.get('NANONETS_API_KEY');
+      // Get Nanonets API key and model ID from environment with validation
+      const nanonetsApiKey = Deno.env.get('NANONETS_API_KEY')?.trim();
       if (!nanonetsApiKey) {
         throw new Error('Nanonets API key not configured');
       }
 
-      const modelId = Deno.env.get('NANONETS_MODEL_ID');
+      const modelId = Deno.env.get('NANONETS_MODEL_ID')?.trim();
       if (!modelId) {
         throw new Error('Nanonets Model ID not configured');
       }
@@ -52,12 +52,31 @@ serve(async (req) => {
       const arrayBuffer = await fileData.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
       
+      // Determine MIME type from file extension
+      const fileName = filePath.split('/').pop() || 'document.pdf';
+      const fileExtension = fileName.split('.').pop()?.toLowerCase();
+      let mimeType = 'application/pdf'; // default
+      
+      if (fileExtension === 'docx') {
+        mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      } else if (fileExtension === 'xlsx') {
+        mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      } else if (fileExtension === 'doc') {
+        mimeType = 'application/msword';
+      } else if (fileExtension === 'xls') {
+        mimeType = 'application/vnd.ms-excel';
+      }
+      
+      console.log(`Processing file: ${fileName} with MIME type: ${mimeType}`);
+      
       // Call Nanonets OCR API with custom model for tender documents
       const apiUrl = `https://app.nanonets.com/api/v2/OCR/Model/${modelId}/LabelFile/`;
       
       const formData = new FormData();
-      const blob = new Blob([uint8Array], { type: 'application/pdf' });
-      formData.append('file', blob, filePath.split('/').pop() || 'document.pdf');
+      const blob = new Blob([uint8Array], { type: mimeType });
+      formData.append('file', blob, fileName);
+      
+      console.log(`FormData created with file: ${fileName}, size: ${uint8Array.length} bytes`);
 
       console.log(`Calling Nanonets API: ${apiUrl}`);
       
