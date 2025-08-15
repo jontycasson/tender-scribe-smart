@@ -36,20 +36,20 @@ serve(async (req) => {
 
       console.log('Processing document with Nanonets:', filePath);
       
-      // Get Nanonets API key and model ID from environment with validation
+      // Get Nanonets API key from environment with validation
       const nanonetsApiKey = Deno.env.get('NANONETS_API_KEY')?.trim();
       console.log('NANONETS_API_KEY configured:', !!nanonetsApiKey, nanonetsApiKey ? 'exists' : 'missing');
       if (!nanonetsApiKey) {
         throw new Error('Nanonets API key not configured');
       }
 
-      const modelId = Deno.env.get('NANONETS_MODEL_ID')?.trim();
-      console.log('NANONETS_MODEL_ID configured:', !!modelId, modelId ? `exists: ${modelId}` : 'missing');
-      if (!modelId) {
-        throw new Error('Nanonets Model ID not configured');
-      }
-
-      console.log(`Using Model ID: ${modelId}`);
+      // Use the exact model ID that works in Postman
+      const modelId = '71903d6a-b333-4893-a9b3-f52ad90a9c9f';
+      console.log(`Using hardcoded Model ID: ${modelId}`);
+      
+      // Also check what the environment variable contains for debugging
+      const envModelId = Deno.env.get('NANONETS_MODEL_ID')?.trim();
+      console.log('Environment NANONETS_MODEL_ID:', envModelId || 'not set');
 
       // Convert file to form data for Nanonets API
       const arrayBuffer = await fileData.arrayBuffer();
