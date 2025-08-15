@@ -37,11 +37,13 @@ serve(async (req) => {
       
       // Get Nanonets API key and model ID from environment with validation
       const nanonetsApiKey = Deno.env.get('NANONETS_API_KEY')?.trim();
+      console.log('NANONETS_API_KEY configured:', !!nanonetsApiKey, nanonetsApiKey ? 'exists' : 'missing');
       if (!nanonetsApiKey) {
         throw new Error('Nanonets API key not configured');
       }
 
       const modelId = Deno.env.get('NANONETS_MODEL_ID')?.trim();
+      console.log('NANONETS_MODEL_ID configured:', !!modelId, modelId ? `exists: ${modelId}` : 'missing');
       if (!modelId) {
         throw new Error('Nanonets Model ID not configured');
       }
