@@ -158,20 +158,22 @@ serve(async (req) => {
       let extractedText = '';
       
       try {
+        console.log('Nanonets response type:', typeof nanonetsData);
+        console.log('Nanonets response keys:', Object.keys(nanonetsData || {}));
+        
         if (nanonetsData.result && Array.isArray(nanonetsData.result)) {
           // Standard Nanonets OCR response format
           extractedText = nanonetsData.result
             .map((item: any) => {
               // Handle different result item formats
               if (typeof item === 'string') return item;
-              if (item.ocr_text) return item.ocr_text;
-              if (item.text) return item.text;
-              if (item.prediction) return item.prediction;
+              if (item && typeof item.ocr_text === 'string') return item.ocr_text;
+              if (item && typeof item.text === 'string') return item.text;
+              if (item && typeof item.prediction === 'string') return item.prediction;
               return '';
             })
-            .filter(text => text.trim().length > 0)
-            .join('\n')
-            .trim();
+            .filter((text: string) => text && text.trim && text.trim().length > 0)
+            .join('\n');
         } else if (nanonetsData.message && typeof nanonetsData.message === 'string') {
           // Sometimes the text is in the message field
           extractedText = nanonetsData.message;
@@ -187,28 +189,52 @@ serve(async (req) => {
         } else if (nanonetsData.predictions && Array.isArray(nanonetsData.predictions)) {
           // Alternative predictions format
           extractedText = nanonetsData.predictions
-            .map((pred: any) => pred.text || pred.ocr_text || '')
-            .filter(text => text.trim().length > 0)
-            .join('\n')
-            .trim();
+            .map((pred: any) => {
+              if (pred && typeof pred.text === 'string') return pred.text;
+              if (pred && typeof pred.ocr_text === 'string') return pred.ocr_text;
+              return '';
+            })
+            .filter((text: string) => text && text.trim && text.trim().length > 0)
+            .join('\n');
+        } else if (nanonetsData.data && Array.isArray(nanonetsData.data)) {
+          // Alternative data format
+          extractedText = nanonetsData.data
+            .map((item: any) => {
+              if (typeof item === 'string') return item;
+              if (item && typeof item.text === 'string') return item.text;
+              if (item && typeof item.ocr_text === 'string') return item.ocr_text;
+              return '';
+            })
+            .filter((text: string) => text && text.trim && text.trim().length > 0)
+            .join('\n');
         }
         
-        // Clean up the extracted text
-        extractedText = extractedText
-          .replace(/\r\n/g, '\n')
-          .replace(/\r/g, '\n')
-          .replace(/\n{3,}/g, '\n\n')
-          .trim();
-          
-        console.log('Text extraction successful. Extracted text length:', extractedText.length);
+        // Ensure extractedText is a string before processing
+        if (typeof extractedText !== 'string') {
+          console.error('Extracted text is not a string:', typeof extractedText, extractedText);
+          extractedText = String(extractedText || '');
+        }
+        
+        // Clean up the extracted text only if it's a valid string
+        if (extractedText && typeof extractedText === 'string') {
+          extractedText = extractedText
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+        }
+           
+        console.log('Text extraction successful. Extracted text length:', extractedText?.length || 0);
         console.log('Text extraction method used:', 
           nanonetsData.result ? 'result array' :
           nanonetsData.message ? 'message field' :
           nanonetsData.text ? 'text field' :
           nanonetsData.content ? 'content field' :
           nanonetsData.predictions ? 'predictions array' :
+          nanonetsData.data ? 'data array' :
           typeof nanonetsData === 'string' ? 'direct string' : 'unknown'
         );
+        console.log('First 500 characters:', extractedText?.substring(0, 500) || 'No text extracted');
         
       } catch (textExtractionError) {
         console.error('Error extracting text from Nanonets response:', textExtractionError);
