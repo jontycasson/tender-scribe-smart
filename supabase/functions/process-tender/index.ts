@@ -162,7 +162,7 @@ serve(async (req) => {
         console.log('Nanonets response keys:', Object.keys(nanonetsData || {}));
         
         if (nanonetsData.result && Array.isArray(nanonetsData.result)) {
-          // Standard Nanonets OCR response format
+          // Standard Nanonets OCR response format - handle nested predictions
           extractedText = nanonetsData.result
             .map((item: any) => {
               // Handle different result item formats
@@ -170,6 +170,19 @@ serve(async (req) => {
               if (item && typeof item.ocr_text === 'string') return item.ocr_text;
               if (item && typeof item.text === 'string') return item.text;
               if (item && typeof item.prediction === 'string') return item.prediction;
+              
+              // Handle nested prediction arrays (actual Nanonets format)
+              if (item && item.prediction && Array.isArray(item.prediction)) {
+                return item.prediction
+                  .map((pred: any) => {
+                    if (pred && typeof pred.ocr_text === 'string') return pred.ocr_text;
+                    if (pred && typeof pred.text === 'string') return pred.text;
+                    return '';
+                  })
+                  .filter((text: string) => text && text.trim && text.trim().length > 0)
+                  .join('\n');
+              }
+              
               return '';
             })
             .filter((text: string) => text && text.trim && text.trim().length > 0)
