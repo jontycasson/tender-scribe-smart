@@ -21,14 +21,15 @@ const steps = [
 
 interface OnboardingFormProps {
   onComplete: (data: CompanyProfileData) => void;
+  existingData?: CompanyProfileData | null;
 }
 
-export function OnboardingForm({ onComplete }: OnboardingFormProps) {
+export function OnboardingForm({ onComplete, existingData }: OnboardingFormProps) {
   const [currentStep, setCurrentStep] = useState(0);
   
   const form = useForm<CompanyProfileData>({
     resolver: zodResolver(companyProfileSchema),
-    defaultValues: {
+    defaultValues: existingData || {
       companyName: "",
       industry: "",
       teamSize: "",
@@ -87,9 +88,14 @@ export function OnboardingForm({ onComplete }: OnboardingFormProps) {
   return (
     <div className="max-w-2xl mx-auto p-6">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-center mb-2">Welcome to TenderFlow</h1>
+        <h1 className="text-3xl font-bold text-center mb-2">
+          {existingData ? "Update Your Profile" : "Welcome to TenderFlow"}
+        </h1>
         <p className="text-muted-foreground text-center">
-          Let's set up your company profile to get started
+          {existingData 
+            ? "Update your company profile information"
+            : "Let's set up your company profile to get started"
+          }
         </p>
       </div>
 
@@ -122,7 +128,7 @@ export function OnboardingForm({ onComplete }: OnboardingFormProps) {
                 
                 {currentStep === steps.length - 1 ? (
                   <Button type="submit">
-                    Complete Setup
+                    {existingData ? "Update Profile" : "Complete Setup"}
                   </Button>
                 ) : (
                   <Button type="button" onClick={handleNext}>
