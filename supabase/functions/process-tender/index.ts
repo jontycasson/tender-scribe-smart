@@ -806,32 +806,12 @@ async function fetchResearchSnippet(question: string, companyName: string, perpl
   try {
     console.log('Fetching research for question:', question.substring(0, 100) + '...');
     
-    // Determine if this is an entity question that needs specific search
-    const isEntityQuestion = needsEntityResearch(question);
-    
-    let researchPrompt: string;
-    if (isEntityQuestion) {
-      // For entity questions, search specifically for the company and role
-      researchPrompt = `Find specific information about "${companyName}" company regarding this question: "${question}". 
-
-Search for:
-- Named individuals in specific roles (DPO, CEO, officers)
-- Specific certifications or compliance details
-- Official company information and leadership
-- Include sources and links when possible
-
-Focus on factual, verifiable information about this specific company.`;
+    // Enhanced prompt for entity-specific research
+    let researchPrompt;
+    if (needsEntityResearch(question)) {
+      researchPrompt = `Find the specific person who holds this role at ${companyName}: ${question}. Include their full name and title if available. If no specific person is found, indicate that the role exists but specific names are confidential.`;
     } else {
-      // For general questions, search for best practices and standards
-      researchPrompt = `Research information relevant to this tender/procurement question: "${question}". 
-
-Provide concise, factual information about:
-- Industry best practices and standards
-- Regulatory requirements
-- Common compliance approaches
-- Professional standards and frameworks
-
-Focus on general guidance that could help answer this type of question.`;
+      researchPrompt = `Research this business question about ${companyName}: ${question}`;
     }
     
     const response = await fetch('https://api.perplexity.ai/chat/completions', {

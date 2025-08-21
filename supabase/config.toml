@@ -76,6 +76,12 @@ verify_jwt = true
 [functions.upsert-memory]
 verify_jwt = true
 
+[functions.regenerate-response]
+verify_jwt = true
+
+[functions.rewrite-response]
+verify_jwt = true
+
 [analytics]
 enabled = false
 port = 54327

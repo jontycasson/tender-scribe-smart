@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, FileText, Calendar, Download, ChevronLeft, ChevronRight, CheckCircle, FileDown, X } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ArrowLeft, FileText, Calendar, Download, ChevronLeft, ChevronRight, CheckCircle, FileDown, X, MoreVertical, RotateCcw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigation } from "@/components/Navigation";
@@ -48,6 +49,7 @@ const TenderDetails = () => {
   const [editedAnswers, setEditedAnswers] = useState<{ [key: string]: string }>({});
   const [isApproving, setIsApproving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [rewritingResponse, setRewritingResponse] = useState<string | null>(null);
   
   const responsesPerPage = 5;
 
@@ -357,6 +359,79 @@ const TenderDetails = () => {
     return data.publicUrl;
   };
 
+  const handleRegenerateResponse = async (responseId: string) => {
+    setRewritingResponse(responseId);
+    try {
+      const { data, error } = await supabase.functions.invoke('regenerate-response', {
+        body: { responseId }
+      });
+
+      if (error) throw error;
+
+      // Update the response in state
+      setResponses(prev => prev.map(response => 
+        response.id === responseId 
+          ? { 
+              ...response, 
+              ai_generated_answer: data.newAnswer,
+              user_edited_answer: null,
+              is_approved: false 
+            }
+          : response
+      ));
+
+      toast({
+        title: "Success",
+        description: "Response regenerated successfully",
+      });
+    } catch (error) {
+      console.error('Error regenerating response:', error);
+      toast({
+        title: "Error",
+        description: "Failed to regenerate response",
+        variant: "destructive",
+      });
+    } finally {
+      setRewritingResponse(null);
+    }
+  };
+
+  const handleRewriteResponse = async (responseId: string, mode: 'reword' | 'make_shorter' | 'make_formal' | 'more_detailed' | 'more_concise' | 'uk_english') => {
+    setRewritingResponse(responseId);
+    try {
+      const { data, error } = await supabase.functions.invoke('rewrite-response', {
+        body: { responseId, mode }
+      });
+
+      if (error) throw error;
+
+      // Update the response in state
+      setResponses(prev => prev.map(response => 
+        response.id === responseId 
+          ? { 
+              ...response, 
+              user_edited_answer: data.rewrittenAnswer,
+              is_approved: false 
+            }
+          : response
+      ));
+
+      toast({
+        title: "Success",
+        description: data.message,
+      });
+    } catch (error) {
+      console.error('Error rewriting response:', error);
+      toast({
+        title: "Error",
+        description: "Failed to rewrite response",
+        variant: "destructive",
+      });
+    } finally {
+      setRewritingResponse(null);
+    }
+  };
+
   if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-background">
@@ -658,16 +733,70 @@ const TenderDetails = () => {
                                   {response.user_edited_answer || response.ai_generated_answer || 'No response generated'}
                                 </p>
                               </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleEditResponse(
-                                  response.id, 
-                                  response.user_edited_answer || response.ai_generated_answer || ''
-                                )}
-                              >
-                                Edit Response
-                              </Button>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleEditResponse(
+                                    response.id, 
+                                    response.user_edited_answer || response.ai_generated_answer || ''
+                                  )}
+                                >
+                                  Edit Response
+                                </Button>
+                                
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={rewritingResponse === response.id}
+                                    >
+                                      <MoreVertical className="h-4 w-4 mr-2" />
+                                      {rewritingResponse === response.id ? 'Processing...' : 'Rewrite'}
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem 
+                                      onClick={() => handleRegenerateResponse(response.id)}
+                                      disabled={rewritingResponse === response.id}
+                                    >
+                                      <RotateCcw className="h-4 w-4 mr-2" />
+                                      Regenerate
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => handleRewriteResponse(response.id, 'reword')}
+                                      disabled={rewritingResponse === response.id}
+                                    >
+                                      Reword
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => handleRewriteResponse(response.id, 'make_shorter')}
+                                      disabled={rewritingResponse === response.id}
+                                    >
+                                      Make shorter
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => handleRewriteResponse(response.id, 'make_formal')}
+                                      disabled={rewritingResponse === response.id}
+                                    >
+                                      Make formal
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => handleRewriteResponse(response.id, 'more_detailed')}
+                                      disabled={rewritingResponse === response.id}
+                                    >
+                                      More detailed
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => handleRewriteResponse(response.id, 'uk_english')}
+                                      disabled={rewritingResponse === response.id}
+                                    >
+                                      UK English
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
                             </div>
                           )}
                         </CardContent>
