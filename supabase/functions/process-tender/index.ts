@@ -331,12 +331,14 @@ Could not detect structured questions. Try uploading a clearer format or manuall
         .eq('user_id', tenderData.user_id)
         .maybeSingle();
 
-      // Generate AI responses for each question
+      // Generate AI responses for each question with enhanced processing
       const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+      const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
       
       console.log(`Processing ${questions.length} questions for tender ${tenderId}`);
+      console.log('Research capability:', perplexityApiKey ? 'enabled' : 'disabled');
       
-      // Process all questions and collect responses before saving
+      // Process all questions with enhanced AI generation and collect responses before saving
       const responsesToInsert = [];
       
       for (let i = 0; i < questions.length; i++) {
@@ -344,23 +346,42 @@ Could not detect structured questions. Try uploading a clearer format or manuall
         console.log(`Processing question ${i + 1}/${questions.length}: ${question.substring(0, 100)}...`);
         
         try {
-          const aiResponse = await generateAIResponse(question, profileData, openAIApiKey);
+          const { response: aiResponse, metadata } = await generateEnhancedAIResponse(
+            question, 
+            profileData, 
+            openAIApiKey,
+            perplexityApiKey
+          );
+          
           responsesToInsert.push({
             tender_id: tenderId,
             question: question,
             ai_generated_answer: aiResponse,
-            is_approved: false
+            is_approved: false,
+            question_type: metadata.questionType,
+            research_used: metadata.researchUsed,
+            model_used: metadata.modelUsed,
+            response_length: metadata.responseLength,
+            processing_time_ms: metadata.processingTimeMs
           });
           
-          console.log(`Successfully generated response for question ${i + 1}`);
+          console.log(`Successfully generated ${metadata.questionType} response for question ${i + 1} (${metadata.responseLength} chars, ${metadata.processingTimeMs}ms)`);
         } catch (error) {
           console.error(`Error generating AI response for question ${i + 1}:`, error);
-          // Add a fallback response instead of failing completely
+          
+          // Enhanced fallback response with metadata
+          const fallbackResponse = `Based on our company profile and ${profileData?.years_in_business || 'significant'} experience in ${profileData?.industry || 'this sector'}, we are well-positioned to address this requirement. Our team maintains appropriate standards and would be pleased to provide detailed information upon request.`;
+          
           responsesToInsert.push({
             tender_id: tenderId,
             question: question,
-            ai_generated_answer: `Based on our company profile, we are well-positioned to address this requirement. Please contact us for more specific details.`,
-            is_approved: false
+            ai_generated_answer: fallbackResponse,
+            is_approved: false,
+            question_type: 'open',
+            research_used: false,
+            model_used: 'fallback',
+            response_length: fallbackResponse.length,
+            processing_time_ms: 0
           });
         }
       }
@@ -627,11 +648,134 @@ function extractQuestionsFromText(text: string): string[] {
   return questions;
 }
 
-async function generateAIResponse(question: string, profile: any, apiKey: string): Promise<string> {
-  const prompt = `
-You are a professional UK-based bid writer responding to procurement and tender questions. Your goal is to write high-scoring, tailored responses that are well-structured, clearly written, and appropriately concise.
+// Classify question type for optimized response strategy
+function classifyQuestion(question: string): { type: 'closed' | 'open', reasoning: string } {
+  const questionLower = question.toLowerCase();
+  
+  // Closed question indicators (Yes/No, factual, compliance)
+  const closedPatterns = [
+    /^(do\s+you|have\s+you|can\s+you|will\s+you|are\s+you|is\s+your)\b/,
+    /\b(yes\s*\/\s*no|y\s*\/\s*n)\b/,
+    /\b(certified|accredited|compliant|registered|licensed)\b/,
+    /\b(how\s+many|what\s+is\s+your|when\s+did)\b/
+  ];
+  
+  // Open question indicators (process, strategy, approach)
+  const openPatterns = [
+    /^(describe|explain|outline|detail|demonstrate|provide\s+details)\b/,
+    /\b(approach|strategy|method|process|procedure|plan)\b/,
+    /\b(how\s+do\s+you|how\s+would\s+you|what\s+steps)\b/,
+    /\b(experience|capability|ability|expertise)\b/
+  ];
+  
+  const isClosedMatch = closedPatterns.some(pattern => pattern.test(questionLower));
+  const isOpenMatch = openPatterns.some(pattern => pattern.test(questionLower));
+  
+  if (isClosedMatch && !isOpenMatch) {
+    return { type: 'closed', reasoning: 'Detected Yes/No or factual question pattern' };
+  } else if (isOpenMatch) {
+    return { type: 'open', reasoning: 'Detected explanatory or process question pattern' };
+  } else {
+    // Default to open for safety
+    return { type: 'open', reasoning: 'Unclear pattern, defaulting to detailed response' };
+  }
+}
 
-## Company Profile:
+// Enhanced research function using Perplexity API
+async function fetchResearchSnippet(question: string, perplexityApiKey?: string): Promise<string | null> {
+  if (!perplexityApiKey) {
+    console.log('Perplexity API key not available, skipping research');
+    return null;
+  }
+  
+  const enableResearch = Deno.env.get('ENABLE_RESEARCH')?.toLowerCase() === 'true';
+  if (!enableResearch) {
+    console.log('Research disabled via ENABLE_RESEARCH flag');
+    return null;
+  }
+
+  try {
+    console.log('Fetching research for question:', question.substring(0, 100) + '...');
+    
+    const response = await fetch('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${perplexityApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-sonar-small-128k-online',
+        messages: [
+          {
+            role: 'system',
+            content: 'Provide factual information to help answer business and procurement questions. Focus on current best practices, regulations, and industry standards.'
+          },
+          {
+            role: 'user',
+            content: `Research information relevant to this tender/procurement question: "${question}". Provide concise, factual information about best practices, standards, or requirements.`
+          }
+        ],
+        temperature: 0.2,
+        top_p: 0.9,
+        max_tokens: 300,
+        return_images: false,
+        return_related_questions: false,
+        search_recency_filter: 'month',
+        frequency_penalty: 1,
+        presence_penalty: 0
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Perplexity API failed:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    const researchContent = data.choices?.[0]?.message?.content;
+    
+    if (researchContent && researchContent.length > 20) {
+      console.log('Research fetched successfully, length:', researchContent.length);
+      return researchContent;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error fetching research:', error);
+    return null;
+  }
+}
+
+// Enhanced AI response generation with research integration
+async function generateEnhancedAIResponse(
+  question: string, 
+  profile: any, 
+  openaiApiKey: string,
+  perplexityApiKey?: string
+): Promise<{
+  response: string;
+  metadata: {
+    questionType: 'closed' | 'open';
+    researchUsed: boolean;
+    modelUsed: string;
+    responseLength: number;
+    processingTimeMs: number;
+  }
+}> {
+  const startTime = Date.now();
+  
+  // Step 1: Classify the question
+  const { type: questionType, reasoning } = classifyQuestion(question);
+  console.log(`Question classified as ${questionType}: ${reasoning}`);
+  
+  // Step 2: Fetch research for open questions
+  let researchSnippet: string | null = null;
+  if (questionType === 'open') {
+    researchSnippet = await fetchResearchSnippet(question, perplexityApiKey);
+  }
+  
+  // Step 3: Build enhanced prompt
+  const contextSection = `## Company Profile:
 **Company:** ${profile?.company_name || 'N/A'}
 **Industry:** ${profile?.industry || 'N/A'}
 **Team Size:** ${profile?.team_size || 'N/A'}
@@ -642,65 +786,123 @@ You are a professional UK-based bid writer responding to procurement and tender 
 **Specializations:** ${profile?.specializations || 'N/A'}
 **Past Projects:** ${profile?.past_projects || 'N/A'}
 **Accreditations:** ${profile?.accreditations || 'N/A'}
-**Policies:** ${profile?.policies || 'N/A'}
+**Policies:** ${profile?.policies || 'N/A'}`;
+
+  const researchSection = researchSnippet ? `
+## Research Context:
+${researchSnippet}
+
+**Important:** Use this research to enhance accuracy and depth, but rephrase everything into the company's voice. Never copy word-for-word.` : '';
+
+  const enhancedPrompt = `You are an expert tender response assistant generating high-quality, tailored answers to questions found in RFPs, PQQs, or security questionnaires. Your goal is to produce responses that maximise clarity, score highly against evaluation criteria, and feel human-written.
+
+💡 You are provided with:
+- A QUESTION (classified as ${questionType === 'closed' ? 'CLOSED' : 'OPEN'})
+- CONTEXT (company policies, past responses, facts)${researchSnippet ? '\n- RESEARCH_SNIPPET (external info to enhance depth)' : ''}
+
+${contextSection}${researchSection}
 
 ## Question to Answer:
 ${question}
 
-✳️ Question-Aware Strategy
+--- RESPONSE STRATEGY ---
 
-Before answering, identify whether the question is:
-1. **Closed** (Yes/No, confirmation, compliance) → keep response brief, to the point, and avoid repetition.
-2. **Open** (explanation, process, strategy, approach) → use structured, evidence-based reasoning with supporting examples.
+1. ❓ This is a **${questionType.toUpperCase()}** question (${questionType === 'closed' ? 'Yes/No or factual' : 'asks for process, depth, or explanation'}).
 
-✳️ Output Rules
+2. 📚 ${researchSnippet ? 'Research snippet provided - use it to enhance depth or accuracy but never copy word-for-word. Rephrase and adapt it into the company\'s voice.' : 'No additional research available - rely on company context.'}
 
-- For **closed questions**, answer directly (e.g. "Yes, we have a DPO…") and follow up with 1–3 short sentences to provide only essential detail. Max 4–5 lines total.
-- For **open questions**, write a full response with markdown formatting (e.g. bold, numbered lists, bullet points) where helpful.
-- Keep all language in **British English**.
-- Only include relevant detail. Avoid filler and repetition.
-- Reference available inputs (company profile, past projects, values, certifications, etc.) when useful.
+3. 🗃 Prioritise company-specific information (policies, systems, responsibilities) to ground the response.
 
-✳️ Style
+4. ✍️ Generate a DYNAMIC RESPONSE:
+   - **${questionType === 'closed' ? 'Short (2–4 sentences)' : 'Medium to detailed (4+ sentences)'}** for this ${questionType} question
+   - Use **British English** spellings (e.g. "organisation", "authorisation")
+   - ${questionType === 'closed' ? 'Be direct and concise' : 'Use structured formatting with **bold**, bullet points, or numbered lists where helpful'}
 
-- Use a professional, confident, and clear tone.
-- Write for real-world tender assessors who value precision, relevance, and evidence.
-- Be persuasive but not verbose. Prioritise clarity and completeness over length.
+5. 🤖 Never fabricate policies, systems, certifications or staff roles. Only use what's provided via CONTEXT${researchSnippet ? ' or RESEARCH_SNIPPET' : ''}.
 
-✅ Summary of Goals
+6. ✅ Aim for clarity, relevance, and helpfulness. Avoid buzzwords or fluff.
 
-- Right-sized responses: long where needed, short where appropriate.
-- UK spelling throughout.
-- Aligned to evaluator expectations.
+Generate your response in plain text with markdown formatting when helpful:`;
 
-Generate your response now:`;
+  // Step 4: Get model configuration
+  const modelToUse = Deno.env.get('OPENAI_MODEL')?.trim() || 'gpt-4o-mini';
+  console.log('Using OpenAI model:', modelToUse);
+  
+  // Determine if we're using a newer model that requires different parameters
+  const isNewerModel = modelToUse.startsWith('gpt-5') || modelToUse.startsWith('o3') || modelToUse.startsWith('o4') || modelToUse.startsWith('gpt-4.1');
+  
+  const requestBody: any = {
+    model: modelToUse,
+    messages: [
+      { 
+        role: 'system', 
+        content: 'You are a professional tender response assistant. Generate winning answers that are tailored, well-structured, and clearly demonstrate capabilities while following the specific guidance provided.' 
+      },
+      { role: 'user', content: enhancedPrompt }
+    ]
+  };
+  
+  // Add appropriate token limits and temperature based on model
+  if (isNewerModel) {
+    requestBody.max_completion_tokens = questionType === 'closed' ? 150 : 800;
+    // Note: newer models don't support temperature parameter
+  } else {
+    requestBody.max_tokens = questionType === 'closed' ? 150 : 800;
+    requestBody.temperature = 0.7;
+  }
 
   try {
+    console.log(`Generating response with ${modelToUse} for ${questionType} question`);
+    
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${openaiApiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: 'You are a professional bid writer responding to procurement questions for tenders and RFPs. Your goal is to create winning answers that are tailored, well-structured, and clearly demonstrate the client\'s capabilities, strengths, and compliance.' },
-          { role: 'user', content: prompt }
-        ],
-        max_tokens: 1500,
-        temperature: 0.7,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
-      throw new Error('OpenAI API failed');
+      const errorText = await response.text();
+      console.error('OpenAI API failed:', response.status, errorText);
+      throw new Error(`OpenAI API failed: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
-    return data.choices[0].message.content;
+    const aiResponse = data.choices[0].message.content;
+    const processingTime = Date.now() - startTime;
+    
+    console.log(`Generated ${questionType} response (${aiResponse.length} chars) in ${processingTime}ms`);
+    
+    return {
+      response: aiResponse,
+      metadata: {
+        questionType,
+        researchUsed: !!researchSnippet,
+        modelUsed: modelToUse,
+        responseLength: aiResponse.length,
+        processingTimeMs: processingTime
+      }
+    };
   } catch (error) {
     console.error('Error generating AI response:', error);
-    return `Based on our company profile, we are well-positioned to address this requirement. Our team of ${profile?.team_size || 'experienced professionals'} has ${profile?.years_in_business || 'significant'} experience in ${profile?.industry || 'this sector'}. We would be happy to provide more specific details upon request.`;
+    const processingTime = Date.now() - startTime;
+    
+    // Enhanced fallback response
+    const fallbackResponse = questionType === 'closed' 
+      ? `Yes, our ${profile?.company_name || 'organisation'} meets this requirement. With ${profile?.years_in_business || 'significant'} experience in ${profile?.industry || 'this sector'}, we maintain appropriate ${questionType === 'closed' && question.toLowerCase().includes('policy') ? 'policies and procedures' : 'standards and practices'}.`
+      : `Our ${profile?.company_name || 'organisation'} has developed a comprehensive approach to this requirement. With ${profile?.years_in_business || 'significant'} experience in ${profile?.industry || 'the sector'} and a team of ${profile?.team_size || 'experienced professionals'}, we maintain robust processes and procedures. We would be pleased to provide detailed information during the evaluation process.`;
+    
+    return {
+      response: fallbackResponse,
+      metadata: {
+        questionType,
+        researchUsed: false,
+        modelUsed: 'fallback',
+        responseLength: fallbackResponse.length,
+        processingTimeMs: processingTime
+      }
+    };
   }
 }
