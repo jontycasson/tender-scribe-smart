@@ -318,17 +318,17 @@ Could not detect structured questions. Try uploading a clearer format or manuall
 
       if (updateError) throw updateError;
 
-      // Get user's company profile for personalized responses
+      // Get tender and company profile for personalized responses
       const { data: tenderData } = await supabase
         .from('tenders')
-        .select('user_id')
+        .select('user_id, company_profile_id')
         .eq('id', tenderId)
         .single();
 
       const { data: profileData } = await supabase
         .from('company_profiles')
         .select('*')
-        .eq('user_id', tenderData.user_id)
+        .eq('id', tenderData.company_profile_id)
         .maybeSingle();
 
       // Generate AI responses for each question with enhanced processing
@@ -338,7 +338,7 @@ Could not detect structured questions. Try uploading a clearer format or manuall
       console.log(`Processing ${questions.length} questions for tender ${tenderId}`);
       console.log('Research capability:', perplexityApiKey ? 'enabled' : 'disabled');
       
-      // Process all questions with enhanced AI generation and collect responses before saving
+      // Process all questions with memory search first, then AI generation and collect responses before saving
       const responsesToInsert = [];
       
       for (let i = 0; i < questions.length; i++) {
@@ -346,15 +346,91 @@ Could not detect structured questions. Try uploading a clearer format or manuall
         console.log(`Processing question ${i + 1}/${questions.length}: ${question.substring(0, 100)}...`);
         
         try {
-          const { response: aiResponse, metadata } = await generateEnhancedAIResponse(
-            question, 
-            profileData, 
-            openAIApiKey,
-            perplexityApiKey
-          );
+          // First, check if we have this question in memory
+          let memoryResult = null;
+          let aiResponse = null;
+          let metadata = {
+            questionType: 'open',
+            researchUsed: false,
+            modelUsed: 'memory',
+            responseLength: 0,
+            processingTimeMs: 0
+          };
+
+          if (tenderData.company_profile_id && openAIApiKey) {
+            const startTime = Date.now();
+            
+            try {
+              // Generate embedding for the question
+              const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${openAIApiKey}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  model: 'text-embedding-3-small',
+                  input: question,
+                  encoding_format: 'float'
+                })
+              });
+
+              if (embeddingResponse.ok) {
+                const embeddingData = await embeddingResponse.json();
+                const embedding = embeddingData.data[0].embedding;
+
+                // Search memory for similar questions
+                const { data: memoryResults } = await supabase.rpc('match_qa_memory', {
+                  query_embedding: embedding,
+                  company_id: tenderData.company_profile_id,
+                  match_threshold: 0.8,
+                  match_count: 1
+                });
+
+                if (memoryResults && memoryResults.length > 0) {
+                  memoryResult = memoryResults[0];
+                  aiResponse = memoryResult.answer;
+                  
+                  // Update usage count
+                  await supabase
+                    .from('qa_memory')
+                    .update({ 
+                      usage_count: memoryResult.usage_count + 1,
+                      updated_at: new Date().toISOString()
+                    })
+                    .eq('id', memoryResult.id);
+
+                  metadata = {
+                    questionType: 'memory',
+                    researchUsed: false,
+                    modelUsed: 'memory',
+                    responseLength: aiResponse.length,
+                    processingTimeMs: Date.now() - startTime
+                  };
+                  
+                  console.log(`Found memory match for question ${i + 1} (similarity: ${memoryResult.similarity})`);
+                }
+              }
+            } catch (memoryError) {
+              console.error(`Memory search failed for question ${i + 1}:`, memoryError);
+            }
+          }
+
+          // If no memory match, generate new AI response
+          if (!aiResponse) {
+            const result = await generateEnhancedAIResponse(
+              question, 
+              profileData, 
+              openAIApiKey,
+              perplexityApiKey
+            );
+            aiResponse = result.response;
+            metadata = result.metadata;
+          }
           
           responsesToInsert.push({
             tender_id: tenderId,
+            company_profile_id: tenderData.company_profile_id,
             question: question,
             ai_generated_answer: aiResponse,
             is_approved: false,
@@ -365,15 +441,16 @@ Could not detect structured questions. Try uploading a clearer format or manuall
             processing_time_ms: metadata.processingTimeMs
           });
           
-          console.log(`Successfully generated ${metadata.questionType} response for question ${i + 1} (${metadata.responseLength} chars, ${metadata.processingTimeMs}ms)`);
+          console.log(`Successfully processed question ${i + 1} using ${metadata.modelUsed} (${metadata.responseLength} chars, ${metadata.processingTimeMs}ms)`);
         } catch (error) {
-          console.error(`Error generating AI response for question ${i + 1}:`, error);
+          console.error(`Error processing question ${i + 1}:`, error);
           
           // Enhanced fallback response with metadata
           const fallbackResponse = `Based on our company profile and ${profileData?.years_in_business || 'significant'} experience in ${profileData?.industry || 'this sector'}, we are well-positioned to address this requirement. Our team maintains appropriate standards and would be pleased to provide detailed information upon request.`;
           
           responsesToInsert.push({
             tender_id: tenderId,
+            company_profile_id: tenderData.company_profile_id,
             question: question,
             ai_generated_answer: fallbackResponse,
             is_approved: false,

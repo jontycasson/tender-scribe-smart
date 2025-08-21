@@ -159,9 +159,27 @@ const NewTender = () => {
       setProcessingProgress(40);
       setCurrentProcessingStage(1);
 
+      // Get user's company profile ID first
+      const { data: companyProfile } = await supabase
+        .from('company_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .single();
+
+      if (!companyProfile) {
+        toast({
+          title: "Company profile required",
+          description: "Please complete your company profile first.",
+          variant: "destructive",
+        });
+        navigate('/onboarding');
+        return;
+      }
+
       // Create tender record
       const tenderRecord = {
         user_id: user.id,
+        company_profile_id: companyProfile.id,
         title: tenderTitle || file.name.replace(/\.[^/.]+$/, ""),
         original_filename: file.name,
         file_url: uploadData.path,
@@ -339,16 +357,40 @@ const NewTender = () => {
 
       if (error) throw error;
 
+      const question = questions.find(q => q.id === questionId);
+      if (question) {
+        // Upsert to memory when response is approved
+        try {
+          const finalAnswer = question.user_edited_answer || question.ai_generated_answer;
+          await supabase.functions.invoke('upsert-memory', {
+            body: { 
+              question: question.question,
+              answer: finalAnswer,
+              sourceResponseId: questionId
+            }
+          });
+          console.log('Successfully upserted to memory:', question.question.substring(0, 50));
+        } catch (memoryError) {
+          console.error('Failed to upsert to memory:', memoryError);
+          // Don't fail the approval if memory upsert fails
+        }
+      }
+
       setQuestions(prev => prev.map(q => 
         q.id === questionId ? { ...q, is_approved: true } : q
       ));
 
       toast({
         title: "Response approved",
-        description: "Response has been approved.",
+        description: "Response has been approved and saved to company memory.",
       });
     } catch (error) {
       console.error('Approval error:', error);
+      toast({
+        title: "Approval failed",
+        description: "Failed to approve response.",
+        variant: "destructive",
+      });
     }
   };
 

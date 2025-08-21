@@ -30,10 +30,22 @@ const Dashboard = () => {
 
   const fetchTenders = async () => {
     try {
+      // Get user's company profile ID first
+      const { data: companyProfile } = await supabase
+        .from('company_profiles')
+        .select('id')
+        .eq('user_id', user?.id)
+        .single();
+
+      if (!companyProfile) {
+        setTenders([]);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('tenders')
         .select('*')
-        .eq('user_id', user?.id)
+        .eq('company_profile_id', companyProfile.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -124,8 +136,7 @@ const Dashboard = () => {
       const { error: tenderError } = await supabase
         .from('tenders')
         .delete()
-        .eq('id', tender.id)
-        .eq('user_id', user?.id);
+        .eq('id', tender.id);
 
       if (tenderError) throw tenderError;
 
