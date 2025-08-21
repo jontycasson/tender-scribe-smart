@@ -60,7 +60,7 @@ const Index = () => {
             
             <div className="text-center p-6 rounded-lg border bg-card">
               <Users className="h-10 w-10 text-primary mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Personalized Responses</h3>
+              <h3 className="text-lg font-semibold mb-2">Personalised Responses</h3>
               <p className="text-muted-foreground">
                 Generate tailored responses based on your company profile and past successes.
               </p>
