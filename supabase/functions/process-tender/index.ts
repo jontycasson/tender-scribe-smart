@@ -459,11 +459,11 @@ function extractQuestionsFromText(text: string): string[] {
         const content = match[1].trim();
         if (content.endsWith('?')) return content;
         
-        // Check for question indicators
-        const questionWords = /^(what|how|when|where|why|which|who|describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate|give|show|present)/i;
-        const businessTerms = /\b(experience|approach|method|capability|ability|requirements?|criteria|strategy|plan|proposal|solution|process|procedure|compliance|certification|qualification)/i;
+        // Check for question indicators - expanded to include common tender questions
+        const questionWords = /^(what|how|when|where|why|which|who|describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate|give|show|present|do\s+you|can\s+you|have\s+you|will\s+you|are\s+you|is\s+your)/i;
+        const businessTerms = /\b(experience|approach|method|capability|ability|requirements?|criteria|strategy|plan|proposal|solution|process|procedure|compliance|certification|qualification|DPO|CEO|staff|team|policy|policies)/i;
         
-        if (questionWords.test(content) || businessTerms.test(content)) {
+        if (questionWords.test(content) || businessTerms.test(content) || content.includes('(') || content.includes('/')) {
           return content.endsWith('?') ? content : content + '?';
         }
         return null;
@@ -478,11 +478,11 @@ function extractQuestionsFromText(text: string): string[] {
         const content = match[1].trim();
         if (content.endsWith('?')) return content;
         
-        // Check for question indicators
-        const questionWords = /^(what|how|when|where|why|which|who|describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate|give|show|present)/i;
-        const businessTerms = /\b(experience|approach|method|capability|ability|requirements?|criteria|strategy|plan|proposal|solution|process|procedure|compliance|certification|qualification)/i;
+        // Check for question indicators - expanded to include common tender questions
+        const questionWords = /^(what|how|when|where|why|which|who|describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate|give|show|present|do\s+you|can\s+you|have\s+you|will\s+you|are\s+you|is\s+your)/i;
+        const businessTerms = /\b(experience|approach|method|capability|ability|requirements?|criteria|strategy|plan|proposal|solution|process|procedure|compliance|certification|qualification|DPO|CEO|staff|team|policy|policies)/i;
         
-        if (questionWords.test(content) || businessTerms.test(content)) {
+        if (questionWords.test(content) || businessTerms.test(content) || content.includes('(') || content.includes('/')) {
           return content.endsWith('?') ? content : content + '?';
         }
         return null;
@@ -497,11 +497,11 @@ function extractQuestionsFromText(text: string): string[] {
         const content = match[1].trim();
         if (content.endsWith('?')) return content;
         
-        // Q-prefixed items are very likely to be questions
-        const questionWords = /^(what|how|when|where|why|which|who|describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate|give|show|present)/i;
-        const businessTerms = /\b(experience|approach|method|capability|ability|requirements?|criteria|strategy|plan|proposal|solution|process|procedure|compliance|certification|qualification)/i;
+        // Q-prefixed items are very likely to be questions - expanded patterns
+        const questionWords = /^(what|how|when|where|why|which|who|describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate|give|show|present|do\s+you|can\s+you|have\s+you|will\s+you|are\s+you|is\s+your)/i;
+        const businessTerms = /\b(experience|approach|method|capability|ability|requirements?|criteria|strategy|plan|proposal|solution|process|procedure|compliance|certification|qualification|DPO|CEO|staff|team|policy|policies)/i;
         
-        if (questionWords.test(content) || businessTerms.test(content) || content.length > 10) {
+        if (questionWords.test(content) || businessTerms.test(content) || content.length > 10 || content.includes('(') || content.includes('/')) {
           return content.endsWith('?') ? content : content + '?';
         }
         return null;
