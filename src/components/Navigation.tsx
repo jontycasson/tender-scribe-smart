@@ -42,7 +42,7 @@ export const Navigation = ({ showNewTenderButton = false }: NavigationProps) => 
             <img 
               src="/lovable-uploads/730698ea-a3a2-4ade-b2a7-2b63eb99bdf2.png" 
               alt="Proposal.fit" 
-              className="w-40 h-40"
+              className="h-16"
             />
           </Link>
 
