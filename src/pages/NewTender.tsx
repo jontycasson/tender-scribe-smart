@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { ProcessingProgress } from "@/components/ui/processing-progress";
 import { useToast } from "@/hooks/use-toast";
 import { Upload, FileText, Download, Save, Check, X, Building2, ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -21,10 +22,36 @@ interface Question {
   is_approved: boolean;
 }
 
+const processingStages = [
+  {
+    id: "uploading",
+    label: "Uploading file",
+    description: "Securely uploading your tender document to our servers"
+  },
+  {
+    id: "extracting",
+    label: "Extracting text",
+    description: "Using advanced OCR to extract text from your document"
+  },
+  {
+    id: "identifying",
+    label: "Identifying questions",
+    description: "Analyzing document structure to find tender questions"
+  },
+  {
+    id: "generating",
+    label: "Generating responses",
+    description: "Creating AI-powered responses using your company profile"
+  }
+];
+
 const NewTender = () => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [currentProcessingStage, setCurrentProcessingStage] = useState(0);
+  const [processingProgress, setProcessingProgress] = useState(0);
+  const [processingError, setProcessingError] = useState<string | null>(null);
   const [tenderId, setTenderId] = useState<string | null>(null);
   const [tenderTitle, setTenderTitle] = useState("");
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -108,11 +135,16 @@ const NewTender = () => {
 
     console.log('Starting upload and process for file:', file.name);
     setUploading(true);
+    setProcessing(true);
+    setCurrentProcessingStage(0);
+    setProcessingProgress(10);
+    setProcessingError(null);
     
     try {
       // Upload file to storage
       const fileName = `${Date.now()}-${file.name}`;
       console.log('Uploading file with name:', fileName);
+      setProcessingProgress(25);
       
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('tender-documents')
@@ -124,6 +156,8 @@ const NewTender = () => {
       }
 
       console.log('File uploaded successfully:', uploadData);
+      setProcessingProgress(40);
+      setCurrentProcessingStage(1);
 
       // Create tender record
       const tenderRecord = {
@@ -149,6 +183,7 @@ const NewTender = () => {
 
       console.log('Tender created successfully:', tenderData);
       setTenderId(tenderData.id);
+      setProcessingProgress(50);
       // Don't navigate to review step yet - wait for processing to complete
       
       // Process document with AI and generate responses
@@ -156,6 +191,7 @@ const NewTender = () => {
 
     } catch (error) {
       console.error('Upload and process error:', error);
+      setProcessingError(error.message || "Failed to upload tender document. Please try again.");
       toast({
         title: "Upload failed",
         description: error.message || "Failed to upload tender document. Please try again.",
@@ -164,16 +200,21 @@ const NewTender = () => {
       setCurrentStep('upload'); // Reset to upload step on error
     } finally {
       setUploading(false);
+      // Don't reset processing here as it continues with document processing
     }
   };
 
   const processDocument = async (tenderId: string, filePath: string) => {
     console.log('Starting document processing for tender:', tenderId, 'file:', filePath);
-    setProcessing(true);
+    setCurrentProcessingStage(2);
+    setProcessingProgress(60);
     
     try {
       // Call edge function to process document
       console.log('Calling process-tender edge function...');
+      setProcessingProgress(75);
+      setCurrentProcessingStage(3);
+      
       const { data, error } = await supabase.functions.invoke('process-tender', {
         body: { tenderId, filePath }
       });
@@ -184,6 +225,7 @@ const NewTender = () => {
       }
 
       console.log('Edge function response:', data);
+      setProcessingProgress(90);
 
       // Wait a moment for the database to be updated
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -217,6 +259,7 @@ const NewTender = () => {
       if (tenderData.status === 'error' || (tenderData.parsed_data && typeof tenderData.parsed_data === 'object' && 'error' in tenderData.parsed_data)) {
         const parsedData = tenderData.parsed_data as { error?: string } | null;
         const errorMessage = parsedData?.error || "Failed to extract questions from document";
+        setProcessingError(errorMessage.includes('❌') ? errorMessage : "We couldn't extract questions from your document. Please check that your document has numbered questions (e.g., '1. Describe your experience').");
         toast({
           title: "Extraction failed",
           description: errorMessage.includes('❌') ? errorMessage : "We couldn't extract questions from your document. Please check that your document has numbered questions (e.g., '1. Describe your experience').",
@@ -227,6 +270,7 @@ const NewTender = () => {
       }
 
       if (!responsesData || responsesData.length === 0) {
+        setProcessingError("No questions could be extracted from the uploaded document.");
         toast({
           title: "No questions found",
           description: "No questions could be extracted from the uploaded document.",
@@ -236,6 +280,7 @@ const NewTender = () => {
         return;
       }
 
+      setProcessingProgress(100);
       setQuestions(responsesData);
       setCurrentStep('review'); // Only navigate to review step on successful processing
       
@@ -246,6 +291,7 @@ const NewTender = () => {
 
     } catch (error) {
       console.error('Processing error:', error);
+      setProcessingError(error.message || "Failed to process document. Please try again.");
       toast({
         title: "Processing failed", 
         description: error.message || "Failed to process document. Please try again.",
@@ -469,26 +515,40 @@ const NewTender = () => {
                   </div>
                 )}
 
-                <Button
-                  onClick={uploadAndProcessTender}
-                  disabled={!file || uploading || processing}
-                  className="w-full"
-                  size="lg"
-                >
-                  {uploading ? (
-                    <div className="flex items-center space-x-2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      <span>Uploading...</span>
-                    </div>
-                  ) : processing ? (
-                    <div className="flex items-center space-x-2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      <span>Processing...</span>
-                    </div>
-                  ) : (
-                    "Upload and Process"
-                  )}
-                </Button>
+                {!processing ? (
+                  <Button
+                    onClick={uploadAndProcessTender}
+                    disabled={!file || uploading}
+                    className="w-full"
+                    size="lg"
+                  >
+                    Upload and Process
+                  </Button>
+                ) : (
+                  <div className="space-y-6">
+                    <ProcessingProgress
+                      stages={processingStages}
+                      currentStageIndex={currentProcessingStage}
+                      progress={processingProgress}
+                      isComplete={processingProgress === 100}
+                      error={processingError}
+                    />
+                    {processingError && (
+                      <Button
+                        onClick={() => {
+                          setProcessing(false);
+                          setProcessingError(null);
+                          setProcessingProgress(0);
+                          setCurrentProcessingStage(0);
+                        }}
+                        variant="outline"
+                        className="w-full"
+                      >
+                        Try Again
+                      </Button>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
