@@ -23,11 +23,11 @@ const Index = () => {
       {/* Hero Section */}
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] px-6">
         <div className="text-center max-w-4xl mx-auto">
-          <div className="flex items-center justify-center mb-6">
+          <div className="flex items-center justify-center mb-8">
             <img 
               src="/lovable-uploads/4aa20eab-20bb-44ed-8870-8715d853fef3.png" 
               alt="Proposal.fit" 
-              className="h-16"
+              className="h-20 sm:h-24 md:h-28 lg:h-32"
             />
           </div>
           
