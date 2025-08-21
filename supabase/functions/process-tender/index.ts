@@ -725,8 +725,27 @@ function extractQuestionsFromText(text: string): string[] {
   return questions;
 }
 
+// Helper function to identify entity questions that need research
+function needsEntityResearch(question: string): boolean {
+  const questionLower = question.toLowerCase();
+  
+  // Entity patterns that benefit from research
+  const entityPatterns = [
+    /\b(dpo|data\s+protection\s+officer)\b/,
+    /\b(ceo|chief\s+executive\s+officer)\b/,
+    /\b(cfo|chief\s+financial\s+officer)\b/,
+    /\b(cto|chief\s+technology\s+officer)\b/,
+    /\b(iso\s+\d+|iso\d+)\b/,
+    /\b(gdpr\s+officer|privacy\s+officer)\b/,
+    /\b(compliance\s+officer)\b/,
+    /\b(security\s+officer|ciso)\b/
+  ];
+  
+  return entityPatterns.some(pattern => pattern.test(questionLower));
+}
+
 // Classify question type for optimized response strategy
-function classifyQuestion(question: string): { type: 'closed' | 'open', reasoning: string } {
+function classifyQuestion(question: string): { type: 'closed' | 'open', reasoning: string, needsResearch?: boolean } {
   const questionLower = question.toLowerCase();
   
   // Closed question indicators (Yes/No, factual, compliance)
@@ -747,19 +766,32 @@ function classifyQuestion(question: string): { type: 'closed' | 'open', reasonin
   
   const isClosedMatch = closedPatterns.some(pattern => pattern.test(questionLower));
   const isOpenMatch = openPatterns.some(pattern => pattern.test(questionLower));
+  const entityResearch = needsEntityResearch(question);
   
   if (isClosedMatch && !isOpenMatch) {
-    return { type: 'closed', reasoning: 'Detected Yes/No or factual question pattern' };
+    return { 
+      type: 'closed', 
+      reasoning: 'Detected Yes/No or factual question pattern',
+      needsResearch: entityResearch
+    };
   } else if (isOpenMatch) {
-    return { type: 'open', reasoning: 'Detected explanatory or process question pattern' };
+    return { 
+      type: 'open', 
+      reasoning: 'Detected explanatory or process question pattern',
+      needsResearch: true
+    };
   } else {
     // Default to open for safety
-    return { type: 'open', reasoning: 'Unclear pattern, defaulting to detailed response' };
+    return { 
+      type: 'open', 
+      reasoning: 'Unclear pattern, defaulting to detailed response',
+      needsResearch: true
+    };
   }
 }
 
 // Enhanced research function using Perplexity API
-async function fetchResearchSnippet(question: string, perplexityApiKey?: string): Promise<string | null> {
+async function fetchResearchSnippet(question: string, companyName: string, perplexityApiKey?: string): Promise<string | null> {
   if (!perplexityApiKey) {
     console.log('Perplexity API key not available, skipping research');
     return null;
@@ -774,6 +806,34 @@ async function fetchResearchSnippet(question: string, perplexityApiKey?: string)
   try {
     console.log('Fetching research for question:', question.substring(0, 100) + '...');
     
+    // Determine if this is an entity question that needs specific search
+    const isEntityQuestion = needsEntityResearch(question);
+    
+    let researchPrompt: string;
+    if (isEntityQuestion) {
+      // For entity questions, search specifically for the company and role
+      researchPrompt = `Find specific information about "${companyName}" company regarding this question: "${question}". 
+
+Search for:
+- Named individuals in specific roles (DPO, CEO, officers)
+- Specific certifications or compliance details
+- Official company information and leadership
+- Include sources and links when possible
+
+Focus on factual, verifiable information about this specific company.`;
+    } else {
+      // For general questions, search for best practices and standards
+      researchPrompt = `Research information relevant to this tender/procurement question: "${question}". 
+
+Provide concise, factual information about:
+- Industry best practices and standards
+- Regulatory requirements
+- Common compliance approaches
+- Professional standards and frameworks
+
+Focus on general guidance that could help answer this type of question.`;
+    }
+    
     const response = await fetch('https://api.perplexity.ai/chat/completions', {
       method: 'POST',
       headers: {
@@ -785,16 +845,18 @@ async function fetchResearchSnippet(question: string, perplexityApiKey?: string)
         messages: [
           {
             role: 'system',
-            content: 'Provide factual information to help answer business and procurement questions. Focus on current best practices, regulations, and industry standards.'
+            content: isEntityQuestion 
+              ? 'You are a research assistant helping find specific information about companies and their personnel. Provide factual, verifiable information with sources when possible.'
+              : 'Provide factual information to help answer business and procurement questions. Focus on current best practices, regulations, and industry standards.'
           },
           {
             role: 'user',
-            content: `Research information relevant to this tender/procurement question: "${question}". Provide concise, factual information about best practices, standards, or requirements.`
+            content: researchPrompt
           }
         ],
         temperature: 0.2,
         top_p: 0.9,
-        max_tokens: 300,
+        max_tokens: isEntityQuestion ? 400 : 300,
         return_images: false,
         return_related_questions: false,
         search_recency_filter: 'month',
@@ -812,7 +874,7 @@ async function fetchResearchSnippet(question: string, perplexityApiKey?: string)
     const researchContent = data.choices?.[0]?.message?.content;
     
     if (researchContent && researchContent.length > 20) {
-      console.log('Research fetched successfully, length:', researchContent.length);
+      console.log(`Research fetched successfully (${isEntityQuestion ? 'entity' : 'general'}), length:`, researchContent.length);
       return researchContent;
     }
     
@@ -842,13 +904,14 @@ async function generateEnhancedAIResponse(
   const startTime = Date.now();
   
   // Step 1: Classify the question
-  const { type: questionType, reasoning } = classifyQuestion(question);
+  const { type: questionType, reasoning, needsResearch } = classifyQuestion(question);
   console.log(`Question classified as ${questionType}: ${reasoning}`);
   
-  // Step 2: Fetch research for open questions
+  // Step 2: Fetch research for questions that need it (open questions or entity closed questions)
   let researchSnippet: string | null = null;
-  if (questionType === 'open') {
-    researchSnippet = await fetchResearchSnippet(question, perplexityApiKey);
+  if (needsResearch) {
+    const companyName = profile?.company_name || 'the company';
+    researchSnippet = await fetchResearchSnippet(question, companyName, perplexityApiKey);
   }
   
   // Step 3: Build enhanced prompt
