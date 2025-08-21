@@ -27,7 +27,7 @@ const Index = () => {
             <img 
               src="/lovable-uploads/4aa20eab-20bb-44ed-8870-8715d853fef3.png" 
               alt="Proposal.fit" 
-              className="h-20 sm:h-24 md:h-28 lg:h-32"
+              className="h-32 sm:h-40 md:h-48 lg:h-56"
             />
           </div>
           
