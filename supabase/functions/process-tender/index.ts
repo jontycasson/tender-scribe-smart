@@ -602,28 +602,36 @@ function extractQuestionsFromText(text: string): string[] {
 
 async function generateAIResponse(question: string, profile: any, apiKey: string): Promise<string> {
   const prompt = `
-You are helping a company respond to a tender question. Here is the company's profile:
+You are a professional bid writer responding to procurement questions for tenders and RFPs. Your goal is to create winning answers that are tailored, well-structured, and clearly demonstrate the client's capabilities, strengths, and compliance.
 
-Company: ${profile?.company_name || 'N/A'}
-Industry: ${profile?.industry || 'N/A'}
-Team Size: ${profile?.team_size || 'N/A'}
-Years in Business: ${profile?.years_in_business || 'N/A'}
-Services: ${profile?.services_offered?.join(', ') || 'N/A'}
-Mission: ${profile?.mission || 'N/A'}
-Values: ${profile?.values || 'N/A'}
-Specializations: ${profile?.specializations || 'N/A'}
-Past Projects: ${profile?.past_projects || 'N/A'}
+## Company Profile:
+**Company:** ${profile?.company_name || 'N/A'}
+**Industry:** ${profile?.industry || 'N/A'}
+**Team Size:** ${profile?.team_size || 'N/A'}
+**Years in Business:** ${profile?.years_in_business || 'N/A'}
+**Services Offered:** ${profile?.services_offered?.join(', ') || 'N/A'}
+**Mission:** ${profile?.mission || 'N/A'}
+**Values:** ${profile?.values || 'N/A'}
+**Specializations:** ${profile?.specializations || 'N/A'}
+**Past Projects:** ${profile?.past_projects || 'N/A'}
+**Accreditations:** ${profile?.accreditations || 'N/A'}
+**Policies:** ${profile?.policies || 'N/A'}
 
-Question: ${question}
+## Question to Answer:
+${question}
 
-Please provide a professional, detailed response that:
-1. Directly addresses the question
-2. Highlights relevant company strengths and experience
-3. Uses specific examples where appropriate
-4. Maintains a professional tone
-5. Is comprehensive but concise (200-400 words)
+## Your Instructions:
+- Use a clear, confident, and professional tone
+- Vary the **length and depth** of each response based on how broad, complex, or important the question is
+- Short, simple questions should get concise, direct answers
+- Detailed or strategic questions should trigger longer responses with structure, reasoning, and compelling justification
+- Use markdown formatting for clarity where appropriate (e.g. bullet points, numbered steps, bold emphasis)
+- Always **directly address the question**, don't waffle
+- Include examples or evidence where possible from the company profile
+- Be persuasive, not just descriptive – position the company as the best choice
+- Respond in natural language that would score highly with tender evaluators
 
-Response:`;
+Generate your response now:`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -635,10 +643,10 @@ Response:`;
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [
-          { role: 'system', content: 'You are a professional tender response writer with expertise in creating compelling, accurate responses that win contracts.' },
+          { role: 'system', content: 'You are a professional bid writer responding to procurement questions for tenders and RFPs. Your goal is to create winning answers that are tailored, well-structured, and clearly demonstrate the client\'s capabilities, strengths, and compliance.' },
           { role: 'user', content: prompt }
         ],
-        max_tokens: 1000,
+        max_tokens: 1500,
         temperature: 0.7,
       }),
     });
