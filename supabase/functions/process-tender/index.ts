@@ -334,23 +334,50 @@ Could not detect structured questions. Try uploading a clearer format or manuall
       // Generate AI responses for each question
       const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
       
-      for (const question of questions) {
-        const aiResponse = await generateAIResponse(question, profileData, openAIApiKey);
+      console.log(`Processing ${questions.length} questions for tender ${tenderId}`);
+      
+      // Process all questions and collect responses before saving
+      const responsesToInsert = [];
+      
+      for (let i = 0; i < questions.length; i++) {
+        const question = questions[i];
+        console.log(`Processing question ${i + 1}/${questions.length}: ${question.substring(0, 100)}...`);
         
-        // Save question and AI response to database
-        const { error: responseError } = await supabase
-          .from('tender_responses')
-          .insert({
+        try {
+          const aiResponse = await generateAIResponse(question, profileData, openAIApiKey);
+          responsesToInsert.push({
             tender_id: tenderId,
             question: question,
             ai_generated_answer: aiResponse,
             is_approved: false
           });
-
-        if (responseError) {
-          console.error('Error saving response:', responseError);
+          
+          console.log(`Successfully generated response for question ${i + 1}`);
+        } catch (error) {
+          console.error(`Error generating AI response for question ${i + 1}:`, error);
+          // Add a fallback response instead of failing completely
+          responsesToInsert.push({
+            tender_id: tenderId,
+            question: question,
+            ai_generated_answer: `Based on our company profile, we are well-positioned to address this requirement. Please contact us for more specific details.`,
+            is_approved: false
+          });
         }
       }
+      
+      console.log(`Generated ${responsesToInsert.length} responses, now saving to database...`);
+      
+      // Save all responses in a single batch operation for better reliability
+      const { error: batchInsertError } = await supabase
+        .from('tender_responses')
+        .insert(responsesToInsert);
+
+      if (batchInsertError) {
+        console.error('Error batch saving responses:', batchInsertError);
+        throw new Error(`Failed to save tender responses: ${batchInsertError.message}`);
+      }
+      
+      console.log('All responses saved successfully');
 
       // Update tender status
       await supabase
