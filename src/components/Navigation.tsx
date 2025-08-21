@@ -40,7 +40,7 @@ export const Navigation = ({ showNewTenderButton = false }: NavigationProps) => 
         <div className="flex items-center justify-between">
           <Link to="/" className="flex items-center hover:opacity-80 transition-opacity">
             <img 
-              src="/lovable-uploads/4aa20eab-20bb-44ed-8870-8715d853fef3.png" 
+              src="/lovable-uploads/730698ea-a3a2-4ade-b2a7-2b63eb99bdf2.png" 
               alt="Proposal.fit" 
               className="w-40 h-40"
             />

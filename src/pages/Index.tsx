@@ -25,7 +25,7 @@ const Index = () => {
         <div className="text-center max-w-4xl mx-auto">
           <div className="flex items-center justify-center mb-8">
             <img 
-              src="/lovable-uploads/4aa20eab-20bb-44ed-8870-8715d853fef3.png" 
+              src="/lovable-uploads/730698ea-a3a2-4ade-b2a7-2b63eb99bdf2.png" 
               alt="Proposal.fit" 
               className="h-32 sm:h-40 md:h-48 lg:h-56"
             />
