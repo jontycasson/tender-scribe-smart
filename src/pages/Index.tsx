@@ -24,8 +24,11 @@ const Index = () => {
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] px-6">
         <div className="text-center max-w-4xl mx-auto">
           <div className="flex items-center justify-center mb-6">
-            <Building2 className="h-12 w-12 text-primary mr-4" />
-            <h1 className="text-5xl font-bold">Proposal.fit</h1>
+            <img 
+              src="/lovable-uploads/4aa20eab-20bb-44ed-8870-8715d853fef3.png" 
+              alt="Proposal.fit" 
+              className="h-16"
+            />
           </div>
           
           <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">

@@ -2,7 +2,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Building2, LogOut, Settings, Upload } from "lucide-react";
+import { LogOut, Settings, Upload } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -38,9 +38,12 @@ export const Navigation = ({ showNewTenderButton = false }: NavigationProps) => 
     <header className="border-b bg-card">
       <div className="max-w-7xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
-          <Link to="/" className="flex items-center space-x-4 hover:opacity-80 transition-opacity">
-            <Building2 className="h-8 w-8 text-primary" />
-            <h1 className="text-2xl font-bold">Proposal.fit</h1>
+          <Link to="/" className="flex items-center hover:opacity-80 transition-opacity">
+            <img 
+              src="/lovable-uploads/4aa20eab-20bb-44ed-8870-8715d853fef3.png" 
+              alt="Proposal.fit" 
+              className="h-10"
+            />
           </Link>
 
           <div className="flex items-center space-x-4">
