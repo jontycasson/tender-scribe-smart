@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ArrowLeft, FileText, Calendar, Download, ChevronLeft, ChevronRight, CheckCircle, FileDown, X, MoreVertical, RotateCcw } from "lucide-react";
+import { ArrowLeft, FileText, Calendar, Download, ChevronLeft, ChevronRight, CheckCircle, FileDown, X, MoreVertical, RotateCcw, Globe } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigation } from "@/components/Navigation";
@@ -33,6 +33,8 @@ interface TenderResponse {
   ai_generated_answer: string | null;
   user_edited_answer: string | null;
   is_approved: boolean | null;
+  research_used: boolean | null;
+  model_used: string | null;
 }
 
 const TenderDetails = () => {
@@ -679,6 +681,12 @@ const TenderDetails = () => {
                               </p>
                             </div>
                             <div className="flex items-center gap-2">
+                              {response.research_used && (
+                                <Badge variant="outline" className="text-xs">
+                                  <Globe className="h-3 w-3 mr-1" />
+                                  Web Research
+                                </Badge>
+                              )}
                               {response.is_approved && (
                                 <Badge variant="secondary">
                                   <CheckCircle className="h-3 w-3 mr-1" />
