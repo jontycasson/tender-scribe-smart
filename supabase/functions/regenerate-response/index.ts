@@ -239,9 +239,10 @@ Requirements:
 - Be professional and confident
 - Use specific company details from the profile
 - For ${classification.type} questions, provide ${classification.type === 'closed' ? 'direct, factual answers' : 'detailed explanations with examples'}
-${entityQuestion ? '- For personnel questions (DPO, CEO, etc.): If research found a specific name, include "Our [Role] is [Full Name]" in your response. If no specific name was found, confirm the role exists and offer to provide details under NDA without fabricating names.' : ''}
+${entityQuestion ? '- **CRITICAL**: For personnel questions (DPO, CEO, etc.): NEVER use placeholders like [Name], [CEO Name], [Title]. If research found a specific name, include "Our [Role] is [Full Name]". If no specific name was found, respond with "We have a [role] in place" or "We maintain appropriate [structure]" without fake specifics.' : ''}
 - Focus on capabilities and experience relevant to the question
 - Keep response appropriate in length for the question type
+- Never fabricate names, titles, or specific details not provided in the context
 
 Generate a tailored response:`;
 

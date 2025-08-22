@@ -667,16 +667,13 @@ function extractQuestionsFromText(text: string): string[] {
     }
   ];
   
-  // Process each line with all patterns, tracking parent-child relationships
-  let currentParentQuestion: string | null = null;
+  // Process each line with all patterns - treat all questions as standalone
   const processedQuestions: string[] = [];
   
   for (const line of lines) {
     console.log(`Processing line: "${line}"`);
     let bestMatch = null;
     let bestConfidence = 0;
-    let isNumberedQuestion = false;
-    let isLetteredSubQuestion = false;
     let matchedPattern = null;
     
     for (const extractor of extractionPatterns) {
@@ -688,21 +685,11 @@ function extractQuestionsFromText(text: string): string[] {
           bestConfidence = extractor.confidence;
           matchedPattern = extractor;
           
-          // Check if this is a numbered question (first pattern)
+          // Log pattern detection
           if (extractor === extractionPatterns[0]) {
-            isNumberedQuestion = true;
             console.log(`Detected numbered question: ${processed.substring(0, 50)}...`);
-          }
-          
-          // Check if this is a lettered sub-question (second pattern with lowercase letter)
-          if (extractor === extractionPatterns[1]) {
-            // Use the original match to check if it starts with lowercase letter
-            const letterPrefix = match[1];
-            console.log(`Lettered pattern matched - prefix: "${letterPrefix}", content: "${match[2]}"`);
-            if (letterPrefix && letterPrefix.match(/^[a-z]/)) {
-              isLetteredSubQuestion = true;
-              console.log(`Detected lettered sub-question: ${processed.substring(0, 50)}...`);
-            }
+          } else if (extractor === extractionPatterns[1]) {
+            console.log(`Detected lettered question: ${processed.substring(0, 50)}...`);
           }
         }
       }
@@ -710,6 +697,15 @@ function extractQuestionsFromText(text: string): string[] {
     
     // Only process if confidence is above threshold
     if (bestMatch && bestConfidence >= 0.6) {
+      // Clean up leading punctuation from lettered questions
+      if (matchedPattern === extractionPatterns[1]) {
+        // Remove leading punctuation like ". " from content
+        bestMatch = bestMatch.replace(/^[\.\,\:\;\-\s]+/, '').trim();
+        if (!bestMatch.endsWith('?')) {
+          bestMatch += '?';
+        }
+      }
+      
       // Simplify duplicate detection - only exact matches
       const normalizedQuestion = bestMatch.toLowerCase().trim();
       const isDuplicate = processedQuestions.some(q => 
@@ -717,37 +713,12 @@ function extractQuestionsFromText(text: string): string[] {
       );
       
       if (!isDuplicate) {
-        if (isNumberedQuestion) {
-          // This is a new parent question
-          currentParentQuestion = bestMatch;
-          processedQuestions.push(bestMatch);
-          console.log(`Extracted parent question (confidence: ${bestConfidence}): ${bestMatch.substring(0, 100)}...`);
-          
-        } else if (isLetteredSubQuestion && currentParentQuestion) {
-          // This is a sub-question - append it to the current parent
-          const parentIndex = processedQuestions.length - 1;
-          if (parentIndex >= 0 && processedQuestions[parentIndex] === currentParentQuestion) {
-            // Append sub-question to parent
-            processedQuestions[parentIndex] += ` Also: ${bestMatch}`;
-            console.log(`Attached sub-question to parent: "${bestMatch}" -> "${currentParentQuestion.substring(0, 50)}..."`);
-          } else {
-            // Fallback: treat as standalone question if parent not found
-            processedQuestions.push(bestMatch);
-            console.log(`No parent found, extracted standalone lettered question: ${bestMatch.substring(0, 100)}...`);
-          }
-          
-        } else {
-          // This is a standalone question or lettered question with uppercase (treat as new parent)
-          if (matchedPattern === extractionPatterns[1]) {
-            // Uppercase lettered question becomes new parent
-            currentParentQuestion = bestMatch;
-          } else {
-            // Reset parent tracking for other types
-            currentParentQuestion = null;
-          }
-          processedQuestions.push(bestMatch);
-          console.log(`Extracted standalone question (confidence: ${bestConfidence}): ${bestMatch.substring(0, 100)}...`);
-        }
+        // All questions are treated as standalone
+        processedQuestions.push(bestMatch);
+        console.log(`Extracted standalone question (confidence: ${bestConfidence}): ${bestMatch.substring(0, 100)}...`);
+      } else {
+        console.log(`Skipped duplicate question: ${bestMatch.substring(0, 50)}...`);
+      }
       } else {
         console.log(`Skipped duplicate question: ${bestMatch.substring(0, 50)}...`);
       }
@@ -1008,7 +979,9 @@ ${question}
    - Use **British English** spellings (e.g. "organisation", "authorisation")
    - ${questionType === 'closed' ? 'Be direct and concise' : 'Use structured formatting with **bold**, bullet points, or numbered lists where helpful'}
 
-5. 🤖 Never fabricate policies, systems, certifications or staff roles. Only use what's provided via CONTEXT${researchSnippet ? ' or RESEARCH_SNIPPET' : ''}.
+5. 🤖 **CRITICAL:** Never fabricate policies, systems, certifications or staff roles. Only use what's provided via CONTEXT${researchSnippet ? ' or RESEARCH_SNIPPET' : ''}. 
+   - If asked about specific people (CEO, DPO, etc.) and no information is available, respond with "We have [role] in place" or "We maintain [appropriate structure]" rather than using placeholders like [Name] or [Title].
+   - If specific details aren't available, provide a professional response about your organisational structure without fake specifics.
 
 6. ✅ Aim for clarity, relevance, and helpfulness. Avoid buzzwords or fluff.
 
