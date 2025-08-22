@@ -424,9 +424,15 @@ const TenderDetails = () => {
       });
     } catch (error) {
       console.error('Error rewriting response:', error);
+      
+      // Show more detailed error message to user
+      const errorMessage = error.details 
+        ? `Failed to rewrite response: ${error.details}`
+        : error.message || "Failed to rewrite response";
+        
       toast({
         title: "Error",
-        description: "Failed to rewrite response",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

@@ -76,6 +76,7 @@ serve(async (req) => {
     // Generate rewritten response using OpenAI
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
     if (!openAIApiKey) {
+      console.error('OpenAI API key not configured');
       return new Response(JSON.stringify({ error: 'OpenAI API key not configured' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -93,35 +94,98 @@ Important: Do not invent any new facts or information. Only rewrite the existing
 
 Rewritten Response:`;
 
-    const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-5-2025-08-07',
-        messages: [
-          { 
-            role: 'system', 
-            content: 'You are a professional editor specializing in tender responses. Rewrite content accurately without adding new information or fabricating details.' 
-          },
-          { role: 'user', content: prompt }
-        ],
-        max_completion_tokens: mode === 'make_shorter' || mode === 'more_concise' ? 300 : 600,
-      }),
-    });
+    // Try GPT-5 first, then fallback to GPT-4o-mini
+    let rewrittenAnswer = null;
+    let modelUsed = 'gpt-5-2025-08-07';
 
-    if (!aiResponse.ok) {
-      console.error('OpenAI API error:', aiResponse.status, aiResponse.statusText);
-      return new Response(JSON.stringify({ error: 'Failed to rewrite response' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    try {
+      console.log(`Attempting rewrite with GPT-5 for response ${responseId}, mode: ${mode}`);
+      
+      const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAIApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-5-2025-08-07',
+          messages: [
+            { 
+              role: 'system', 
+              content: 'You are a professional editor specializing in tender responses. Rewrite content accurately without adding new information or fabricating details.' 
+            },
+            { role: 'user', content: prompt }
+          ],
+          max_completion_tokens: mode === 'make_shorter' || mode === 'more_concise' ? 300 : 600,
+        }),
       });
-    }
 
-    const aiData = await aiResponse.json();
-    const rewrittenAnswer = aiData.choices[0]?.message?.content;
+      if (!aiResponse.ok) {
+        const errorText = await aiResponse.text();
+        console.error('GPT-5 API error:', aiResponse.status, aiResponse.statusText, errorText);
+        throw new Error(`GPT-5 failed: ${aiResponse.status} ${errorText}`);
+      }
+
+      const aiData = await aiResponse.json();
+      rewrittenAnswer = aiData.choices[0]?.message?.content;
+      
+      if (!rewrittenAnswer) {
+        throw new Error('No content returned from GPT-5');
+      }
+      
+      console.log('GPT-5 rewrite successful');
+      
+    } catch (gpt5Error) {
+      console.log('GPT-5 failed, trying GPT-4o-mini fallback:', gpt5Error.message);
+      modelUsed = 'gpt-4o-mini';
+      
+      try {
+        const fallbackResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openAIApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              { 
+                role: 'system', 
+                content: 'You are a professional editor specializing in tender responses. Rewrite content accurately without adding new information or fabricating details.' 
+              },
+              { role: 'user', content: prompt }
+            ],
+            max_tokens: mode === 'make_shorter' || mode === 'more_concise' ? 300 : 600,
+            temperature: 0.7,
+          }),
+        });
+
+        if (!fallbackResponse.ok) {
+          const errorText = await fallbackResponse.text();
+          console.error('GPT-4o-mini fallback error:', fallbackResponse.status, fallbackResponse.statusText, errorText);
+          throw new Error(`Both models failed. GPT-4o-mini: ${fallbackResponse.status} ${errorText}`);
+        }
+
+        const fallbackData = await fallbackResponse.json();
+        rewrittenAnswer = fallbackData.choices[0]?.message?.content;
+        
+        if (!rewrittenAnswer) {
+          throw new Error('No content returned from GPT-4o-mini fallback');
+        }
+        
+        console.log('GPT-4o-mini fallback successful');
+        
+      } catch (fallbackError) {
+        console.error('Both GPT-5 and GPT-4o-mini failed:', fallbackError);
+        return new Response(JSON.stringify({ 
+          error: 'Failed to rewrite response with both models',
+          details: fallbackError.message 
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
 
     if (!rewrittenAnswer) {
       return new Response(JSON.stringify({ error: 'No rewritten response generated' }), {
@@ -136,7 +200,7 @@ Rewritten Response:`;
       .update({
         user_edited_answer: rewrittenAnswer,
         is_approved: false,
-        model_used: 'gpt-5-2025-08-07',
+        model_used: modelUsed,
         response_length: rewrittenAnswer.length,
         updated_at: new Date().toISOString()
       })
