@@ -568,19 +568,19 @@ function extractQuestionsFromText(text: string): string[] {
       }
     },
 
-    // 2. Lettered questions (A. What is..., B) How do..., C: Why...)
+    // 2. Lettered questions (A. What is..., B) How do..., C: Why..., a. Sub-question...)
     {
-      pattern: /^(?:[A-Z][\.\)\:]?\s*)(.*)/i,
+      pattern: /^(?:[A-Za-z][\.\)\:]?\s*)(.*)/i,
       confidence: 0.9,
       process: (match: RegExpMatchArray, line: string) => {
         const content = match[1].trim();
         if (content.endsWith('?')) return content;
         
-        // Check for question indicators - expanded to include common tender questions
-        const questionWords = /^(what|how|when|where|why|which|who|describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate|give|show|present|do\s+you|can\s+you|have\s+you|will\s+you|are\s+you|is\s+your)/i;
-        const businessTerms = /\b(experience|approach|method|capability|ability|requirements?|criteria|strategy|plan|proposal|solution|process|procedure|compliance|certification|qualification|DPO|CEO|staff|team|policy|policies)/i;
+        // Check for question indicators - expanded to include common tender questions and sub-questions
+        const questionWords = /^(what|how|when|where|why|which|who|describe|explain|provide|list|outline|detail|specify|state|identify|demonstrate|give|show|present|do\s+you|can\s+you|have\s+you|will\s+you|are\s+you|is\s+your|confirm|name|tenure|title|role)/i;
+        const businessTerms = /\b(experience|approach|method|capability|ability|requirements?|criteria|strategy|plan|proposal|solution|process|procedure|compliance|certification|qualification|DPO|CEO|staff|team|policy|policies|name|tenure|title|role|details|information)/i;
         
-        if (questionWords.test(content) || businessTerms.test(content) || content.includes('(') || content.includes('/')) {
+        if (questionWords.test(content) || businessTerms.test(content) || content.includes('(') || content.includes('/') || content.includes('if so')) {
           return content.endsWith('?') ? content : content + '?';
         }
         return null;
@@ -890,12 +890,20 @@ async function generateEnhancedAIResponse(
   const { type: questionType, reasoning, needsResearch } = classifyQuestion(question);
   console.log(`Question classified as ${questionType}: ${reasoning}`);
   
-  // Step 2: Fetch research for questions that need it (open questions or entity closed questions)
-  let researchSnippet: string | null = null;
-  if (needsResearch) {
-    const companyName = profile?.company_name || 'the company';
-    researchSnippet = await fetchResearchSnippet(question, companyName, perplexityApiKey);
-  }
+      // Step 2: Fetch research for questions that need it (open questions or entity closed questions)
+      let researchSnippet: string | null = null;
+      if (needsResearch) {
+        console.log('Fetching research snippet...');
+        const companyName = profile?.company_name || 'the company';
+        researchSnippet = await fetchResearchSnippet(question, companyName, perplexityApiKey);
+        if (researchSnippet) {
+          console.log('Research snippet fetched successfully, length:', researchSnippet.length);
+        } else {
+          console.log('No research snippet obtained');
+        }
+      } else {
+        console.log('Research not needed for this question type');
+      }
   
   // Step 3: Build enhanced prompt
   const contextSection = `## Company Profile:
