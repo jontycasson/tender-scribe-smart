@@ -570,10 +570,10 @@ function extractQuestionsFromText(text: string): string[] {
 
     // 2. Lettered questions (A. What is..., B) How do..., C: Why..., a. Sub-question...)
     {
-      pattern: /^(?:[A-Za-z][\.\)\:]?\s*)(.*)/i,
+      pattern: /^([A-Za-z][\.\)\:]?\s*)(.*)/i,
       confidence: 0.9,
       process: (match: RegExpMatchArray, line: string) => {
-        const content = match[1].trim();
+        const content = match[2].trim();
         if (content.endsWith('?')) return content;
         
         // Check for question indicators - expanded to include common tender questions and sub-questions
@@ -672,10 +672,12 @@ function extractQuestionsFromText(text: string): string[] {
   const processedQuestions: string[] = [];
   
   for (const line of lines) {
+    console.log(`Processing line: "${line}"`);
     let bestMatch = null;
     let bestConfidence = 0;
     let isNumberedQuestion = false;
     let isLetteredSubQuestion = false;
+    let matchedPattern = null;
     
     for (const extractor of extractionPatterns) {
       const match = line.match(extractor.pattern);
@@ -684,17 +686,22 @@ function extractQuestionsFromText(text: string): string[] {
         if (processed && processed.length > 10) {
           bestMatch = processed;
           bestConfidence = extractor.confidence;
+          matchedPattern = extractor;
           
-          // Check if this is a numbered question (pattern index 0)
+          // Check if this is a numbered question (first pattern)
           if (extractor === extractionPatterns[0]) {
             isNumberedQuestion = true;
+            console.log(`Detected numbered question: ${processed.substring(0, 50)}...`);
           }
           
-          // Check if this is a lettered sub-question (pattern index 1 with lowercase start)
+          // Check if this is a lettered sub-question (second pattern with lowercase letter)
           if (extractor === extractionPatterns[1]) {
-            const letteredMatch = line.match(/^([a-z][\.\)\:]?\s*)(.*)/i);
-            if (letteredMatch && letteredMatch[1].match(/^[a-z]/)) {
+            // Use the original match to check if it starts with lowercase letter
+            const letterPrefix = match[1];
+            console.log(`Lettered pattern matched - prefix: "${letterPrefix}", content: "${match[2]}"`);
+            if (letterPrefix && letterPrefix.match(/^[a-z]/)) {
               isLetteredSubQuestion = true;
+              console.log(`Detected lettered sub-question: ${processed.substring(0, 50)}...`);
             }
           }
         }
@@ -703,12 +710,10 @@ function extractQuestionsFromText(text: string): string[] {
     
     // Only process if confidence is above threshold
     if (bestMatch && bestConfidence >= 0.6) {
-      // Check for duplicates
+      // Simplify duplicate detection - only exact matches
       const normalizedQuestion = bestMatch.toLowerCase().trim();
       const isDuplicate = processedQuestions.some(q => 
-        q.toLowerCase().trim() === normalizedQuestion ||
-        q.toLowerCase().includes(normalizedQuestion) ||
-        normalizedQuestion.includes(q.toLowerCase())
+        q.toLowerCase().trim() === normalizedQuestion
       );
       
       if (!isDuplicate) {
@@ -722,26 +727,32 @@ function extractQuestionsFromText(text: string): string[] {
           // This is a sub-question - append it to the current parent
           const parentIndex = processedQuestions.length - 1;
           if (parentIndex >= 0 && processedQuestions[parentIndex] === currentParentQuestion) {
-            // Check if this parent already has sub-questions
-            if (processedQuestions[parentIndex].includes(' Also: ')) {
-              processedQuestions[parentIndex] += ` Also: ${bestMatch}`;
-            } else {
-              processedQuestions[parentIndex] += ` Also: ${bestMatch}`;
-            }
-            console.log(`Attached sub-question to parent: ${bestMatch.substring(0, 50)}... -> ${currentParentQuestion.substring(0, 50)}...`);
+            // Append sub-question to parent
+            processedQuestions[parentIndex] += ` Also: ${bestMatch}`;
+            console.log(`Attached sub-question to parent: "${bestMatch}" -> "${currentParentQuestion.substring(0, 50)}..."`);
           } else {
             // Fallback: treat as standalone question if parent not found
             processedQuestions.push(bestMatch);
-            console.log(`Extracted standalone lettered question (confidence: ${bestConfidence}): ${bestMatch.substring(0, 100)}...`);
+            console.log(`No parent found, extracted standalone lettered question: ${bestMatch.substring(0, 100)}...`);
           }
           
         } else {
-          // This is a standalone question (not numbered, not a lettered sub-question)
-          currentParentQuestion = null; // Reset parent tracking
+          // This is a standalone question or lettered question with uppercase (treat as new parent)
+          if (matchedPattern === extractionPatterns[1]) {
+            // Uppercase lettered question becomes new parent
+            currentParentQuestion = bestMatch;
+          } else {
+            // Reset parent tracking for other types
+            currentParentQuestion = null;
+          }
           processedQuestions.push(bestMatch);
           console.log(`Extracted standalone question (confidence: ${bestConfidence}): ${bestMatch.substring(0, 100)}...`);
         }
+      } else {
+        console.log(`Skipped duplicate question: ${bestMatch.substring(0, 50)}...`);
       }
+    } else {
+      console.log(`Line didn't meet criteria - confidence: ${bestConfidence}, match: ${bestMatch ? 'yes' : 'no'}`);
     }
   }
   
