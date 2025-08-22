@@ -21,7 +21,7 @@ const Auth = () => {
 
   useEffect(() => {
     if (user) {
-      navigate("/onboarding");
+      navigate("/dashboard");
     }
   }, [user, navigate]);
 
@@ -29,7 +29,7 @@ const Auth = () => {
     e.preventDefault();
     setLoading(true);
     
-    const redirectUrl = `${window.location.origin}/onboarding`;
+    const redirectUrl = `${window.location.origin}/dashboard`;
     
     const { error } = await supabase.auth.signUp({
       email,
@@ -70,7 +70,7 @@ const Auth = () => {
         variant: "destructive",
       });
     } else {
-      navigate("/onboarding");
+      navigate("/dashboard");
     }
     setLoading(false);
   };
