@@ -667,10 +667,15 @@ function extractQuestionsFromText(text: string): string[] {
     }
   ];
   
-  // Process each line with all patterns
+  // Process each line with all patterns, tracking parent-child relationships
+  let currentParentQuestion: string | null = null;
+  const processedQuestions: string[] = [];
+  
   for (const line of lines) {
     let bestMatch = null;
     let bestConfidence = 0;
+    let isNumberedQuestion = false;
+    let isLetteredSubQuestion = false;
     
     for (const extractor of extractionPatterns) {
       const match = line.match(extractor.pattern);
@@ -679,26 +684,69 @@ function extractQuestionsFromText(text: string): string[] {
         if (processed && processed.length > 10) {
           bestMatch = processed;
           bestConfidence = extractor.confidence;
+          
+          // Check if this is a numbered question (pattern index 0)
+          if (extractor === extractionPatterns[0]) {
+            isNumberedQuestion = true;
+          }
+          
+          // Check if this is a lettered sub-question (pattern index 1 with lowercase start)
+          if (extractor === extractionPatterns[1]) {
+            const letteredMatch = line.match(/^([a-z][\.\)\:]?\s*)(.*)/i);
+            if (letteredMatch && letteredMatch[1].match(/^[a-z]/)) {
+              isLetteredSubQuestion = true;
+            }
+          }
         }
       }
     }
     
-    // Only include if confidence is above threshold
+    // Only process if confidence is above threshold
     if (bestMatch && bestConfidence >= 0.6) {
-      // Avoid duplicates
+      // Check for duplicates
       const normalizedQuestion = bestMatch.toLowerCase().trim();
-      const isDuplicate = questions.some(q => 
+      const isDuplicate = processedQuestions.some(q => 
         q.toLowerCase().trim() === normalizedQuestion ||
         q.toLowerCase().includes(normalizedQuestion) ||
         normalizedQuestion.includes(q.toLowerCase())
       );
       
       if (!isDuplicate) {
-        questions.push(bestMatch);
-        console.log(`Extracted question (confidence: ${bestConfidence}): ${bestMatch.substring(0, 100)}...`);
+        if (isNumberedQuestion) {
+          // This is a new parent question
+          currentParentQuestion = bestMatch;
+          processedQuestions.push(bestMatch);
+          console.log(`Extracted parent question (confidence: ${bestConfidence}): ${bestMatch.substring(0, 100)}...`);
+          
+        } else if (isLetteredSubQuestion && currentParentQuestion) {
+          // This is a sub-question - append it to the current parent
+          const parentIndex = processedQuestions.length - 1;
+          if (parentIndex >= 0 && processedQuestions[parentIndex] === currentParentQuestion) {
+            // Check if this parent already has sub-questions
+            if (processedQuestions[parentIndex].includes(' Also: ')) {
+              processedQuestions[parentIndex] += ` Also: ${bestMatch}`;
+            } else {
+              processedQuestions[parentIndex] += ` Also: ${bestMatch}`;
+            }
+            console.log(`Attached sub-question to parent: ${bestMatch.substring(0, 50)}... -> ${currentParentQuestion.substring(0, 50)}...`);
+          } else {
+            // Fallback: treat as standalone question if parent not found
+            processedQuestions.push(bestMatch);
+            console.log(`Extracted standalone lettered question (confidence: ${bestConfidence}): ${bestMatch.substring(0, 100)}...`);
+          }
+          
+        } else {
+          // This is a standalone question (not numbered, not a lettered sub-question)
+          currentParentQuestion = null; // Reset parent tracking
+          processedQuestions.push(bestMatch);
+          console.log(`Extracted standalone question (confidence: ${bestConfidence}): ${bestMatch.substring(0, 100)}...`);
+        }
       }
     }
   }
+  
+  // Add processed questions to final array
+  questions.push(...processedQuestions);
   
   // Fallback: Try to extract from tables or structured content
   if (questions.length === 0) {
