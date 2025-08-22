@@ -78,9 +78,12 @@ const Auth = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="flex items-center justify-between p-6 border-b">
-        <Link to="/" className="flex items-center space-x-4 hover:opacity-80 transition-opacity">
-          <Building2 className="h-8 w-8 text-primary" />
-          <h1 className="text-2xl font-bold">proposal.fit</h1>
+        <Link to="/" className="flex items-center hover:opacity-80 transition-opacity">
+          <img 
+            src="/lovable-uploads/730698ea-a3a2-4ade-b2a7-2b63eb99bdf2.png" 
+            alt="Proposal.fit" 
+            className="h-12"
+          />
         </Link>
         <Button variant="outline" asChild>
           <Link to="/">
