@@ -806,9 +806,12 @@ async function fetchResearchSnippet(question: string, companyName: string, perpl
   try {
     console.log('Fetching research for question:', question.substring(0, 100) + '...');
     
+    // Determine if this is an entity question
+    const isEntityQuestion = needsEntityResearch(question);
+    
     // Enhanced prompt for entity-specific research
     let researchPrompt;
-    if (needsEntityResearch(question)) {
+    if (isEntityQuestion) {
       researchPrompt = `Find the specific person who holds this role at ${companyName}: ${question}. Include their full name and title if available. If no specific person is found, indicate that the role exists but specific names are confidential.`;
     } else {
       researchPrompt = `Research this business question about ${companyName}: ${question}`;
