@@ -80,7 +80,7 @@ const Auth = () => {
       <div className="flex items-center justify-between p-6 border-b">
         <Link to="/" className="flex items-center space-x-4 hover:opacity-80 transition-opacity">
           <Building2 className="h-8 w-8 text-primary" />
-          <h1 className="text-2xl font-bold">TenderFlow</h1>
+          <h1 className="text-2xl font-bold">proposal.fit</h1>
         </Link>
         <Button variant="outline" asChild>
           <Link to="/">
