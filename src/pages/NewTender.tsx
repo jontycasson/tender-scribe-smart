@@ -253,7 +253,8 @@ const NewTender = () => {
       const { data: responsesData, error: responsesError } = await supabase
         .from('tender_responses')
         .select('*')
-        .eq('tender_id', tenderId);
+        .eq('tender_id', tenderId)
+        .order('question_index', { ascending: true });
 
       if (responsesError) {
         console.error('Response fetch error:', responsesError);

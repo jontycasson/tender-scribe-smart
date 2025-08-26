@@ -10,7 +10,8 @@ const corsHeaders = {
 
 interface ProcessTenderRequest {
   tenderId: string;
-  extractedText: string;
+  extractedText?: string;
+  filePath?: string;
 }
 
 function extractQuestionsFromText(text: string): string[] {
@@ -117,19 +118,95 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { tenderId, extractedText } = await req.json() as ProcessTenderRequest;
+    const { tenderId, extractedText, filePath } = await req.json() as ProcessTenderRequest;
 
-    if (!tenderId || !extractedText) {
-      return new Response(JSON.stringify({ error: 'Missing required fields' }), {
+    if (!tenderId || (!extractedText && !filePath)) {
+      return new Response(JSON.stringify({ error: 'Missing required fields - need tenderId and either extractedText or filePath' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    console.log(`Processing tender ${tenderId} with ${extractedText.length} characters of text`);
+    let textToProcess = extractedText;
+
+    // If filePath is provided but no extractedText, use Nanonets to extract text
+    if (!extractedText && filePath) {
+      console.log(`No extracted text provided, using Nanonets to extract from: ${filePath}`);
+      
+      const nanonetsApiKey = Deno.env.get('NANONETS_API_KEY');
+      const nanonetsModelId = Deno.env.get('NANONETS_MODEL_ID');
+      
+      if (!nanonetsApiKey || !nanonetsModelId) {
+        console.error('Missing Nanonets API key or model ID');
+        return new Response(JSON.stringify({ error: 'OCR service not configured' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      try {
+        // Get the file from Supabase storage
+        const { data: fileData, error: fileError } = await supabaseClient.storage
+          .from('tender-documents')
+          .download(filePath);
+
+        if (fileError || !fileData) {
+          console.error('Failed to download file:', fileError);
+          return new Response(JSON.stringify({ error: 'Failed to download file for processing' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Convert file to base64 for Nanonets
+        const fileArrayBuffer = await fileData.arrayBuffer();
+        const fileBase64 = btoa(String.fromCharCode(...new Uint8Array(fileArrayBuffer)));
+
+        // Call Nanonets API
+        const nanonetsResponse = await fetch(`https://app.nanonets.com/api/v2/OCR/Model/${nanonetsModelId}/LabelFile/`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Basic ${btoa(nanonetsApiKey + ':')}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            file: `data:application/pdf;base64,${fileBase64}`,
+          }),
+        });
+
+        if (!nanonetsResponse.ok) {
+          console.error('Nanonets API error:', await nanonetsResponse.text());
+          return new Response(JSON.stringify({ error: 'Failed to extract text from document' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const nanonetsData = await nanonetsResponse.json();
+        textToProcess = nanonetsData.result?.[0]?.prediction?.[0]?.ocr_text || '';
+        
+        if (!textToProcess) {
+          console.error('No text extracted from document');
+          return new Response(JSON.stringify({ error: 'No text could be extracted from the document' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        console.log(`Extracted ${textToProcess.length} characters from document using Nanonets`);
+      } catch (ocrError) {
+        console.error('OCR processing error:', ocrError);
+        return new Response(JSON.stringify({ error: 'Failed to process document with OCR' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    console.log(`Processing tender ${tenderId} with ${textToProcess?.length || 0} characters of text`);
 
     // Extract questions from the text
-    const questions = extractQuestionsFromText(extractedText);
+    const questions = extractQuestionsFromText(textToProcess || '');
 
     if (questions.length === 0) {
       return new Response(JSON.stringify({ error: 'No questions found in the document' }), {
