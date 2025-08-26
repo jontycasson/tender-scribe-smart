@@ -175,15 +175,35 @@ serve(async (req) => {
         });
 
         if (!nanonetsResponse.ok) {
-          console.error('Nanonets API error:', await nanonetsResponse.text());
-          return new Response(JSON.stringify({ error: 'Failed to extract text from document' }), {
+          const errorText = await nanonetsResponse.text();
+          console.error('Nanonets API error:', nanonetsResponse.status, errorText);
+          return new Response(JSON.stringify({ 
+            error: `OCR service error: ${nanonetsResponse.status} - ${errorText.substring(0, 200)}` 
+          }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
 
         const nanonetsData = await nanonetsResponse.json();
-        textToProcess = nanonetsData.result?.[0]?.prediction?.[0]?.ocr_text || '';
+        console.log('Nanonets response:', JSON.stringify(nanonetsData, null, 2));
+        
+        // Try different paths to extract text
+        let extractedText = '';
+        if (nanonetsData.result && nanonetsData.result.length > 0) {
+          const result = nanonetsData.result[0];
+          if (result.prediction && result.prediction.length > 0) {
+            extractedText = result.prediction[0].ocr_text || '';
+          }
+        }
+        
+        // Fallback: try to get raw text from any field
+        if (!extractedText && nanonetsData.result) {
+          const allText = JSON.stringify(nanonetsData.result);
+          console.log('No ocr_text found, searching in full result...');
+        }
+        
+        textToProcess = extractedText;
         
         if (!textToProcess) {
           console.error('No text extracted from document');
