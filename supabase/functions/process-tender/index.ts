@@ -24,16 +24,18 @@ function extractQuestionsFromText(text: string): string[] {
     const line = lines[i];
     
     // Skip if line is too short to be a meaningful question
-    if (line.length < 10) continue;
+    if (line.length < 5) continue;
     
-    // Enhanced question detection patterns
+    // Enhanced question detection patterns with more flexible matching
     const questionPatterns = [
       /^\d+[\.\)]\s*(.+)/,           // "1. Question" or "1) Question"
       /^[a-z][\.\)]\s*(.+)/i,       // "a. Question" or "a) Question" 
       /^Question\s*\d+[:\.]?\s*(.+)/i, // "Question 1: ..." or "Question 1. ..."
-      /^Q\d+[:\.]?\s*(.+)/i,        // "Q1: ..." or "Q1. ..."
+      /^Q\s*\d+[:\.]?\s*(.+)/i,     // "Q1: ..." or "Q 1. ..."
       /(.+\?)\s*$/,                 // Lines ending with question mark
-      /^(.+)(do\s+you|can\s+you|will\s+you|are\s+you|have\s+you|does\s+your|is\s+your|what\s+is|how\s+do|when\s+did|where\s+is|why\s+do|which\s+of|describe|explain|provide|outline|detail|demonstrate)/i // Common question starters
+      /^(.+)(do\s+you|can\s+you|will\s+you|are\s+you|have\s+you|does\s+your|is\s+your|what\s+is|how\s+do|when\s+did|where\s+is|why\s+do|which\s+of|describe|explain|provide|outline|detail|demonstrate|please\s+provide|tell\s+us|confirm)/i, // Common question starters
+      /^(.+)(approach|strategy|method|process|procedure|plan|experience|qualifications|capabilities|certifications)/i, // Question-like endings
+      /^(.+)(name\s+and\s+tenure|contact\s+details|years\s+of\s+experience)/i // Specific tender question patterns
     ];
     
     let bestMatch = null;
@@ -52,10 +54,10 @@ function extractQuestionsFromText(text: string): string[] {
       }
     }
     
-    // Only include if confidence is high enough and it's not a duplicate
-    if (bestConfidence > 0.6 && bestMatch) {
+    // Lowered confidence threshold and duplicate similarity for better extraction
+    if (bestConfidence > 0.3 && bestMatch) {
       const isDuplicate = questions.some(q => 
-        calculateSimilarity(q.toLowerCase(), bestMatch.toLowerCase()) > 0.8
+        calculateSimilarity(q.toLowerCase(), bestMatch.toLowerCase()) > 0.9
       );
       
       if (!isDuplicate) {

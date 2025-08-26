@@ -102,6 +102,7 @@ import { Calendar } from "@/components/ui/calendar"
 import { cn } from "@/lib/utils"
 import { CalendarIcon } from "@radix-ui/react-icons"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button as ShadButton } from "@/components/ui/button"
 import { cn as shadCn } from "@/lib/utils"
 import { useToast as useShadToast } from "@/hooks/use-toast"
@@ -285,65 +286,92 @@ const TenderDetails = () => {
         <ExportButton tenderId={tender.id} />
       </div>
 
-      {responsesLoading ? (
-        <div>Loading responses...</div>
-      ) : (
-        <div className="grid gap-4">
-          {responses?.map((response) => (
-            <Card key={response.id}>
-              <CardHeader>
-                <CardTitle>Question {response.question_index !== null ? response.question_index + 1 : ''}</CardTitle>
-                <CardDescription>{response.question}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="mb-4">
-                  <Textarea
-                    defaultValue={response.user_edited_answer || response.ai_generated_answer || ''}
-                    placeholder="Enter your response here."
-                    className="w-full h-40 resize-none"
-                    onBlur={(e) => updateMutation.mutate({ responseId: response.id, updatedAnswer: e.target.value })}
-                  />
-                  <div className="flex items-center space-x-2 mt-2">
-                    <Button
-                      variant="outline"
-                      disabled={updateMutation.isPending}
-                      onClick={() => {
-                        const textarea = document.querySelector(`textarea[data-response-id="${response.id}"]`) as HTMLTextAreaElement;
-                        updateMutation.mutate({ responseId: response.id, updatedAnswer: textarea?.value });
-                      }}
-                    >
-                      {updateMutation.isPending && <ReloadIcon className="mr-2 h-4 w-4 animate-spin" />}
-                      Update Response
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      disabled={isGenerating}
-                      onClick={() => regenerateMutation.mutate(response.id)}
-                    >
-                      {isGenerating && <ReloadIcon className="mr-2 h-4 w-4 animate-spin" />}
-                      Regenerate Response
-                    </Button>
-                    <Switch
-                      id={`approve-${response.id}`}
-                      checked={response.is_approved || false}
-                      onCheckedChange={(checked) => approveMutation.mutate({ responseId: response.id, isApproved: checked })}
-                    />
-                    <Label htmlFor={`approve-${response.id}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                      Approved
-                    </Label>
-                  </div>
-                </div>
-                {response.research_used && (
-                  <Badge variant="secondary">Research Used</Badge>
-                )}
-                {response.question_type && (
-                  <Badge variant="outline">{response.question_type}</Badge>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      <Tabs defaultValue="responses" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="responses">Responses</TabsTrigger>
+          <TabsTrigger value="preview">Preview</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="responses" className="space-y-4">
+          {responsesLoading ? (
+            <div>Loading responses...</div>
+          ) : (
+            <div className="grid gap-4">
+              {responses?.map((response) => (
+                <Card key={response.id}>
+                  <CardHeader>
+                    <CardTitle>Question {response.question_index !== null ? response.question_index + 1 : ''}</CardTitle>
+                    <CardDescription>{response.question}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="mb-4">
+                      <Textarea
+                        defaultValue={response.user_edited_answer || response.ai_generated_answer || ''}
+                        placeholder="Enter your response here."
+                        className="w-full h-40 resize-none"
+                        onBlur={(e) => updateMutation.mutate({ responseId: response.id, updatedAnswer: e.target.value })}
+                      />
+                      <div className="flex items-center space-x-2 mt-2">
+                        <Button
+                          variant="outline"
+                          disabled={updateMutation.isPending}
+                          onClick={() => {
+                            const textarea = document.querySelector(`textarea[data-response-id="${response.id}"]`) as HTMLTextAreaElement;
+                            updateMutation.mutate({ responseId: response.id, updatedAnswer: textarea?.value });
+                          }}
+                        >
+                          {updateMutation.isPending && <ReloadIcon className="mr-2 h-4 w-4 animate-spin" />}
+                          Update Response
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          disabled={isGenerating}
+                          onClick={() => regenerateMutation.mutate(response.id)}
+                        >
+                          {isGenerating && <ReloadIcon className="mr-2 h-4 w-4 animate-spin" />}
+                          Regenerate Response
+                        </Button>
+                        <Switch
+                          id={`approve-${response.id}`}
+                          checked={response.is_approved || false}
+                          onCheckedChange={(checked) => approveMutation.mutate({ responseId: response.id, isApproved: checked })}
+                        />
+                        <Label htmlFor={`approve-${response.id}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                          Approved
+                        </Label>
+                      </div>
+                    </div>
+                    {response.research_used && (
+                      <Badge variant="secondary">Research Used</Badge>
+                    )}
+                    {response.question_type && (
+                      <Badge variant="outline">{response.question_type}</Badge>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+        
+        <TabsContent value="preview" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Document Preview</CardTitle>
+              <CardDescription>Original tender document</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="w-full h-96 border rounded-lg bg-muted flex items-center justify-center">
+                <iframe
+                  src={tender.file_url}
+                  className="w-full h-full rounded-lg"
+                  title="Tender Document Preview"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
