@@ -361,12 +361,26 @@ const TenderDetails = () => {
               <CardDescription>Original tender document</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="w-full h-96 border rounded-lg bg-muted flex items-center justify-center">
-                <iframe
-                  src={tender.file_url}
-                  className="w-full h-full rounded-lg"
-                  title="Tender Document Preview"
-                />
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      const { data } = supabase.storage.from('tender-documents').getPublicUrl(tender.file_url);
+                      window.open(data.publicUrl, '_blank');
+                    }}
+                  >
+                    Open in New Tab
+                  </Button>
+                </div>
+                <div className="w-full h-96 border rounded-lg bg-muted">
+                  <iframe
+                    src={supabase.storage.from('tender-documents').getPublicUrl(tender.file_url).data.publicUrl}
+                    className="w-full h-full rounded-lg"
+                    title="Tender Document Preview"
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>

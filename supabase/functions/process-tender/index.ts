@@ -24,7 +24,7 @@ function extractQuestionsFromText(text: string): string[] {
     const line = lines[i];
     
     // Skip if line is too short to be a meaningful question
-    if (line.length < 5) continue;
+    if (line.length < 3) continue;
     
     // Enhanced question detection patterns with more flexible matching
     const questionPatterns = [
@@ -33,9 +33,7 @@ function extractQuestionsFromText(text: string): string[] {
       /^Question\s*\d+[:\.]?\s*(.+)/i, // "Question 1: ..." or "Question 1. ..."
       /^Q\s*\d+[:\.]?\s*(.+)/i,     // "Q1: ..." or "Q 1. ..."
       /(.+\?)\s*$/,                 // Lines ending with question mark
-      /^(.+)(do\s+you|can\s+you|will\s+you|are\s+you|have\s+you|does\s+your|is\s+your|what\s+is|how\s+do|when\s+did|where\s+is|why\s+do|which\s+of|describe|explain|provide|outline|detail|demonstrate|please\s+provide|tell\s+us|confirm)/i, // Common question starters
-      /^(.+)(approach|strategy|method|process|procedure|plan|experience|qualifications|capabilities|certifications)/i, // Question-like endings
-      /^(.+)(name\s+and\s+tenure|contact\s+details|years\s+of\s+experience)/i // Specific tender question patterns
+      /^(.+)/i,                     // Match all remaining lines for evaluation
     ];
     
     let bestMatch = null;
@@ -54,10 +52,10 @@ function extractQuestionsFromText(text: string): string[] {
       }
     }
     
-    // Lowered confidence threshold and duplicate similarity for better extraction
-    if (bestConfidence > 0.3 && bestMatch) {
+    // Much lower confidence threshold for better extraction
+    if (bestConfidence > 0.2 && bestMatch) {
       const isDuplicate = questions.some(q => 
-        calculateSimilarity(q.toLowerCase(), bestMatch.toLowerCase()) > 0.9
+        calculateSimilarity(q.toLowerCase(), bestMatch.toLowerCase()) > 0.8
       );
       
       if (!isDuplicate) {
@@ -76,17 +74,22 @@ function extractQuestionsFromText(text: string): string[] {
 }
 
 function calculateQuestionConfidence(text: string): number {
-  let confidence = 0.3; // Base confidence
+  let confidence = 0.2; // Lower base confidence
   
   // Boost confidence based on question indicators
   if (text.includes('?')) confidence += 0.3;
   if (/\b(what|how|when|where|why|which|who)\b/i.test(text)) confidence += 0.2;
   if (/\b(do|does|can|will|are|is|have|has)\s+you\b/i.test(text)) confidence += 0.25;
-  if (/\b(describe|explain|provide|outline|detail|demonstrate|list)\b/i.test(text)) confidence += 0.2;
+  if (/\b(describe|explain|provide|outline|detail|demonstrate|list|tell|confirm)\b/i.test(text)) confidence += 0.2;
   if (/\b(company|organisation|organization|business|service|policy|procedure|process|approach|experience|capability|compliant|certified|accredited)\b/i.test(text)) confidence += 0.15;
   
-  // Penalize very short or very long texts
-  if (text.length < 20) confidence -= 0.2;
+  // Specific boosts for tender-specific terms
+  if (/\b(DPO|CEO|name|tenure|continuity|challenges)\b/i.test(text)) confidence += 0.25;
+  if (/\b(confirm|y\/n|yes\/no|\(y\/n\)|\(yes\/no\))\b/i.test(text)) confidence += 0.3;
+  if (/\btime\s+you\s+experienced\b/i.test(text)) confidence += 0.25;
+  
+  // Less harsh penalty for short texts since some questions are brief
+  if (text.length < 15) confidence -= 0.1;
   if (text.length > 500) confidence -= 0.1;
   
   // Penalize common non-question phrases
