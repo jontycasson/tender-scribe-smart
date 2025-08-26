@@ -719,9 +719,6 @@ function extractQuestionsFromText(text: string): string[] {
       } else {
         console.log(`Skipped duplicate question: ${bestMatch.substring(0, 50)}...`);
       }
-      } else {
-        console.log(`Skipped duplicate question: ${bestMatch.substring(0, 50)}...`);
-      }
     } else {
       console.log(`Line didn't meet criteria - confidence: ${bestConfidence}, match: ${bestMatch ? 'yes' : 'no'}`);
     }
