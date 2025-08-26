@@ -154,9 +154,13 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { responseId } = await req.json() as RegenerateRequest;
+    const requestBody = await req.json().catch(() => ({}));
+    const { responseId } = requestBody as RegenerateRequest;
+
+    console.log('Regenerating response for ID:', responseId);
 
     if (!responseId) {
+      console.error('No response ID provided in request');
       return new Response(JSON.stringify({ error: 'Response ID is required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

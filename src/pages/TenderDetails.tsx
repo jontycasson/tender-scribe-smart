@@ -352,9 +352,6 @@ const TenderDetails = () => {
                     {response.research_used && (
                       <Badge variant="secondary">Research Used</Badge>
                     )}
-                    {response.question_type && (
-                      <Badge variant="outline">{response.question_type}</Badge>
-                    )}
                   </CardContent>
                 </Card>
               ))}

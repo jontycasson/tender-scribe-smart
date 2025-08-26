@@ -22,15 +22,15 @@ function extractQuestionsFromText(text: string): string[] {
   console.log('Raw lines:', lines);
   
   // Track parent context for sub-questions
-  let currentParent = '';
+  let lastMainQuestion = '';
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     
-    // Skip if line is too short to be a meaningful question
+    // Skip if line is too short
     if (line.length < 2) continue;
     
-    // Enhanced question detection patterns with sub-question linking
+    // Enhanced question detection patterns
     const questionPatterns = [
       /^\d+[\.\)]\s*(.+)/,           // "1. Question" or "1) Question"
       /^[a-z][\.\)]\s*(.+)/i,       // "a. Question" or "a) Question" 
@@ -42,12 +42,9 @@ function extractQuestionsFromText(text: string): string[] {
     
     let bestMatch = null;
     let bestConfidence = 0;
-    let isSubQuestion = false;
     
-    // Check if this is a sub-question (starts with lowercase letter)
-    if (/^[a-z][\.\)]\s*/.test(line)) {
-      isSubQuestion = true;
-    }
+    // Detect sub-questions (lines starting with lowercase letter + dot)
+    const isSubQuestion = /^[a-z]\s*[\.\)]\s*/.test(line);
     
     for (const pattern of questionPatterns) {
       const match = line.match(pattern);
@@ -55,9 +52,9 @@ function extractQuestionsFromText(text: string): string[] {
         const extractedText = match[1] || match[0];
         let confidence = calculateQuestionConfidence(extractedText);
         
-        // Boost confidence for sub-questions if there's a recent parent
-        if (isSubQuestion && currentParent && questions.length > 0) {
-          confidence += 0.4;
+        // Much higher boost for sub-questions when we have a parent
+        if (isSubQuestion && lastMainQuestion) {
+          confidence += 0.5;
         }
         
         if (confidence > bestConfidence) {
@@ -67,21 +64,24 @@ function extractQuestionsFromText(text: string): string[] {
       }
     }
     
-    // Lower confidence threshold for better extraction, especially sub-questions
-    if (bestConfidence > 0.15 && bestMatch) {
-      // More lenient duplicate checking for sub-questions
-      const similarityThreshold = isSubQuestion ? 0.6 : 0.7;
-      const isDuplicate = questions.some(q => 
-        calculateSimilarity(q.toLowerCase(), bestMatch.toLowerCase()) > similarityThreshold
-      );
+    // Very low threshold to capture everything, especially sub-questions
+    if (bestConfidence > 0.1 && bestMatch) {
+      // Check for duplicates but be very lenient
+      const isDuplicate = questions.some(q => {
+        const similarity = calculateSimilarity(q.toLowerCase(), bestMatch.toLowerCase());
+        return similarity > 0.85; // High similarity threshold
+      });
       
       if (!isDuplicate) {
-        // Link sub-questions to their parent context if available
-        if (isSubQuestion && currentParent) {
-          bestMatch = `${currentParent} - ${bestMatch}`;
+        // For sub-questions, link to the parent
+        if (isSubQuestion && lastMainQuestion) {
+          // Find the parent question to link with
+          const parentPrefix = lastMainQuestion.substring(0, 30); // First part of parent
+          bestMatch = `${parentPrefix} - ${bestMatch}`;
+          console.log(`Linking sub-question "${bestMatch}" to parent "${lastMainQuestion}"`);
         } else if (!isSubQuestion) {
-          // Update current parent for future sub-questions
-          currentParent = bestMatch.split(/[?:]|\.$/)[0].trim();
+          // This is a main question, remember it for future sub-questions
+          lastMainQuestion = bestMatch;
         }
         
         questions.push(bestMatch);
