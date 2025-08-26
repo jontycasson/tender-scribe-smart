@@ -257,12 +257,13 @@ Generate a tailored response:`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-5-2025-08-07',
+        model: 'gpt-4o-mini',
         messages: [
           { role: 'system', content: 'You are a professional tender response writer.' },
           { role: 'user', content: prompt }
         ],
-        max_completion_tokens: classification.type === 'closed' ? 200 : 500,
+        max_tokens: classification.type === 'closed' ? 200 : 500,
+        temperature: 0.3,
       }),
     });
 
@@ -292,7 +293,7 @@ Generate a tailored response:`;
         user_edited_answer: null,
         is_approved: false,
         research_used: !!researchSnippet,
-        model_used: 'gpt-5-2025-08-07',
+        model_used: 'gpt-4o-mini',
         question_type: classification.type,
         response_length: generatedAnswer.length,
         updated_at: new Date().toISOString()
