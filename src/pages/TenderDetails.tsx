@@ -37,7 +37,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { format } from 'date-fns';
 import { ExportButton } from '@/components/ExportButton';
-import { ReloadIcon } from "@radix-ui/react-icons"
+import { RefreshCw, ArrowLeft } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -116,7 +116,7 @@ const TenderDetails = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [isGenerating, setIsGenerating] = useState<string | null>(null);
 
   const { data: tender, isLoading: tenderLoading } = useQuery({
     queryKey: ['tender', id],
@@ -173,13 +173,10 @@ const TenderDetails = () => {
     }
   };
 
-  const regenerateResponse = async (responseId: string) => {
-    setIsGenerating(true);
+  const regenerateResponseMutation = async (responseId: string) => {
     const { data, error } = await supabase.functions.invoke('regenerate-response', {
-      body: JSON.stringify({ responseId }),
+      body: { responseId }
     });
-
-    setIsGenerating(false);
 
     if (error) {
       console.error("Function invoke error:", error);
@@ -232,21 +229,31 @@ const TenderDetails = () => {
     },
   });
 
-  const regenerateMutation = useMutation({
-    mutationFn: (responseId: string) => regenerateResponse(responseId),
+  const regenerateResponse = useMutation({
+    mutationFn: async (responseId: string) => {
+      setIsGenerating(responseId);
+      const { data, error } = await supabase.functions.invoke('regenerate-response', {
+        body: { responseId }
+      });
+      
+      if (error) throw error;
+      return data;
+    },
     onSuccess: () => {
+      setIsGenerating(null);
       queryClient.invalidateQueries({ queryKey: ['tender-responses', tender?.id] });
       toast({
-        title: "Response regenerated.",
-        description: "The response has been regenerated successfully.",
-      })
+        title: "Response regenerated",
+        description: "The AI response has been updated successfully.",
+      });
     },
     onError: (error: any) => {
+      setIsGenerating(null);
       toast({
+        title: "Error regenerating response",
+        description: error.message || "Failed to regenerate response. Please try again.",
         variant: "destructive",
-        title: "Uh oh! Something went wrong.",
-        description: error.message,
-      })
+      });
     },
   });
 
@@ -320,16 +327,17 @@ const TenderDetails = () => {
                             updateMutation.mutate({ responseId: response.id, updatedAnswer: textarea?.value });
                           }}
                         >
-                          {updateMutation.isPending && <ReloadIcon className="mr-2 h-4 w-4 animate-spin" />}
+                          {updateMutation.isPending && <RefreshCw className="mr-2 h-4 w-4 animate-spin" />}
                           Update Response
                         </Button>
                         <Button
-                          variant="secondary"
-                          disabled={isGenerating}
-                          onClick={() => regenerateMutation.mutate(response.id)}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => regenerateResponse.mutate(response.id)}
+                          disabled={isGenerating === response.id}
                         >
-                          {isGenerating && <ReloadIcon className="mr-2 h-4 w-4 animate-spin" />}
-                          Regenerate Response
+                          <RefreshCw className={cn("mr-2 h-4 w-4", isGenerating === response.id && "animate-spin")} />
+                          {isGenerating === response.id ? 'Regenerating...' : 'Regenerate'}
                         </Button>
                         <Switch
                           id={`approve-${response.id}`}
@@ -375,11 +383,19 @@ const TenderDetails = () => {
                   </Button>
                 </div>
                 <div className="w-full h-96 border rounded-lg bg-muted">
-                  <iframe
-                    src={supabase.storage.from('tender-documents').getPublicUrl(tender.file_url).data.publicUrl}
-                    className="w-full h-full rounded-lg"
-                    title="Tender Document Preview"
-                  />
+                  {tender.file_url.toLowerCase().endsWith('.pdf') ? (
+                    <iframe
+                      src={supabase.storage.from('tender-documents').getPublicUrl(tender.file_url).data.publicUrl}
+                      className="w-full h-full rounded-lg"
+                      title="Tender Document Preview"
+                    />
+                  ) : (
+                    <iframe
+                      src={`https://docs.google.com/viewer?url=${encodeURIComponent(supabase.storage.from('tender-documents').getPublicUrl(tender.file_url).data.publicUrl)}&embedded=true`}
+                      className="w-full h-full rounded-lg"
+                      title="Tender Document Preview"
+                    />
+                  )}
                 </div>
               </div>
             </CardContent>

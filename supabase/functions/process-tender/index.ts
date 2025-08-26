@@ -19,31 +19,46 @@ function extractQuestionsFromText(text: string): string[] {
   const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
   
   console.log(`Processing ${lines.length} lines from extracted text`);
+  console.log('Raw lines:', lines);
+  
+  // Track parent context for sub-questions
+  let currentParent = '';
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     
     // Skip if line is too short to be a meaningful question
-    if (line.length < 3) continue;
+    if (line.length < 2) continue;
     
-    // Enhanced question detection patterns with more flexible matching
+    // Enhanced question detection patterns with sub-question linking
     const questionPatterns = [
       /^\d+[\.\)]\s*(.+)/,           // "1. Question" or "1) Question"
       /^[a-z][\.\)]\s*(.+)/i,       // "a. Question" or "a) Question" 
       /^Question\s*\d+[:\.]?\s*(.+)/i, // "Question 1: ..." or "Question 1. ..."
-      /^Q\s*\d+[:\.]?\s*(.+)/i,     // "Q1: ..." or "Q 1. ..."
+      /^Q\s*\d+[:\.]?\s*(.+)/i,     // "Q1: ..." or "Q 1. ..." 
       /(.+\?)\s*$/,                 // Lines ending with question mark
       /^(.+)/i,                     // Match all remaining lines for evaluation
     ];
     
     let bestMatch = null;
     let bestConfidence = 0;
+    let isSubQuestion = false;
+    
+    // Check if this is a sub-question (starts with lowercase letter)
+    if (/^[a-z][\.\)]\s*/.test(line)) {
+      isSubQuestion = true;
+    }
     
     for (const pattern of questionPatterns) {
       const match = line.match(pattern);
       if (match) {
         const extractedText = match[1] || match[0];
-        const confidence = calculateQuestionConfidence(extractedText);
+        let confidence = calculateQuestionConfidence(extractedText);
+        
+        // Boost confidence for sub-questions if there's a recent parent
+        if (isSubQuestion && currentParent && questions.length > 0) {
+          confidence += 0.4;
+        }
         
         if (confidence > bestConfidence) {
           bestMatch = extractedText.trim();
@@ -52,49 +67,59 @@ function extractQuestionsFromText(text: string): string[] {
       }
     }
     
-    // Much lower confidence threshold for better extraction
-    if (bestConfidence > 0.2 && bestMatch) {
+    // Lower confidence threshold for better extraction, especially sub-questions
+    if (bestConfidence > 0.15 && bestMatch) {
+      // More lenient duplicate checking for sub-questions
+      const similarityThreshold = isSubQuestion ? 0.6 : 0.7;
       const isDuplicate = questions.some(q => 
-        calculateSimilarity(q.toLowerCase(), bestMatch.toLowerCase()) > 0.8
+        calculateSimilarity(q.toLowerCase(), bestMatch.toLowerCase()) > similarityThreshold
       );
       
       if (!isDuplicate) {
+        // Link sub-questions to their parent context if available
+        if (isSubQuestion && currentParent) {
+          bestMatch = `${currentParent} - ${bestMatch}`;
+        } else if (!isSubQuestion) {
+          // Update current parent for future sub-questions
+          currentParent = bestMatch.split(/[?:]|\.$/)[0].trim();
+        }
+        
         questions.push(bestMatch);
-        console.log(`Added question ${questions.length}: ${bestMatch.substring(0, 100)}... (confidence: ${bestConfidence.toFixed(2)})`);
+        console.log(`Added question ${questions.length}: ${bestMatch.substring(0, 100)}... (confidence: ${bestConfidence.toFixed(2)}, sub-question: ${isSubQuestion})`);
       } else {
         console.log(`Skipped duplicate question: ${bestMatch.substring(0, 50)}...`);
       }
-    } else {
-      console.log(`Line didn't meet criteria - confidence: ${bestConfidence}, match: ${bestMatch ? 'yes' : 'no'}`);
     }
   }
   
   console.log(`Extracted ${questions.length} questions from text`);
+  console.log('Final questions list:', questions);
   return questions;
 }
 
 function calculateQuestionConfidence(text: string): number {
-  let confidence = 0.2; // Lower base confidence
+  let confidence = 0.15; // Even lower base confidence
   
-  // Boost confidence based on question indicators
-  if (text.includes('?')) confidence += 0.3;
-  if (/\b(what|how|when|where|why|which|who)\b/i.test(text)) confidence += 0.2;
-  if (/\b(do|does|can|will|are|is|have|has)\s+you\b/i.test(text)) confidence += 0.25;
-  if (/\b(describe|explain|provide|outline|detail|demonstrate|list|tell|confirm)\b/i.test(text)) confidence += 0.2;
-  if (/\b(company|organisation|organization|business|service|policy|procedure|process|approach|experience|capability|compliant|certified|accredited)\b/i.test(text)) confidence += 0.15;
+  // Strong boost confidence based on question indicators
+  if (text.includes('?')) confidence += 0.4;
+  if (/\b(what|how|when|where|why|which|who)\b/i.test(text)) confidence += 0.25;
+  if (/\b(do|does|can|will|are|is|have|has)\s+you\b/i.test(text)) confidence += 0.3;
+  if (/\b(describe|explain|provide|outline|detail|demonstrate|list|tell|confirm)\b/i.test(text)) confidence += 0.25;
+  if (/\b(company|organisation|organization|business|service|policy|procedure|process|approach|experience|capability|compliant|certified|accredited)\b/i.test(text)) confidence += 0.2;
   
-  // Specific boosts for tender-specific terms
-  if (/\b(DPO|CEO|name|tenure|continuity|challenges)\b/i.test(text)) confidence += 0.25;
-  if (/\b(confirm|y\/n|yes\/no|\(y\/n\)|\(yes\/no\))\b/i.test(text)) confidence += 0.3;
-  if (/\btime\s+you\s+experienced\b/i.test(text)) confidence += 0.25;
+  // Very strong boosts for tender-specific terms
+  if (/\b(DPO|CEO|name|tenure|continuity|challenges)\b/i.test(text)) confidence += 0.35;
+  if (/\b(confirm|y\/n|yes\/no|\(y\/n\)|\(yes\/no\))\b/i.test(text)) confidence += 0.4;
+  if (/\btime\s+you\s+experienced\b/i.test(text)) confidence += 0.3;
+  if (/\bbusiness\s+continuity\b/i.test(text)) confidence += 0.3;
   
-  // Less harsh penalty for short texts since some questions are brief
-  if (text.length < 15) confidence -= 0.1;
+  // Minimal penalty for short texts since some questions are brief
+  if (text.length < 10) confidence -= 0.05;
   if (text.length > 500) confidence -= 0.1;
   
   // Penalize common non-question phrases
-  if (/\b(section|chapter|part|page|document|file|attachment)\b/i.test(text)) confidence -= 0.3;
-  if (/\b(note|important|please|thank|regards|sincerely)\b/i.test(text)) confidence -= 0.2;
+  if (/\b(section|chapter|part|page|document|file|attachment)\b/i.test(text)) confidence -= 0.2;
+  if (/\b(note|important|please|thank|regards|sincerely)\b/i.test(text)) confidence -= 0.15;
   
   return Math.max(0, Math.min(1, confidence));
 }
@@ -283,6 +308,15 @@ serve(async (req) => {
       const classification = classifyQuestion(question);
       console.log(`Question ${i + 1} classification:`, classification);
 
+      // Check if research is needed and enabled
+      let researchSnippet = null;
+      const enableResearch = Deno.env.get('ENABLE_RESEARCH')?.toLowerCase() === 'true';
+      
+      if (enableResearch && classification.needsResearch) {
+        const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
+        researchSnippet = await fetchResearchSnippet(question, companyProfile.company_name, perplexityApiKey);
+      }
+
       // Generate AI response
       const prompt = `You are a tender response writer for ${companyProfile.company_name}. Generate a professional response for this tender question.
 
@@ -291,6 +325,8 @@ ${JSON.stringify(companyProfile, null, 2)}
 
 Question: ${question}
 Question Type: ${classification.type} (${classification.reasoning})
+
+${researchSnippet ? `Research Context: ${researchSnippet}` : ''}
 
 Requirements:
 - Write in British English
@@ -302,6 +338,7 @@ Requirements:
 - Keep response appropriate in length for the question type
 - Base responses only on information provided in the company context
 - If specific details are not available, acknowledge this professionally without using placeholders
+${researchSnippet ? '- Incorporate relevant research findings naturally into your response' : ''}
 
 Generate a tailored response:`;
 
@@ -341,6 +378,7 @@ Generate a tailored response:`;
             question_type: classification.type,
             response_length: generatedAnswer.length,
             model_used: 'gpt-4o-mini',
+            research_used: !!researchSnippet,
             is_approved: false
           });
         }
@@ -370,6 +408,17 @@ Generate a tailored response:`;
       });
     }
 
+    // Update tender status to draft after successful processing
+    const { error: statusUpdateError } = await supabaseClient
+      .from('tenders')
+      .update({ status: 'draft' })
+      .eq('id', tenderId);
+
+    if (statusUpdateError) {
+      console.error('Error updating tender status:', statusUpdateError);
+      // Don't fail the whole process for this
+    }
+
     console.log(`Successfully processed ${responses.length} questions for tender ${tenderId}`);
 
     return new Response(JSON.stringify({
@@ -389,7 +438,90 @@ Generate a tailored response:`;
   }
 });
 
-function classifyQuestion(question: string): { type: 'closed' | 'open', reasoning: string } {
+// Helper function to identify entity questions that need research
+function needsEntityResearch(question: string): boolean {
+  const questionLower = question.toLowerCase();
+  
+  const entityPatterns = [
+    /\b(dpo|data\s+protection\s+officer)\b/,
+    /\b(ceo|chief\s+executive\s+officer)\b/,
+    /\b(cfo|chief\s+financial\s+officer)\b/,
+    /\b(cto|chief\s+technology\s+officer)\b/,
+    /\b(iso\s+\d+|iso\d+)\b/,
+    /\b(gdpr\s+officer|privacy\s+officer)\b/,
+    /\b(compliance\s+officer)\b/,
+    /\b(security\s+officer|ciso)\b/
+  ];
+  
+  return entityPatterns.some(pattern => pattern.test(questionLower));
+}
+
+// Enhanced research function using Perplexity API
+async function fetchResearchSnippet(question: string, companyName: string, perplexityApiKey?: string): Promise<string | null> {
+  if (!perplexityApiKey) {
+    console.log('Perplexity API key not available, skipping research');
+    return null;
+  }
+  
+  try {
+    console.log(`Fetching research snippet for question: ${question.substring(0, 100)}...`);
+    
+    // Enhanced prompt for entity-specific research
+    let researchPrompt;
+    if (needsEntityResearch(question)) {
+      researchPrompt = `Find the specific person who holds this role at ${companyName}: ${question}. Include their full name and title if available. If no specific person is found, indicate that the role exists but specific names are confidential.`;
+    } else {
+      researchPrompt = `Research this business question about ${companyName}: ${question}`;
+    }
+    
+    const response = await fetch('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${perplexityApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-sonar-small-128k-online',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a research assistant. Provide factual, current information based on web search. For personnel questions, include specific names and titles when publicly available. If names are not found, clearly state that the information is confidential or not publicly available.'
+          },
+          {
+            role: 'user',
+            content: researchPrompt
+          }
+        ],
+        temperature: 0.2,
+        max_tokens: needsEntityResearch(question) ? 300 : 500,
+        return_images: false,
+        return_related_questions: false
+      }),
+    });
+    
+    if (!response.ok) {
+      console.error('Perplexity API error:', response.status, response.statusText);
+      return null;
+    }
+    
+    const data = await response.json();
+    const researchText = data.choices[0]?.message?.content;
+    
+    if (!researchText) {
+      console.log('No research content received from Perplexity');
+      return null;
+    }
+    
+    console.log(`Research snippet fetched: ${researchText.substring(0, 200)}...`);
+    return researchText;
+    
+  } catch (error) {
+    console.error('Error fetching research snippet:', error);
+    return null;
+  }
+}
+
+function classifyQuestion(question: string): { type: 'closed' | 'open', reasoning: string, needsResearch?: boolean } {
   const questionLower = question.toLowerCase();
   
   const closedPatterns = [
@@ -408,21 +540,25 @@ function classifyQuestion(question: string): { type: 'closed' | 'open', reasonin
   
   const isClosedMatch = closedPatterns.some(pattern => pattern.test(questionLower));
   const isOpenMatch = openPatterns.some(pattern => pattern.test(questionLower));
+  const entityResearch = needsEntityResearch(question);
   
   if (isClosedMatch && !isOpenMatch) {
     return { 
       type: 'closed', 
-      reasoning: 'Detected Yes/No or factual question pattern'
+      reasoning: 'Detected Yes/No or factual question pattern',
+      needsResearch: entityResearch
     };
   } else if (isOpenMatch) {
     return { 
       type: 'open', 
-      reasoning: 'Detected explanatory or process question pattern'
+      reasoning: 'Detected explanatory or process question pattern',
+      needsResearch: true
     };
   } else {
     return { 
       type: 'open', 
-      reasoning: 'Unclear pattern, defaulting to detailed response'
+      reasoning: 'Unclear pattern, defaulting to detailed response',
+      needsResearch: true
     };
   }
 }
