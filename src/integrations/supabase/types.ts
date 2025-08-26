@@ -167,6 +167,7 @@ export type Database = {
           model_used: string | null
           processing_time_ms: number | null
           question: string
+          question_index: number | null
           question_type: string | null
           research_used: boolean | null
           response_length: number | null
@@ -183,6 +184,7 @@ export type Database = {
           model_used?: string | null
           processing_time_ms?: number | null
           question: string
+          question_index?: number | null
           question_type?: string | null
           research_used?: boolean | null
           response_length?: number | null
@@ -199,6 +201,7 @@ export type Database = {
           model_used?: string | null
           processing_time_ms?: number | null
           question?: string
+          question_index?: number | null
           question_type?: string | null
           research_used?: boolean | null
           response_length?: number | null

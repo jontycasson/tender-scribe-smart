@@ -1,3 +1,4 @@
+
 project_id = "yfnqnsgggcbkdqhdlocd"
 
 [api]
@@ -7,73 +8,29 @@ schemas = ["public", "graphql_public"]
 extra_search_path = ["public", "extensions"]
 max_rows = 1000
 
-[db]
-port = 54322
-shadow_port = 54320
-major_version = 15
-
-[db.pooler]
-enabled = false
-port = 54329
-pool_mode = "transaction"
-default_pool_size = 20
-max_client_conn = 100
-
-[realtime]
-enabled = true
-ip_version = "ipv4"
-port = 54323
-max_header_length = 4096
-
-[studio]
-enabled = true
-port = 54324
-api_url = "http://127.0.0.1:54321"
-openai_api_key = "env(OPENAI_API_KEY)"
-
-[inbucket]
-enabled = true
-port = 54325
-smtp_port = 54326
-
-[storage]
-enabled = true
-port = 54327
-file_size_limit = "50MiB"
-
 [auth]
 enabled = true
-port = 54328
-site_url = "http://127.0.0.1:3000"
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+port = 54320
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["https://lovable.dev"]
 jwt_expiry = 3600
 enable_signup = true
-email_double_confirm_changes = true
-enable_manual_linking = false
-
-[auth.email]
-enable_signup = true
-double_confirm_changes = true
 enable_confirmations = false
-secure_nonce = true
-secure_password_change = true
+enable_anonymous_users = false
 
-[auth.sms]
-enable_signup = false
-enable_confirmations = false
-template = "Your code is {{ .Code }}"
+[auth.external.google]
+enabled = false
 
-[edge_functions]
-enabled = true
-port = 54329
+[auth.external.github]
+enabled = false
+
+[db]
+port = 54322
 
 [functions.process-tender]
 verify_jwt = true
 
-[functions.export-tender]
-verify_jwt = true
-
-[functions.upsert-memory]
+[functions.export-tender]  
 verify_jwt = true
 
 [functions.regenerate-response]
@@ -82,7 +39,17 @@ verify_jwt = true
 [functions.rewrite-response]
 verify_jwt = true
 
-[analytics]
-enabled = false
-port = 54327
-vector_port = 54328
+[functions.upsert-memory]
+verify_jwt = true
+
+[edge-runtime]
+inspector_port = 8083
+
+[storage]
+enabled = true
+port = 54323
+file_size_limit = "50MiB"
+
+[studio]
+enabled = true
+port = 54324
