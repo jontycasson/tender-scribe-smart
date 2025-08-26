@@ -11,7 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { toast } from "@/components/ui/use-toast"
+import { toast } from "@/hooks/use-toast"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -104,19 +104,15 @@ import { CalendarIcon } from "@radix-ui/react-icons"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button as ShadButton } from "@/components/ui/button"
 import { cn as shadCn } from "@/lib/utils"
-import { useToast as useShadToast } from "@/components/ui/use-toast"
+import { useToast as useShadToast } from "@/hooks/use-toast"
 
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 type Tender = Database['public']['Tables']['tenders']['Row'];
 type TenderResponse = Database['public']['Tables']['tender_responses']['Row'];
 
-interface Params {
-  id: string;
-}
-
 const TenderDetails = () => {
-  const { id } = useParams<Params>();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [isGenerating, setIsGenerating] = useState(false);
@@ -197,65 +193,61 @@ const TenderDetails = () => {
     return data;
   };
 
-  const approveMutation = useMutation(
-    ({ responseId, isApproved }: { responseId: string, isApproved: boolean }) => approveResponse(responseId, isApproved),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(['tender-responses', tender?.id]);
-        toast({
-          title: "Response status updated.",
-          description: "The response has been updated successfully.",
-        })
-      },
-      onError: (error: any) => {
-        toast({
-          variant: "destructive",
-          title: "Uh oh! Something went wrong.",
-          description: error.message,
-        })
-      },
-    }
-  );
+  const approveMutation = useMutation({
+    mutationFn: ({ responseId, isApproved }: { responseId: string, isApproved: boolean }) => 
+      approveResponse(responseId, isApproved),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tender-responses', tender?.id] });
+      toast({
+        title: "Response status updated.",
+        description: "The response has been updated successfully.",
+      })
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: error.message,
+      })
+    },
+  });
 
-  const updateMutation = useMutation(
-    ({ responseId, updatedAnswer }: { responseId: string, updatedAnswer: string | null }) => updateResponse(responseId, updatedAnswer),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(['tender-responses', tender?.id]);
-        toast({
-          title: "Response updated.",
-          description: "The response has been updated successfully.",
-        })
-      },
-      onError: (error: any) => {
-        toast({
-          variant: "destructive",
-          title: "Uh oh! Something went wrong.",
-          description: error.message,
-        })
-      },
-    }
-  );
+  const updateMutation = useMutation({
+    mutationFn: ({ responseId, updatedAnswer }: { responseId: string, updatedAnswer: string | null }) => 
+      updateResponse(responseId, updatedAnswer),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tender-responses', tender?.id] });
+      toast({
+        title: "Response updated.",
+        description: "The response has been updated successfully.",
+      })
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: error.message,
+      })
+    },
+  });
 
-  const regenerateMutation = useMutation(
-    (responseId: string) => regenerateResponse(responseId),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(['tender-responses', tender?.id]);
-        toast({
-          title: "Response regenerated.",
-          description: "The response has been regenerated successfully.",
-        })
-      },
-      onError: (error: any) => {
-        toast({
-          variant: "destructive",
-          title: "Uh oh! Something went wrong.",
-          description: error.message,
-        })
-      },
-    }
-  );
+  const regenerateMutation = useMutation({
+    mutationFn: (responseId: string) => regenerateResponse(responseId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tender-responses', tender?.id] });
+      toast({
+        title: "Response regenerated.",
+        description: "The response has been regenerated successfully.",
+      })
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: error.message,
+      })
+    },
+  });
 
   if (tenderLoading) return <div>Loading tender...</div>;
   if (!tender) return <div>Tender not found.</div>;
@@ -314,19 +306,21 @@ const TenderDetails = () => {
                   <div className="flex items-center space-x-2 mt-2">
                     <Button
                       variant="outline"
-                      isLoading={updateMutation.isPending}
+                      disabled={updateMutation.isPending}
                       onClick={() => {
                         const textarea = document.querySelector(`textarea[data-response-id="${response.id}"]`) as HTMLTextAreaElement;
                         updateMutation.mutate({ responseId: response.id, updatedAnswer: textarea?.value });
                       }}
                     >
+                      {updateMutation.isPending && <ReloadIcon className="mr-2 h-4 w-4 animate-spin" />}
                       Update Response
                     </Button>
                     <Button
                       variant="secondary"
-                      isLoading={isGenerating}
+                      disabled={isGenerating}
                       onClick={() => regenerateMutation.mutate(response.id)}
                     >
+                      {isGenerating && <ReloadIcon className="mr-2 h-4 w-4 animate-spin" />}
                       Regenerate Response
                     </Button>
                     <Switch
