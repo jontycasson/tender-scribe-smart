@@ -158,20 +158,20 @@ serve(async (req) => {
           });
         }
 
-        // Convert file to base64 for Nanonets
-        const fileArrayBuffer = await fileData.arrayBuffer();
-        const fileBase64 = btoa(String.fromCharCode(...new Uint8Array(fileArrayBuffer)));
+        // Prepare file for Nanonets API using FormData
+        const formData = new FormData();
+        const blob = new Blob([await fileData.arrayBuffer()], { 
+          type: fileData.type || 'application/pdf' 
+        });
+        formData.append('file', blob, filePath.split('/').pop() || 'document.pdf');
 
         // Call Nanonets API
         const nanonetsResponse = await fetch(`https://app.nanonets.com/api/v2/OCR/Model/${nanonetsModelId}/LabelFile/`, {
           method: 'POST',
           headers: {
             'Authorization': `Basic ${btoa(nanonetsApiKey + ':')}`,
-            'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            file: `data:application/pdf;base64,${fileBase64}`,
-          }),
+          body: formData,
         });
 
         if (!nanonetsResponse.ok) {
