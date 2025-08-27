@@ -30,6 +30,65 @@ function needsEntityResearch(question: string): boolean {
 }
 
 // Classify question type for optimized response strategy
+// Function to retrieve relevant memory using vector similarity
+async function fetchRelevantMemory(question: string, companyProfileId: string, supabaseClient: any, openAIApiKey: string): Promise<string | null> {
+  try {
+    console.log(`Fetching relevant memory for question: ${question.substring(0, 100)}...`);
+    
+    // Generate embedding for the question
+    const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'text-embedding-3-small',
+        input: question,
+      }),
+    });
+
+    if (!embeddingResponse.ok) {
+      console.error('Failed to generate embedding:', embeddingResponse.status, embeddingResponse.statusText);
+      return null;
+    }
+
+    const embeddingData = await embeddingResponse.json();
+    const questionEmbedding = embeddingData.data[0].embedding;
+
+    // Search for similar questions in memory
+    const { data: memoryResults, error: memoryError } = await supabaseClient
+      .rpc('match_qa_memory', {
+        query_embedding: questionEmbedding,
+        company_id: companyProfileId,
+        match_threshold: 0.8,
+        match_count: 3
+      });
+
+    if (memoryError) {
+      console.error('Error fetching memory:', memoryError);
+      return null;
+    }
+
+    if (!memoryResults || memoryResults.length === 0) {
+      console.log('No relevant memory found');
+      return null;
+    }
+
+    console.log(`Found ${memoryResults.length} relevant memory entries`);
+    
+    // Format the memory for inclusion in the prompt
+    const memoryContext = memoryResults.map((memory: any, index: number) => 
+      `${index + 1}. Similar Question: "${memory.question}"\n   Previous Answer: "${memory.answer}"\n   (Similarity: ${(memory.similarity * 100).toFixed(1)}%, Used ${memory.usage_count} times)`
+    ).join('\n\n');
+
+    return memoryContext;
+  } catch (error) {
+    console.error('Error fetching relevant memory:', error);
+    return null;
+  }
+}
+
 function classifyQuestion(question: string): { type: 'closed' | 'open', reasoning: string, needsResearch?: boolean } {
   const questionLower = question.toLowerCase();
   
@@ -207,6 +266,26 @@ serve(async (req) => {
     const classification = classifyQuestion(response.question);
     console.log('Question classification:', classification);
 
+    // Generate new AI response
+    const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+    if (!openAIApiKey) {
+      return new Response(JSON.stringify({ error: 'OpenAI API key not configured' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Fetch relevant memory from previous answers
+    let memoryContext = null;
+    try {
+      memoryContext = await fetchRelevantMemory(response.question, companyProfile.id, supabaseClient, openAIApiKey);
+      if (memoryContext) {
+        console.log(`Memory context found: ${memoryContext.substring(0, 100)}...`);
+      }
+    } catch (error) {
+      console.error('Memory retrieval failed:', error);
+    }
+
     // Check if research is needed and enabled - default to enabled unless explicitly disabled
     let researchSnippet = null;
     const enableResearch = Deno.env.get('ENABLE_RESEARCH')?.toLowerCase() !== 'false'; // Default to true
@@ -233,15 +312,6 @@ serve(async (req) => {
       console.log('Research skipped - either disabled or not needed');
     }
 
-    // Generate new AI response
-    const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
-    if (!openAIApiKey) {
-      return new Response(JSON.stringify({ error: 'OpenAI API key not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     const entityQuestion = needsEntityResearch(response.question);
     const prompt = `You are a tender response writer for ${companyProfile.company_name}. Generate a professional response for this tender question.
 
@@ -251,12 +321,16 @@ ${JSON.stringify(companyProfile, null, 2)}
 Question: ${response.question}
 Question Type: ${classification.type} (${classification.reasoning})
 
-${researchSnippet ? `Research Context: ${researchSnippet}` : ''}
+${memoryContext ? `Previous Similar Questions & Answers:
+${memoryContext}
 
-Requirements:
+` : ''}${researchSnippet ? `Research Context: ${researchSnippet}
+
+` : ''}Requirements:
 - Write in British English
 - Be professional and confident
 - Use specific company details from the profile
+${memoryContext ? '- Reference and build upon the previous similar answers provided above, but adapt them specifically to this question' : ''}
 - For ${classification.type} questions, provide ${classification.type === 'closed' ? 'direct, factual answers' : 'detailed explanations with examples'}
 ${entityQuestion ? '- **CRITICAL**: For personnel questions (DPO, CEO, etc.): NEVER use placeholders like [Name], [CEO Name], [Title]. If research found a specific name, include "Our [Role] is [Full Name]". If no specific name was found, respond with "We have a [role] in place" or "We maintain appropriate [structure]" without fake specifics.' : ''}
 - Focus on capabilities and experience relevant to the question

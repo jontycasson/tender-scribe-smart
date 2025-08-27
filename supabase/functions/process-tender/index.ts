@@ -359,6 +359,17 @@ serve(async (req) => {
       console.log(`Question ${i + 1} classification:`, classification);
       baseResponse.question_type = classification.type;
 
+      // Fetch relevant memory from previous answers
+      let memoryContext = null;
+      try {
+        memoryContext = await fetchRelevantMemory(question, companyProfile.id, supabaseClient, openAIApiKey);
+        if (memoryContext) {
+          console.log(`Memory context found: ${memoryContext.substring(0, 100)}...`);
+        }
+      } catch (error) {
+        console.error(`Memory retrieval failed for question ${i + 1}:`, error);
+      }
+
       // Check if research is needed and enabled - default to enabled unless explicitly disabled
       let researchSnippet = null;
       const enableResearch = Deno.env.get('ENABLE_RESEARCH')?.toLowerCase() !== 'false'; // Default to true
@@ -391,12 +402,16 @@ ${JSON.stringify(companyProfile, null, 2)}
 Question: ${question}
 Question Type: ${classification.type} (${classification.reasoning})
 
-${researchSnippet ? `Research Context: ${researchSnippet}` : ''}
+${memoryContext ? `Previous Similar Questions & Answers:
+${memoryContext}
 
-Requirements:
+` : ''}${researchSnippet ? `Research Context: ${researchSnippet}
+
+` : ''}Requirements:
 - Write in British English
 - Be professional and confident
 - Use specific company details from the profile when available
+${memoryContext ? '- Reference and build upon the previous similar answers provided above, but adapt them specifically to this question' : ''}
 - For ${classification.type} questions, provide ${classification.type === 'closed' ? 'direct, factual answers' : 'detailed explanations with examples'}
 - CRITICAL: NEVER use placeholder text like [Name], [CEO Name], [Title], [Position], or similar brackets. If specific information is not available in the company profile, provide professional responses like "We have appropriate personnel in place" or "We maintain suitable governance structures"
 - Focus on capabilities and experience relevant to the question
@@ -659,6 +674,65 @@ async function fetchResearchSnippet(question: string, companyName: string, perpl
     
   } catch (error) {
     console.error('Error fetching research snippet:', error);
+    return null;
+  }
+}
+
+// Function to retrieve relevant memory using vector similarity
+async function fetchRelevantMemory(question: string, companyProfileId: string, supabaseClient: any, openAIApiKey: string): Promise<string | null> {
+  try {
+    console.log(`Fetching relevant memory for question: ${question.substring(0, 100)}...`);
+    
+    // Generate embedding for the question
+    const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'text-embedding-3-small',
+        input: question,
+      }),
+    });
+
+    if (!embeddingResponse.ok) {
+      console.error('Failed to generate embedding:', embeddingResponse.status, embeddingResponse.statusText);
+      return null;
+    }
+
+    const embeddingData = await embeddingResponse.json();
+    const questionEmbedding = embeddingData.data[0].embedding;
+
+    // Search for similar questions in memory
+    const { data: memoryResults, error: memoryError } = await supabaseClient
+      .rpc('match_qa_memory', {
+        query_embedding: questionEmbedding,
+        company_id: companyProfileId,
+        match_threshold: 0.8,
+        match_count: 3
+      });
+
+    if (memoryError) {
+      console.error('Error fetching memory:', memoryError);
+      return null;
+    }
+
+    if (!memoryResults || memoryResults.length === 0) {
+      console.log('No relevant memory found');
+      return null;
+    }
+
+    console.log(`Found ${memoryResults.length} relevant memory entries`);
+    
+    // Format the memory for inclusion in the prompt
+    const memoryContext = memoryResults.map((memory: any, index: number) => 
+      `${index + 1}. Similar Question: "${memory.question}"\n   Previous Answer: "${memory.answer}"\n   (Similarity: ${(memory.similarity * 100).toFixed(1)}%, Used ${memory.usage_count} times)`
+    ).join('\n\n');
+
+    return memoryContext;
+  } catch (error) {
+    console.error('Error fetching relevant memory:', error);
     return null;
   }
 }
