@@ -207,15 +207,30 @@ serve(async (req) => {
     const classification = classifyQuestion(response.question);
     console.log('Question classification:', classification);
 
-    // Fetch research if needed
+    // Check if research is needed and enabled - default to enabled unless explicitly disabled
     let researchSnippet = null;
-    if (classification.needsResearch) {
-      const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
-      researchSnippet = await fetchResearchSnippet(
-        response.question,
-        companyProfile.company_name,
-        perplexityApiKey
-      );
+    const enableResearch = Deno.env.get('ENABLE_RESEARCH')?.toLowerCase() !== 'false'; // Default to true
+    console.log(`Research enabled: ${enableResearch}, needs research: ${classification.needsResearch}`);
+    
+    if (enableResearch && classification.needsResearch) {
+      console.log(`Attempting research for question: ${response.question.substring(0, 50)}`);
+      try {
+        const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
+        researchSnippet = await fetchResearchSnippet(
+          response.question,
+          companyProfile.company_name,
+          perplexityApiKey
+        );
+        if (researchSnippet) {
+          console.log(`Research found: ${researchSnippet.substring(0, 100)}...`);
+        } else {
+          console.log('No research snippet returned');
+        }
+      } catch (error) {
+        console.error('Research failed:', error);
+      }
+    } else {
+      console.log('Research skipped - either disabled or not needed');
     }
 
     // Generate new AI response
