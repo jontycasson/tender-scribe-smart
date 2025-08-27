@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, FileText, Calendar, Building2, Settings, Trash2, RefreshCw } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Plus, FileText, Calendar, Building2, Settings, Trash2, RefreshCw, List, Folder, MoreVertical, ArrowUpDown } from "lucide-react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePreview } from "@/hooks/usePreview";
 import { PreviewPanel } from "@/components/PreviewPanel";
 import { ProjectsView } from "@/components/dashboard/ProjectsView";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 
 const Dashboard = () => {
@@ -22,6 +24,11 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [deletingTender, setDeletingTender] = useState<string | null>(null);
   const [reprocessingTender, setReprocessingTender] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'list' | 'grouped'>('list');
+  const [sortBy, setSortBy] = useState<'created_at' | 'deadline' | 'title' | 'status'>('created_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [projects, setProjects] = useState<any[]>([]);
+  const [unassignedTenders, setUnassignedTenders] = useState<any[]>([]);
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -29,6 +36,7 @@ const Dashboard = () => {
     if (user) {
       fetchTenders();
       fetchCompanyProfile();
+      fetchProjectsAndTenders();
     }
   }, [user]);
 
@@ -95,6 +103,7 @@ const Dashboard = () => {
 
       if (error) throw error;
       setTenders(data || []);
+      await fetchProjectsAndTenders();
     } catch (error) {
       console.error('Error fetching tenders:', error);
     } finally {
@@ -204,6 +213,112 @@ const Dashboard = () => {
     }
   };
 
+  const fetchProjectsAndTenders = async () => {
+    try {
+      // Get user's company profile ID
+      const { data: companyProfile } = await supabase
+        .from('company_profiles')
+        .select('id')
+        .eq('user_id', user?.id)
+        .single();
+
+      if (!companyProfile) return;
+
+      // Fetch projects
+      const { data: projectsData, error: projectsError } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('company_profile_id', companyProfile.id)
+        .order('created_at', { ascending: false });
+
+      if (projectsError) throw projectsError;
+
+      // Group tenders by project
+      const projectsWithTenders = (projectsData || []).map(project => ({
+        ...project,
+        tenders: tenders.filter(tender => tender.project_id === project.id)
+      }));
+
+      // Get unassigned tenders
+      const unassigned = tenders.filter(tender => !tender.project_id);
+
+      setProjects(projectsWithTenders);
+      setUnassignedTenders(unassigned);
+    } catch (error) {
+      console.error('Error fetching projects:', error);
+    }
+  };
+
+  const assignTenderToProject = async (tenderId: string, projectId: string) => {
+    try {
+      const { error } = await supabase
+        .from('tenders')
+        .update({ project_id: projectId })
+        .eq('id', tenderId);
+
+      if (error) throw error;
+
+      // Refresh the data
+      await fetchTenders();
+      
+      toast({
+        title: "Tender assigned",
+        description: "Tender has been assigned to the project",
+      });
+    } catch (error) {
+      console.error('Error assigning tender:', error);
+      toast({
+        title: "Error",
+        description: "Failed to assign tender to project",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getSortedTenders = () => {
+    const tendersToSort = [...tenders];
+    
+    return tendersToSort.sort((a, b) => {
+      let aValue, bValue;
+      
+      switch (sortBy) {
+        case 'title':
+          aValue = a.title.toLowerCase();
+          bValue = b.title.toLowerCase();
+          break;
+        case 'deadline':
+          aValue = a.deadline ? new Date(a.deadline).getTime() : 0;
+          bValue = b.deadline ? new Date(b.deadline).getTime() : 0;
+          break;
+        case 'status':
+          aValue = a.status;
+          bValue = b.status;
+          break;
+        case 'created_at':
+        default:
+          aValue = new Date(a.created_at).getTime();
+          bValue = new Date(b.created_at).getTime();
+          break;
+      }
+      
+      if (sortOrder === 'asc') {
+        return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+      } else {
+        return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
+      }
+    });
+  };
+
+  const getProjectProgress = (projectTenders: any[]) => {
+    if (projectTenders.length === 0) return { completed: 0, total: 0, percentage: 0 };
+    const completed = projectTenders.filter(t => t.status === 'completed' || t.status === 'approved').length;
+    return {
+      completed,
+      total: projectTenders.length,
+      percentage: Math.round((completed / projectTenders.length) * 100)
+    };
+  };
+
   const handleReprocessTender = async (tender: any) => {
     setReprocessingTender(tender.id);
     try {
@@ -282,14 +397,63 @@ const Dashboard = () => {
           <TabsContent value="tenders" className="mt-6">
             <div className="space-y-6">
               <div className="flex items-center justify-between">
-                <h3 className="text-xl font-semibold">Recent Tenders</h3>
-                <Button asChild>
-                  <Link to="/new-tender">
-                    <Plus className="h-4 w-4 mr-2" />
-                    New Tender Response
-                  </Link>
-                </Button>
+                <h3 className="text-xl font-semibold">Tenders</h3>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant={viewMode === 'list' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                    >
+                      <List className="h-4 w-4 mr-1" />
+                      List View
+                    </Button>
+                    <Button
+                      variant={viewMode === 'grouped' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setViewMode('grouped')}
+                    >
+                      <Folder className="h-4 w-4 mr-1" />
+                      Grouped
+                    </Button>
+                  </div>
+                  <Button asChild>
+                    <Link to="/new-tender">
+                      <Plus className="h-4 w-4 mr-2" />
+                      New Tender Response
+                    </Link>
+                  </Button>
+                </div>
               </div>
+
+              {viewMode === 'list' && tenders.length > 0 && (
+                <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Sort by:</span>
+                  </div>
+                  <Select value={sortBy} onValueChange={(value) => setSortBy(value as any)}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="created_at">Date Created</SelectItem>
+                      <SelectItem value="deadline">Deadline</SelectItem>
+                      <SelectItem value="title">Title</SelectItem>
+                      <SelectItem value="status">Status</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as any)}>
+                    <SelectTrigger className="w-[120px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="desc">Newest First</SelectItem>
+                      <SelectItem value="asc">Oldest First</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {loading ? (
                 <Card>
@@ -313,9 +477,9 @@ const Dashboard = () => {
                     </Button>
                   </CardContent>
                 </Card>
-              ) : (
+              ) : viewMode === 'list' ? (
                 <div className="grid gap-4">
-                  {tenders.map((tender) => (
+                  {getSortedTenders().map((tender) => (
                     <Card key={tender.id}>
                       <CardHeader className="pb-3">
                         <div className="flex items-center justify-between">
@@ -344,7 +508,7 @@ const Dashboard = () => {
                               {formatDate(tender.created_at)}
                             </p>
                           </div>
-                          <div className="flex items-center justify-end gap-3">
+                           <div className="flex items-center justify-end gap-3">
                             <Button variant="outline" size="sm" asChild>
                               <Link to={`/tender/${tender.id}`}>
                                 <FileText className="h-4 w-4 mr-2" />
@@ -361,6 +525,26 @@ const Dashboard = () => {
                                 <RefreshCw className="h-4 w-4 mr-2" />
                                 {reprocessingTender === tender.id ? 'Reprocessing...' : 'Reprocess'}
                               </Button>
+                            )}
+                            {!tender.project_id && projects.length > 0 && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="outline" size="sm">
+                                    <Folder className="h-4 w-4 mr-2" />
+                                    Assign to Project
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  {projects.map((project) => (
+                                    <DropdownMenuItem
+                                      key={project.id}
+                                      onClick={() => assignTenderToProject(tender.id, project.id)}
+                                    >
+                                      {project.name}
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             )}
                             <Button 
                               variant="destructive" 
@@ -395,6 +579,173 @@ const Dashboard = () => {
                       </CardContent>
                     </Card>
                   ))}
+                </div>
+              ) : (
+                /* Grouped View */
+                <div className="space-y-6">
+                  {/* Projects Grid */}
+                  {projects.length > 0 && (
+                    <div className="grid gap-6 md:grid-cols-2">
+                      {projects.map((project) => {
+                        const progress = getProjectProgress(project.tenders);
+                        return (
+                          <Card key={project.id} className="group hover:shadow-md transition-shadow">
+                            <CardHeader className="pb-3">
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-start gap-3">
+                                  <div className="bg-primary/10 p-2 rounded-lg">
+                                    <Folder className="h-5 w-5 text-primary" />
+                                  </div>
+                                  <div>
+                                    <CardTitle className="text-lg">{project.name}</CardTitle>
+                                    {project.client_name && (
+                                      <p className="text-sm text-muted-foreground flex items-center mt-1">
+                                        <Building2 className="h-3 w-3 mr-1" />
+                                        {project.client_name}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <Badge variant="secondary">
+                                  {project.tenders.length} {project.tenders.length === 1 ? 'tender' : 'tenders'}
+                                </Badge>
+                              </div>
+                            </CardHeader>
+                            
+                            <CardContent className="space-y-4">
+                              {project.description && (
+                                <p className="text-sm text-muted-foreground">{project.description}</p>
+                              )}
+                              
+                              {/* Progress Bar */}
+                              <div className="space-y-2">
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Progress</span>
+                                  <span>{progress.completed}/{progress.total} completed</span>
+                                </div>
+                                <div className="w-full bg-muted rounded-full h-2">
+                                  <div
+                                    className="bg-primary h-2 rounded-full transition-all duration-300"
+                                    style={{ width: `${progress.percentage}%` }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Recent Tenders */}
+                              {project.tenders.length > 0 && (
+                                <div className="space-y-2">
+                                  <h4 className="text-sm font-medium">Recent Tenders</h4>
+                                  <div className="space-y-2">
+                                    {project.tenders.slice(0, 3).map((tender) => (
+                                      <div key={tender.id} className="flex items-center justify-between p-2 bg-muted/50 rounded">
+                                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                                          <FileText className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                                          <Link 
+                                            to={`/tender/${tender.id}`}
+                                            className="text-sm font-medium truncate hover:underline"
+                                          >
+                                            {tender.title}
+                                          </Link>
+                                        </div>
+                                        <Badge className={getStatusColor(tender.status)} variant="secondary">
+                                          {tender.status}
+                                        </Badge>
+                                      </div>
+                                    ))}
+                                    {project.tenders.length > 3 && (
+                                      <p className="text-xs text-muted-foreground text-center">
+                                        +{project.tenders.length - 3} more tenders
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              <div className="text-xs text-muted-foreground">
+                                Created {formatDate(project.created_at)}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Unassigned Tenders */}
+                  {unassignedTenders.length > 0 && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <FileText className="h-5 w-5" />
+                          Unassigned Tenders ({unassignedTenders.length})
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          {unassignedTenders.map((tender) => (
+                            <div key={tender.id} className="flex items-center justify-between p-3 border rounded-lg">
+                              <div className="flex items-center gap-3 flex-1">
+                                <FileText className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                  <Link 
+                                    to={`/tender/${tender.id}`}
+                                    className="font-medium hover:underline"
+                                  >
+                                    {tender.title}
+                                  </Link>
+                                  <p className="text-sm text-muted-foreground">
+                                    Created {formatDate(tender.created_at)}
+                                  </p>
+                                </div>
+                              </div>
+                              
+                              <div className="flex items-center gap-2">
+                                <Badge className={getStatusColor(tender.status)}>
+                                  {tender.status}
+                                </Badge>
+                                
+                                {projects.length > 0 && (
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="sm">
+                                        <MoreVertical className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      {projects.map((project) => (
+                                        <DropdownMenuItem
+                                          key={project.id}
+                                          onClick={() => assignTenderToProject(tender.id, project.id)}
+                                        >
+                                          Assign to {project.name}
+                                        </DropdownMenuItem>
+                                      ))}
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Empty State for Grouped View */}
+                  {projects.length === 0 && unassignedTenders.length === 0 && tenders.length > 0 && (
+                    <Card>
+                      <CardContent className="text-center py-12">
+                        <Folder className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <h3 className="text-lg font-medium mb-2">No projects created yet</h3>
+                        <p className="text-muted-foreground mb-4">
+                          Switch to the Projects tab to create your first project and organize your tenders.
+                        </p>
+                        <Button variant="outline" onClick={() => setActiveTab('projects')}>
+                          Go to Projects
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  )}
                 </div>
               )}
             </div>
