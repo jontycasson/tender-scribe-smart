@@ -28,19 +28,45 @@ const Dashboard = () => {
     }
   }, [user]);
 
-  // Auto-refresh processing tenders
+  // Auto-refresh processing tenders and real-time subscription
   useEffect(() => {
     if (!user) return;
     
+    // Subscribe to real-time updates for processing tenders
+    const channel = supabase
+      .channel('tender-progress')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'tenders'
+        },
+        (payload) => {
+          console.log('Real-time tender update:', payload);
+          // Update local state with the changed tender
+          setTenders(prev => prev.map(tender => 
+            tender.id === payload.new.id ? { ...tender, ...payload.new } : tender
+          ));
+        }
+      )
+      .subscribe();
+
+    // Fallback polling for processing tenders
     const hasProcessingTenders = tenders.some(tender => tender.status === 'processing');
-    if (!hasProcessingTenders) return;
+    let interval: NodeJS.Timeout | null = null;
+    
+    if (hasProcessingTenders) {
+      interval = setInterval(() => {
+        console.log('Auto-refreshing tenders for processing status...');
+        fetchTenders();
+      }, 5000); // Check every 5 seconds
+    }
 
-    const interval = setInterval(() => {
-      console.log('Auto-refreshing tenders for processing status...');
-      fetchTenders();
-    }, 5000); // Check every 5 seconds
-
-    return () => clearInterval(interval);
+    return () => {
+      supabase.removeChannel(channel);
+      if (interval) clearInterval(interval);
+    };
   }, [tenders, user]);
 
   const fetchTenders = async () => {
@@ -295,7 +321,7 @@ const Dashboard = () => {
                         </div>
                       </CardHeader>
                       <CardContent>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                           <div>
                             <p className="text-muted-foreground">Value</p>
                             <p className="font-medium">{tender.value ? `$${tender.value}` : 'Not specified'}</p>
@@ -342,6 +368,25 @@ const Dashboard = () => {
                             </Button>
                           </div>
                         </div>
+                        {/* Processing Progress Bar */}
+                        {tender.status === 'processing' && (
+                          <div className="mt-4 space-y-2">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">
+                                {tender.processing_stage === 'extracting' && 'Extracting questions from document...'}
+                                {tender.processing_stage === 'identifying' && 'Identifying question structure...'}
+                                {tender.processing_stage === 'generating' && `Generating responses (${tender.processed_questions || 0}/${tender.total_questions || 0})`}
+                              </span>
+                              <span className="text-sm font-medium">{tender.progress || 0}%</span>
+                            </div>
+                            <div className="w-full bg-muted rounded-full h-2">
+                              <div
+                                className="bg-primary h-2 rounded-full transition-all duration-500"
+                                style={{ width: `${tender.progress || 0}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   ))}

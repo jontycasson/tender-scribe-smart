@@ -326,6 +326,15 @@ serve(async (req) => {
 
     const responses = [];
     
+    // Update to generation stage
+    await supabaseClient
+      .from('tenders')
+      .update({
+        processing_stage: 'generating',
+        last_activity_at: new Date().toISOString()
+      })
+      .eq('id', tenderId);
+
     // CRITICAL: Always insert a row for each question, even if AI generation fails
     for (let i = 0; i < questions.length; i++) {
       const question = questions[i];
@@ -458,9 +467,34 @@ Generate a tailored response:`;
       
       // ALWAYS push the response, even if AI generation failed
       responses.push(baseResponse);
+      
+      // Update progress after each question
+      const processedQuestions = i + 1;
+      const progressPercentage = Math.min(99, Math.round(20 + (processedQuestions / questions.length) * 79));
+      
+      await supabaseClient
+        .from('tenders')
+        .update({
+          processed_questions: processedQuestions,
+          progress: progressPercentage,
+          last_activity_at: new Date().toISOString()
+        })
+        .eq('id', tenderId);
+      
+      console.log(`Progress update: ${processedQuestions}/${questions.length} (${progressPercentage}%)`);
     }
 
     if (responses.length === 0) {
+      await supabaseClient
+        .from('tenders')
+        .update({
+          status: 'error',
+          processing_stage: 'error',
+          error_message: 'Failed to generate any responses',
+          last_activity_at: new Date().toISOString()
+        })
+        .eq('id', tenderId);
+        
       return new Response(JSON.stringify({ error: 'Failed to generate any responses' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -475,6 +509,17 @@ Generate a tailored response:`;
 
     if (insertError) {
       console.error('Error inserting responses:', insertError);
+      
+      await supabaseClient
+        .from('tenders')
+        .update({
+          status: 'error',
+          processing_stage: 'error',
+          error_message: 'Failed to save responses to database',
+          last_activity_at: new Date().toISOString()
+        })
+        .eq('id', tenderId);
+        
       return new Response(JSON.stringify({ error: 'Failed to save responses' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -485,7 +530,12 @@ Generate a tailored response:`;
     console.log(`Updating tender ${tenderId} status to 'draft'`);
     const { error: statusUpdateError } = await supabaseClient
       .from('tenders')
-      .update({ status: 'draft' })
+      .update({ 
+        status: 'draft',
+        processing_stage: 'complete',
+        progress: 100,
+        last_activity_at: new Date().toISOString()
+      })
       .eq('id', tenderId);
 
     if (statusUpdateError) {
@@ -507,6 +557,22 @@ Generate a tailored response:`;
 
   } catch (error) {
     console.error('Error in process-tender function:', error);
+    
+    // Update tender to error state
+    try {
+      await supabaseClient
+        .from('tenders')
+        .update({
+          status: 'error',
+          processing_stage: 'error',
+          error_message: error.message || 'Unknown error occurred during processing',
+          last_activity_at: new Date().toISOString()
+        })
+        .eq('id', tenderId);
+    } catch (updateError) {
+      console.error('Failed to update tender error state:', updateError);
+    }
+    
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/hooks/use-toast"
+import { ProcessingProgress } from "@/components/ui/processing-progress"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -140,6 +141,32 @@ const TenderDetails = () => {
     },
     enabled: !!id,
   });
+
+  // Real-time subscription for tender updates
+  useEffect(() => {
+    if (!tender?.id) return;
+
+    const channel = supabase
+      .channel(`tender-${tender.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'tenders',
+          filter: `id=eq.${tender.id}`
+        },
+        (payload) => {
+          console.log('Real-time tender update:', payload);
+          queryClient.setQueryData(['tender', id], payload.new);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [tender?.id, queryClient, id]);
 
   const { data: responses, isLoading: responsesLoading, refetch: refetchResponses } = useQuery({
     queryKey: ['tender-responses', tender?.id],
@@ -320,6 +347,53 @@ const TenderDetails = () => {
       <div className="mb-8">
         <Button variant="outline" onClick={() => navigate('/dashboard')}>Back to Dashboard</Button>
       </div>
+
+      {/* Processing Banner */}
+      {tender?.status === 'processing' && (
+        <Card className="mb-8 border-primary/20 bg-primary/5">
+          <CardContent className="pt-6">
+            <ProcessingProgress
+              stages={[
+                { id: 'extracting', label: 'Extracting Questions', description: 'Analysing document content' },
+                { id: 'identifying', label: 'Processing Structure', description: 'Identifying question patterns' },
+                { id: 'generating', label: 'Generating Responses', description: 'Creating AI-powered answers' },
+                { id: 'complete', label: 'Complete', description: 'Ready for review' }
+              ]}
+              currentStageIndex={
+                tender.processing_stage === 'extracting' ? 0 :
+                tender.processing_stage === 'identifying' ? 1 :
+                tender.processing_stage === 'generating' ? 2 : 3
+              }
+              progress={tender.progress || 0}
+              isComplete={tender.processing_stage === 'complete'}
+              error={tender.status === 'error' ? tender.error_message || undefined : undefined}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Error Banner */}
+      {tender?.status === 'error' && (
+        <Card className="mb-8 border-destructive/20 bg-destructive/5">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-destructive">Processing Failed</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {tender.error_message || 'An error occurred during processing'}
+                </p>
+              </div>
+              <Button 
+                onClick={() => window.location.reload()} 
+                variant="outline"
+                size="sm"
+              >
+                Try Again
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="mb-8">
         <CardHeader>
