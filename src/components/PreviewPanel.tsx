@@ -2,7 +2,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Eye, X, RotateCcw } from "lucide-react";
+import { Eye, X, RotateCcw, ArrowRight } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { usePreview, PreviewVariant, DashboardLayout } from "@/hooks/usePreview";
 
 interface PreviewPanelProps {
@@ -10,6 +11,7 @@ interface PreviewPanelProps {
 }
 
 export const PreviewPanel = ({ currentPage }: PreviewPanelProps) => {
+  const navigate = useNavigate();
   const {
     homepageVariant,
     dashboardLayout,
@@ -19,6 +21,10 @@ export const PreviewPanel = ({ currentPage }: PreviewPanelProps) => {
     togglePreviewPanel,
     resetToDefaults
   } = usePreview();
+
+  const applyToDashboard = () => {
+    navigate('/dashboard');
+  };
 
   if (!showPreviewPanel) {
     return (
@@ -134,6 +140,14 @@ export const PreviewPanel = ({ currentPage }: PreviewPanelProps) => {
                     </Button>
                   ))}
                 </div>
+                <Button 
+                  onClick={applyToDashboard}
+                  className="w-full mt-3 text-xs h-8"
+                  size="sm"
+                >
+                  <ArrowRight className="h-3 w-3 mr-2" />
+                  Apply to Dashboard
+                </Button>
               </div>
             </TabsContent>
           </Tabs>
