@@ -137,6 +137,53 @@ function calculateSimilarity(str1: string, str2: string): number {
   return intersection.size / union.size;
 }
 
+// JWT creation function for Google OAuth
+async function createJWT(serviceAccountKey: any): Promise<string> {
+  const header = {
+    alg: 'RS256',
+    typ: 'JWT'
+  };
+
+  const now = Math.floor(Date.now() / 1000);
+  const payload = {
+    iss: serviceAccountKey.client_email,
+    scope: 'https://www.googleapis.com/auth/cloud-platform',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600, // 1 hour expiry
+    iat: now
+  };
+
+  const encodedHeader = btoa(JSON.stringify(header)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const encodedPayload = btoa(JSON.stringify(payload)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  
+  const message = `${encodedHeader}.${encodedPayload}`;
+  
+  // Import the private key
+  const privateKey = serviceAccountKey.private_key.replace(/\\n/g, '\n');
+  const keyData = await crypto.subtle.importKey(
+    'pkcs8',
+    new TextEncoder().encode(privateKey.replace(/-----BEGIN PRIVATE KEY-----/, '').replace(/-----END PRIVATE KEY-----/, '').replace(/\s/g, '')),
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      hash: 'SHA-256'
+    },
+    false,
+    ['sign']
+  );
+
+  // Sign the message
+  const signature = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    keyData,
+    new TextEncoder().encode(message)
+  );
+
+  const encodedSignature = btoa(String.fromCharCode(...new Uint8Array(signature)))
+    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+
+  return `${message}.${encodedSignature}`;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -159,15 +206,14 @@ serve(async (req) => {
 
     let textToProcess = extractedText;
 
-    // If filePath is provided but no extractedText, use Nanonets to extract text
+    // If filePath is provided but no extractedText, use Google Document AI to extract text
     if (!extractedText && filePath) {
-      console.log(`No extracted text provided, using Nanonets to extract from: ${filePath}`);
+      console.log(`No extracted text provided, using Google Document AI to extract from: ${filePath}`);
       
-      const nanonetsApiKey = Deno.env.get('NANONETS_API_KEY');
-      const nanonetsModelId = Deno.env.get('NANONETS_MODEL_ID');
+      const googleServiceAccountJson = Deno.env.get('GOOGLE_DOCAI_SERVICE_ACCOUNT_JSON');
       
-      if (!nanonetsApiKey || !nanonetsModelId) {
-        console.error('Missing Nanonets API key or model ID');
+      if (!googleServiceAccountJson) {
+        console.error('Missing Google Document AI service account JSON');
         return new Response(JSON.stringify({ error: 'OCR service not configured' }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -175,6 +221,14 @@ serve(async (req) => {
       }
 
       try {
+        // Parse the service account JSON
+        const serviceAccountKey = JSON.parse(googleServiceAccountJson);
+        const projectId = serviceAccountKey.project_id;
+        const location = 'us'; // Default location, can be made configurable
+        const processorId = Deno.env.get('GOOGLE_DOCAI_PROCESSOR_ID') || 'general-processor';
+        
+        console.log(`Using Google Document AI with project: ${projectId}, location: ${location}, processor: ${processorId}`);
+
         // Get the file from Supabase storage
         const { data: fileData, error: fileError } = await supabaseClient.storage
           .from('tender-documents')
@@ -188,49 +242,75 @@ serve(async (req) => {
           });
         }
 
-        // Prepare file for Nanonets API using FormData
-        const formData = new FormData();
-        const blob = new Blob([await fileData.arrayBuffer()], { 
-          type: fileData.type || 'application/pdf' 
-        });
-        formData.append('file', blob, filePath.split('/').pop() || 'document.pdf');
+        // Convert file to base64
+        const fileBuffer = await fileData.arrayBuffer();
+        const fileBase64 = btoa(String.fromCharCode(...new Uint8Array(fileBuffer)));
+        
+        // Determine MIME type
+        const mimeType = fileData.type || 'application/pdf';
+        console.log(`Processing file with MIME type: ${mimeType}`);
 
-        // Call Nanonets API
-        const nanonetsResponse = await fetch(`https://app.nanonets.com/api/v2/OCR/Model/${nanonetsModelId}/LabelFile/`, {
+        // Get OAuth token using service account
+        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
           method: 'POST',
           headers: {
-            'Authorization': `Basic ${btoa(nanonetsApiKey + ':')}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
           },
-          body: formData,
+          body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+            assertion: await createJWT(serviceAccountKey),
+          }),
         });
 
-        if (!nanonetsResponse.ok) {
-          const errorText = await nanonetsResponse.text();
-          console.error('Nanonets API error:', nanonetsResponse.status, errorText);
+        if (!tokenResponse.ok) {
+          const tokenError = await tokenResponse.text();
+          console.error('Failed to get OAuth token:', tokenError);
           return new Response(JSON.stringify({ 
-            error: `OCR service error: ${nanonetsResponse.status} - ${errorText.substring(0, 200)}` 
+            error: `Authentication failed: ${tokenResponse.status}` 
           }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
 
-        const nanonetsData = await nanonetsResponse.json();
-        console.log('Nanonets response:', JSON.stringify(nanonetsData, null, 2));
+        const tokenData = await tokenResponse.json();
+        const accessToken = tokenData.access_token;
+
+        // Call Google Document AI API
+        const docAIEndpoint = `https://${location}-documentai.googleapis.com/v1/projects/${projectId}/locations/${location}/processors/${processorId}:process`;
         
-        // Try different paths to extract text
-        let extractedText = '';
-        if (nanonetsData.result && nanonetsData.result.length > 0) {
-          const result = nanonetsData.result[0];
-          if (result.prediction && result.prediction.length > 0) {
-            extractedText = result.prediction[0].ocr_text || '';
-          }
+        const docAIResponse = await fetch(docAIEndpoint, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            rawDocument: {
+              content: fileBase64,
+              mimeType: mimeType,
+            },
+          }),
+        });
+
+        if (!docAIResponse.ok) {
+          const errorText = await docAIResponse.text();
+          console.error('Google Document AI API error:', docAIResponse.status, errorText);
+          return new Response(JSON.stringify({ 
+            error: `OCR service error: ${docAIResponse.status} - ${errorText.substring(0, 200)}` 
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
         }
+
+        const docAIData = await docAIResponse.json();
+        console.log('Google Document AI response received');
         
-        // Fallback: try to get raw text from any field
-        if (!extractedText && nanonetsData.result) {
-          const allText = JSON.stringify(nanonetsData.result);
-          console.log('No ocr_text found, searching in full result...');
+        // Extract text from Document AI response
+        let extractedText = '';
+        if (docAIData.document && docAIData.document.text) {
+          extractedText = docAIData.document.text;
         }
         
         textToProcess = extractedText;
@@ -243,7 +323,7 @@ serve(async (req) => {
           });
         }
 
-        console.log(`Extracted ${textToProcess.length} characters from document using Nanonets`);
+        console.log(`Extracted ${textToProcess.length} characters from document using Google Document AI`);
       } catch (ocrError) {
         console.error('OCR processing error:', ocrError);
         return new Response(JSON.stringify({ error: 'Failed to process document with OCR' }), {
