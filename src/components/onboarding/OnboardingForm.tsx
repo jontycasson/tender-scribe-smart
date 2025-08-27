@@ -222,13 +222,13 @@ export function OnboardingForm({ onComplete, existingData }: OnboardingFormProps
                   name="specializations"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Specializations & Expertise</FormLabel>
+                      <FormLabel>Specialisations & Expertise</FormLabel>
                       <FormDescription>
                         Describe your key areas of expertise and what makes your company unique
                       </FormDescription>
                       <FormControl>
                         <AutoTextarea
-                          placeholder="e.g., We specialize in sustainable construction practices with expertise in LEED certification, green building technologies, and environmental impact assessments..."
+                          placeholder="e.g., We specialise in sustainable construction practices with expertise in LEED certification, green building technologies, and environmental impact assessments..."
                           {...field}
                         />
                       </FormControl>

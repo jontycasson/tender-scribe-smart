@@ -13,11 +13,11 @@ interface RewriteRequest {
 }
 
 const rewritePrompts = {
-  reword: 'Rewrite this response using different words and phrasing while keeping the same meaning and key facts. Maintain professionalism and British English.',
-  make_shorter: 'Make this response more concise and to the point. Remove any redundant information while keeping all essential facts and maintaining professionalism.',
-  make_formal: 'Rewrite this response in a more formal, professional tone suitable for official tender documentation. Use formal business language and structure.',
-  more_detailed: 'Expand this response with more detail and specific examples. Add relevant context and elaboration while maintaining accuracy.',
-  more_concise: 'Condense this response to be more brief and direct. Focus on the core message and essential information only.',
+  reword: 'Rewrite this response using different words and phrasing whilst keeping the same meaning and key facts. Maintain professionalism and use British English spelling and terminology.',
+  make_shorter: 'Make this response more concise and to the point. Remove any redundant information whilst keeping all essential facts and maintaining professionalism. Use British English spelling and terminology.',
+  make_formal: 'Rewrite this response in a more formal, professional tone suitable for official tender documentation. Use formal business language, structure, and British English spelling and terminology.',
+  more_detailed: 'Expand this response with more detail and specific examples. Add relevant context and elaboration whilst maintaining accuracy. Use British English spelling and terminology.',
+  more_concise: 'Condense this response to be more brief and direct. Focus on the core message and essential information only. Use British English spelling and terminology.',
   uk_english: 'Rewrite this response using British English spelling, terminology, and phrasing. Ensure all language conventions follow UK standards.'
 };
 
@@ -151,7 +151,7 @@ Rewritten Response:`;
             messages: [
               { 
                 role: 'system', 
-                content: 'You are a professional editor specializing in tender responses. Rewrite content accurately without adding new information or fabricating details.' 
+                content: 'You are a professional editor specialising in tender responses. Rewrite content accurately without adding new information or fabricating details. Always use British English spelling and terminology.' 
               },
               { role: 'user', content: prompt }
             ],

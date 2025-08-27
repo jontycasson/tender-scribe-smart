@@ -8,7 +8,7 @@ export const companyProfileSchema = z.object({
   
   // Step 2: Services & Expertise
   servicesOffered: z.array(z.string()).min(1, "Please select at least one service"),
-  specializations: z.string().min(10, "Please describe your specializations (minimum 10 characters)"),
+  specializations: z.string().min(10, "Please describe your specialisations (minimum 10 characters)"),
   
   // Step 3: Company Values & Mission
   mission: z.string().min(20, "Mission statement must be at least 20 characters"),

@@ -389,7 +389,7 @@ Generate a tailored response:`;
             body: JSON.stringify({
               model: 'gpt-4o-mini',
               messages: [
-                { role: 'system', content: 'You are a professional tender response writer. Never use placeholder text in brackets like [Name] or [Title]. Always provide complete, professional responses.' },
+                { role: 'system', content: 'You are a professional tender response writer who uses British English spelling and terminology. Never use placeholder text in brackets like [Name] or [Title]. Always provide complete, professional responses.' },
                 { role: 'user', content: prompt }
               ],
               max_tokens: classification.type === 'closed' ? 200 : 500,

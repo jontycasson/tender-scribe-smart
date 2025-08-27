@@ -274,7 +274,7 @@ Generate a tailored response:`;
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [
-          { role: 'system', content: 'You are a professional tender response writer.' },
+          { role: 'system', content: 'You are a professional tender response writer who uses British English spelling and terminology.' },
           { role: 'user', content: prompt }
         ],
         max_tokens: classification.type === 'closed' ? 200 : 500,
