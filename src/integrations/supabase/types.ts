@@ -103,6 +103,36 @@ export type Database = {
         }
         Relationships: []
       }
+      projects: {
+        Row: {
+          client_name: string | null
+          company_profile_id: string
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          client_name?: string | null
+          company_profile_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          client_name?: string | null
+          company_profile_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       qa_memory: {
         Row: {
           answer: string
@@ -240,6 +270,7 @@ export type Database = {
           processed_questions: number
           processing_stage: string | null
           progress: number
+          project_id: string | null
           status: string
           title: string
           total_questions: number
@@ -260,6 +291,7 @@ export type Database = {
           processed_questions?: number
           processing_stage?: string | null
           progress?: number
+          project_id?: string | null
           status?: string
           title: string
           total_questions?: number
@@ -280,6 +312,7 @@ export type Database = {
           processed_questions?: number
           processing_stage?: string | null
           progress?: number
+          project_id?: string | null
           status?: string
           title?: string
           total_questions?: number
@@ -293,6 +326,13 @@ export type Database = {
             columns: ["company_profile_id"]
             isOneToOne: false
             referencedRelation: "company_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenders_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,11 +8,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ProcessingProgress } from "@/components/ui/processing-progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, FileText, Download, Save, Check, X, Building2, ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { Upload, FileText, Download, Save, Check, X, Building2, ArrowLeft, ChevronLeft, ChevronRight, Plus, Folder } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigation } from "@/components/Navigation";
+import { PreviewPanel } from "@/components/PreviewPanel";
 
 interface Question {
   id: string;
@@ -54,6 +57,10 @@ const NewTender = () => {
   const [processingError, setProcessingError] = useState<string | null>(null);
   const [tenderId, setTenderId] = useState<string | null>(null);
   const [tenderTitle, setTenderTitle] = useState("");
+  const [selectedProject, setSelectedProject] = useState<string>("");
+  const [projects, setProjects] = useState<any[]>([]);
+  const [showCreateProject, setShowCreateProject] = useState(false);
+  const [newProject, setNewProject] = useState({ name: '', client_name: '', description: '' });
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentStep, setCurrentStep] = useState<'upload' | 'review' | 'complete'>('upload');
   const [currentPage, setCurrentPage] = useState(1);
@@ -100,6 +107,92 @@ const NewTender = () => {
           variant: "destructive",
         });
       }
+    }
+  };
+
+  // Fetch projects on component mount
+  useEffect(() => {
+    if (user) {
+      fetchProjects();
+    }
+  }, [user]);
+
+  const fetchProjects = async () => {
+    try {
+      const { data: companyProfile } = await supabase
+        .from('company_profiles')
+        .select('id')
+        .eq('user_id', user?.id)
+        .single();
+
+      if (!companyProfile) return;
+
+      const { data, error } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('company_profile_id', companyProfile.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setProjects(data || []);
+    } catch (error) {
+      console.error('Error fetching projects:', error);
+    }
+  };
+
+  const createProject = async () => {
+    if (!newProject.name.trim()) {
+      toast({
+        title: "Project name required",
+        description: "Please enter a project name",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const { data: companyProfile } = await supabase
+        .from('company_profiles')
+        .select('id')
+        .eq('user_id', user?.id)
+        .single();
+
+      if (!companyProfile) {
+        toast({
+          title: "Company profile required",
+          description: "Please complete your company profile first",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('projects')
+        .insert({
+          ...newProject,
+          company_profile_id: companyProfile.id
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setProjects(prev => [data, ...prev]);
+      setSelectedProject(data.id);
+      setNewProject({ name: '', client_name: '', description: '' });
+      setShowCreateProject(false);
+      
+      toast({
+        title: "Project created",
+        description: `Project "${data.name}" has been created successfully`,
+      });
+    } catch (error) {
+      console.error('Error creating project:', error);
+      toast({
+        title: "Error",
+        description: "Failed to create project",
+        variant: "destructive",
+      });
     }
   };
 
@@ -180,6 +273,7 @@ const NewTender = () => {
       const tenderRecord = {
         user_id: user.id,
         company_profile_id: companyProfile.id,
+        project_id: selectedProject || null,
         title: tenderTitle || file.name.replace(/\.[^/.]+$/, ""),
         original_filename: file.name,
         file_url: uploadData.path,
@@ -505,6 +599,81 @@ const NewTender = () => {
                   />
                 </div>
 
+                {/* Project Selection */}
+                <div>
+                  <Label>Assign to Project (Optional)</Label>
+                  <div className="flex gap-2">
+                    <Select value={selectedProject} onValueChange={setSelectedProject}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Select a project or leave unassigned" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">No Project (Unassigned)</SelectItem>
+                        {projects.map((project) => (
+                          <SelectItem key={project.id} value={project.id}>
+                            {project.name}
+                            {project.client_name && ` • ${project.client_name}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    
+                    <Dialog open={showCreateProject} onOpenChange={setShowCreateProject}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="icon">
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Create New Project</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div>
+                            <Label htmlFor="project-name">Project Name</Label>
+                            <Input
+                              id="project-name"
+                              value={newProject.name}
+                              onChange={(e) => setNewProject(prev => ({ ...prev, name: e.target.value }))}
+                              placeholder="e.g. City Council Infrastructure Upgrade"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="client-name">Client Name</Label>
+                            <Input
+                              id="client-name"
+                              value={newProject.client_name}
+                              onChange={(e) => setNewProject(prev => ({ ...prev, client_name: e.target.value }))}
+                              placeholder="e.g. Manchester City Council"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="project-description">Description (Optional)</Label>
+                            <Textarea
+                              id="project-description"
+                              value={newProject.description}
+                              onChange={(e) => setNewProject(prev => ({ ...prev, description: e.target.value }))}
+                              placeholder="Brief description of the project..."
+                              rows={2}
+                            />
+                          </div>
+                          <div className="flex gap-2 justify-end">
+                            <Button variant="outline" onClick={() => setShowCreateProject(false)}>
+                              Cancel
+                            </Button>
+                            <Button onClick={createProject}>
+                              Create & Assign
+                            </Button>
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Group related tender documents together by project
+                  </p>
+                </div>
+
                 <div className="border-2 border-dashed border-muted rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer relative overflow-hidden">
                   <input
                     type="file"
@@ -751,6 +920,7 @@ const NewTender = () => {
           </div>
         )}
       </div>
+      <PreviewPanel currentPage="other" />
     </div>
   );
 };
