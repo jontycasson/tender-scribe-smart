@@ -368,6 +368,7 @@ const TenderDetails = () => {
                   <CardContent>
                     <div className="mb-4">
                       <Textarea
+                        key={`${response.id}-${response.user_edited_answer || response.ai_generated_answer || ''}`}
                         defaultValue={response.user_edited_answer || response.ai_generated_answer || ''}
                         placeholder="Enter your response here."
                         className="w-full h-40 resize-none"
