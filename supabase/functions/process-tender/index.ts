@@ -255,8 +255,33 @@ serve(async (req) => {
 
     console.log(`Processing tender ${tenderId} with ${textToProcess?.length || 0} characters of text`);
 
+    // Update tender to extracting stage
+    await supabaseClient
+      .from('tenders')
+      .update({
+        status: 'processing',
+        processing_stage: 'extracting',
+        progress: 10,
+        last_activity_at: new Date().toISOString()
+      })
+      .eq('id', tenderId);
+
     // Extract questions from the text
+    console.log(`Extracting questions from text of length: ${textToProcess?.length || 0}`);
     const questions = extractQuestionsFromText(textToProcess || '');
+    console.log(`Extracted ${questions.length} questions`);
+
+    // Update tender with question count and progress
+    await supabaseClient
+      .from('tenders')
+      .update({
+        processing_stage: 'identifying',
+        total_questions: questions.length,
+        processed_questions: 0,
+        progress: 20,
+        last_activity_at: new Date().toISOString()
+      })
+      .eq('id', tenderId);
 
     if (questions.length === 0) {
       return new Response(JSON.stringify({ error: 'No questions found in the document' }), {

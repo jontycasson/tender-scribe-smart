@@ -224,14 +224,48 @@ const NewTender = () => {
 
   const processDocument = async (tenderId: string, filePath: string) => {
     console.log('Starting document processing for tender:', tenderId, 'file:', filePath);
-    setCurrentProcessingStage(2);
-    setProcessingProgress(60);
+    
+    // Subscribe to real-time updates for this tender
+    const channel = supabase
+      .channel('tender-progress')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'tenders',
+          filter: `id=eq.${tenderId}`
+        },
+        (payload) => {
+          console.log('Real-time tender update:', payload.new);
+          const tender = payload.new as any;
+          
+          if (tender.processing_stage) {
+            const stageIndex = processingStages.findIndex(s => s.id === tender.processing_stage);
+            if (stageIndex >= 0) {
+              setCurrentProcessingStage(stageIndex);
+            }
+          }
+          
+          if (tender.progress) {
+            setProcessingProgress(tender.progress);
+          }
+          
+          if (tender.status === 'draft') {
+            // Processing complete, fetch responses and move to review
+            fetchTenderResponses(tenderId);
+          } else if (tender.status === 'error') {
+            setProcessingError(tender.error_message || 'Processing failed');
+            setProcessing(false);
+            setCurrentStep('upload');
+          }
+        }
+      )
+      .subscribe();
     
     try {
       // Call edge function to process document
       console.log('Calling process-tender edge function...');
-      setProcessingProgress(75);
-      setCurrentProcessingStage(3);
       
       const { data, error } = await supabase.functions.invoke('process-tender', {
         body: { tenderId, filePath }
@@ -242,82 +276,38 @@ const NewTender = () => {
         throw error;
       }
 
-      console.log('Edge function response:', data);
-      setProcessingProgress(90);
+    } catch (error) {
+      console.error('Processing error:', error);
+      setProcessingError(error.message || "Failed to process document. Please try again.");
+      setCurrentStep('upload');
+    } finally {
+      // Unsubscribe from real-time updates
+      supabase.removeChannel(channel);
+    }
+  };
 
-      // Wait a moment for the database to be updated
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Fetch the generated questions and responses
-      console.log('Fetching tender responses...');
-      const { data: responsesData, error: responsesError } = await supabase
+  const fetchTenderResponses = async (tenderId: string) => {
+    try {
+      const { data: responsesData, error } = await supabase
         .from('tender_responses')
         .select('*')
         .eq('tender_id', tenderId)
         .order('question_index', { ascending: true });
 
-      if (responsesError) {
-        console.error('Response fetch error:', responsesError);
-        throw responsesError;
-      }
-
-      console.log('Fetched responses:', responsesData);
+      if (error) throw error;
       
-      // Check if processing returned an error
-      const { data: tenderData, error: tenderFetchError } = await supabase
-        .from('tenders')
-        .select('status, parsed_data')
-        .eq('id', tenderId)
-        .single();
-
-      if (tenderFetchError) {
-        console.error('Tender fetch error:', tenderFetchError);
-        throw tenderFetchError;
-      }
-
-      if (tenderData.status === 'error' || (tenderData.parsed_data && typeof tenderData.parsed_data === 'object' && 'error' in tenderData.parsed_data)) {
-        const parsedData = tenderData.parsed_data as { error?: string } | null;
-        const errorMessage = parsedData?.error || "Failed to extract questions from document";
-        setProcessingError(errorMessage.includes('❌') ? errorMessage : "We couldn't extract questions from your document. Please check that your document has numbered questions (e.g., '1. Describe your experience').");
-        toast({
-          title: "Extraction failed",
-          description: errorMessage.includes('❌') ? errorMessage : "We couldn't extract questions from your document. Please check that your document has numbered questions (e.g., '1. Describe your experience').",
-          variant: "destructive",
-        });
-        setCurrentStep('upload'); // Stay on upload step
-        return;
-      }
-
-      if (!responsesData || responsesData.length === 0) {
-        setProcessingError("No questions could be extracted from the uploaded document.");
-        toast({
-          title: "No questions found",
-          description: "No questions could be extracted from the uploaded document.",
-          variant: "destructive",
-        });
-        setCurrentStep('upload'); // Stay on upload step
-        return;
-      }
-
-      setProcessingProgress(100);
-      setQuestions(responsesData);
-      setCurrentStep('review'); // Only navigate to review step on successful processing
+      setQuestions(responsesData || []);
+      setCurrentStep('review');
+      setProcessing(false);
       
       toast({
         title: "Document processed",
-        description: `Generated ${responsesData.length} AI responses. Please review and edit as needed.`,
+        description: `Generated ${responsesData?.length || 0} AI responses. Please review and edit as needed.`,
       });
-
     } catch (error) {
-      console.error('Processing error:', error);
-      setProcessingError(error.message || "Failed to process document. Please try again.");
-      toast({
-        title: "Processing failed", 
-        description: error.message || "Failed to process document. Please try again.",
-        variant: "destructive",
-      });
-      setCurrentStep('upload'); // Reset to upload step on error
-    } finally {
+      console.error('Response fetch error:', error);
+      setProcessingError("Failed to fetch responses");
+      setCurrentStep('upload');
       setProcessing(false);
     }
   };

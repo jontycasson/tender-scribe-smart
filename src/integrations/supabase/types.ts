@@ -231,12 +231,18 @@ export type Database = {
           company_profile_id: string | null
           created_at: string
           deadline: string | null
+          error_message: string | null
           file_url: string
           id: string
+          last_activity_at: string | null
           original_filename: string
           parsed_data: Json | null
+          processed_questions: number
+          processing_stage: string | null
+          progress: number
           status: string
           title: string
+          total_questions: number
           updated_at: string
           user_id: string
           value: number | null
@@ -245,12 +251,18 @@ export type Database = {
           company_profile_id?: string | null
           created_at?: string
           deadline?: string | null
+          error_message?: string | null
           file_url: string
           id?: string
+          last_activity_at?: string | null
           original_filename: string
           parsed_data?: Json | null
+          processed_questions?: number
+          processing_stage?: string | null
+          progress?: number
           status?: string
           title: string
+          total_questions?: number
           updated_at?: string
           user_id: string
           value?: number | null
@@ -259,12 +271,18 @@ export type Database = {
           company_profile_id?: string | null
           created_at?: string
           deadline?: string | null
+          error_message?: string | null
           file_url?: string
           id?: string
+          last_activity_at?: string | null
           original_filename?: string
           parsed_data?: Json | null
+          processed_questions?: number
+          processing_stage?: string | null
+          progress?: number
           status?: string
           title?: string
+          total_questions?: number
           updated_at?: string
           user_id?: string
           value?: number | null
