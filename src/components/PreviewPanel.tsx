@@ -1,10 +1,9 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Eye, X, RotateCcw, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { usePreview, PreviewVariant, DashboardLayout } from "@/hooks/usePreview";
+import { usePreview, PreviewVariant } from "@/hooks/usePreview";
 
 interface PreviewPanelProps {
   currentPage: 'homepage' | 'dashboard' | 'other';
@@ -14,16 +13,14 @@ export const PreviewPanel = ({ currentPage }: PreviewPanelProps) => {
   const navigate = useNavigate();
   const {
     homepageVariant,
-    dashboardLayout,
     showPreviewPanel,
     updateHomepageVariant,
-    updateDashboardLayout,
     togglePreviewPanel,
     resetToDefaults
   } = usePreview();
 
-  const applyToDashboard = () => {
-    navigate('/dashboard');
+  const applyToHomepage = () => {
+    navigate('/');
   };
 
   if (!showPreviewPanel) {
@@ -46,11 +43,6 @@ export const PreviewPanel = ({ currentPage }: PreviewPanelProps) => {
     { key: 'classic', label: 'Classic', description: 'Original centered hero layout' },
     { key: 'document-first', label: 'Document-First', description: 'Focus on document upload flow' },
     { key: 'split-hero', label: 'Split Hero', description: 'Side-by-side content layout' }
-  ];
-
-  const dashboardLayouts: { key: DashboardLayout; label: string; description: string }[] = [
-    { key: 'tenders', label: 'Tenders View', description: 'Traditional list of tender documents' },
-    { key: 'projects', label: 'Projects View', description: 'Group tenders by client projects' }
   ];
 
   return (
@@ -83,78 +75,42 @@ export const PreviewPanel = ({ currentPage }: PreviewPanelProps) => {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Tabs defaultValue={currentPage === 'homepage' ? 'homepage' : 'dashboard'}>
-            <TabsList className="grid w-full grid-cols-2 h-8">
-              <TabsTrigger value="homepage" className="text-xs">Homepage</TabsTrigger>
-              <TabsTrigger value="dashboard" className="text-xs">Dashboard</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="homepage" className="space-y-3 mt-3">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium">Layout Variant</span>
-                  <Badge variant="secondary" className="text-xs">
-                    {homepageVariants.find(v => v.key === homepageVariant)?.label}
-                  </Badge>
-                </div>
-                <div className="space-y-1">
-                  {homepageVariants.map((variant) => (
-                    <Button
-                      key={variant.key}
-                      onClick={() => updateHomepageVariant(variant.key)}
-                      variant={homepageVariant === variant.key ? "default" : "ghost"}
-                      size="sm"
-                      className="w-full justify-start text-xs h-8"
-                    >
-                      <div className="text-left">
-                        <div className="font-medium">{variant.label}</div>
-                        <div className="text-xs text-muted-foreground">{variant.description}</div>
-                      </div>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="dashboard" className="space-y-3 mt-3">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium">Dashboard Layout</span>
-                  <Badge variant="secondary" className="text-xs">
-                    {dashboardLayouts.find(l => l.key === dashboardLayout)?.label}
-                  </Badge>
-                </div>
-                <div className="space-y-1">
-                  {dashboardLayouts.map((layout) => (
-                    <Button
-                      key={layout.key}
-                      onClick={() => updateDashboardLayout(layout.key)}
-                      variant={dashboardLayout === layout.key ? "default" : "ghost"}
-                      size="sm"
-                      className="w-full justify-start text-xs h-8"
-                    >
-                      <div className="text-left">
-                        <div className="font-medium">{layout.label}</div>
-                        <div className="text-xs text-muted-foreground">{layout.description}</div>
-                      </div>
-                    </Button>
-                  ))}
-                </div>
-                <Button 
-                  onClick={applyToDashboard}
-                  className="w-full mt-3 text-xs h-8"
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium">Layout Variant</span>
+              <Badge variant="secondary" className="text-xs">
+                {homepageVariants.find(v => v.key === homepageVariant)?.label}
+              </Badge>
+            </div>
+            <div className="space-y-1">
+              {homepageVariants.map((variant) => (
+                <Button
+                  key={variant.key}
+                  onClick={() => updateHomepageVariant(variant.key)}
+                  variant={homepageVariant === variant.key ? "default" : "ghost"}
                   size="sm"
+                  className="w-full justify-start text-xs h-8"
                 >
-                  <ArrowRight className="h-3 w-3 mr-2" />
-                  Apply to Dashboard
+                  <div className="text-left">
+                    <div className="font-medium">{variant.label}</div>
+                    <div className="text-xs text-muted-foreground">{variant.description}</div>
+                  </div>
                 </Button>
-              </div>
-            </TabsContent>
-          </Tabs>
+              ))}
+            </div>
+            <Button 
+              onClick={applyToHomepage}
+              className="w-full mt-3 text-xs h-8"
+              size="sm"
+            >
+              <ArrowRight className="h-3 w-3 mr-2" />
+              Apply to Homepage
+            </Button>
+          </div>
 
           {currentPage === 'other' && (
             <div className="text-xs text-muted-foreground text-center py-2">
-              Navigate to Homepage or Dashboard to preview layouts
+              Navigate to Homepage to preview layouts
             </div>
           )}
         </CardContent>
