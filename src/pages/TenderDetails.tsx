@@ -366,7 +366,7 @@ const TenderDetails = () => {
               }
               progress={tender.progress || 0}
               isComplete={tender.processing_stage === 'complete'}
-              error={tender.status === 'error' ? tender.error_message || undefined : undefined}
+              error={undefined}
             />
           </CardContent>
         </Card>
