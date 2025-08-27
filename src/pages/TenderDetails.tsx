@@ -46,6 +46,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
   Table,
   TableBody,
   TableCaption,
@@ -236,7 +244,16 @@ const TenderDetails = () => {
         body: { responseId }
       });
       
-      if (error) throw error;
+      if (error) {
+        console.error("Regenerate function error:", error);
+        throw new Error(error.message || "Failed to regenerate response");
+      }
+      
+      if (data?.error) {
+        console.error("Regenerate response error:", data.error);
+        throw new Error(data.error);
+      }
+      
       return data;
     },
     onSuccess: () => {
@@ -252,6 +269,44 @@ const TenderDetails = () => {
       toast({
         title: "Error regenerating response",
         description: error.message || "Failed to regenerate response. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const rewriteResponse = useMutation({
+    mutationFn: async ({ responseId, mode }: { responseId: string; mode: string }) => {
+      setIsGenerating(responseId);
+      const { data, error } = await supabase.functions.invoke('rewrite-response', {
+        body: { responseId, mode }
+      });
+      
+      if (error) {
+        console.error("Rewrite function error:", error);
+        throw new Error(error.message || "Failed to rewrite response");
+      }
+      
+      if (data?.error) {
+        console.error("Rewrite response error:", data.error);
+        throw new Error(data.error);
+      }
+      
+      return data;
+    },
+    onSuccess: (data, variables) => {
+      setIsGenerating(null);
+      queryClient.invalidateQueries({ queryKey: ['tender-responses', tender?.id] });
+      const modeDisplay = variables.mode.replace('_', ' ');
+      toast({
+        title: "Response rewritten",
+        description: `Response has been made ${modeDisplay} successfully.`,
+      });
+    },
+    onError: (error: any) => {
+      setIsGenerating(null);
+      toast({
+        title: "Error rewriting response",
+        description: error.message || "Failed to rewrite response. Please try again.",
         variant: "destructive",
       });
     },
@@ -330,15 +385,49 @@ const TenderDetails = () => {
                           {updateMutation.isPending && <RefreshCw className="mr-2 h-4 w-4 animate-spin" />}
                           Update Response
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => regenerateResponse.mutate(response.id)}
-                          disabled={isGenerating === response.id}
-                        >
-                          <RefreshCw className={cn("mr-2 h-4 w-4", isGenerating === response.id && "animate-spin")} />
-                          {isGenerating === response.id ? 'Regenerating...' : 'Regenerate'}
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={isGenerating === response.id}
+                            >
+                              <RefreshCw className={cn("mr-2 h-4 w-4", isGenerating === response.id && "animate-spin")} />
+                              {isGenerating === response.id ? 'Processing...' : 'Regenerate'}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Regenerate Options</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => regenerateResponse.mutate(response.id)}
+                              disabled={isGenerating === response.id}
+                            >
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                              Regenerate
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel>Rewrite As</DropdownMenuLabel>
+                            <DropdownMenuItem
+                              onClick={() => rewriteResponse.mutate({ responseId: response.id, mode: 'make_shorter' })}
+                              disabled={isGenerating === response.id}
+                            >
+                              Make Shorter
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => rewriteResponse.mutate({ responseId: response.id, mode: 'make_formal' })}
+                              disabled={isGenerating === response.id}
+                            >
+                              Make More Formal
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => rewriteResponse.mutate({ responseId: response.id, mode: 'more_detailed' })}
+                              disabled={isGenerating === response.id}
+                            >
+                              Make Longer
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         <Switch
                           id={`approve-${response.id}`}
                           checked={response.is_approved || false}

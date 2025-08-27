@@ -300,24 +300,55 @@ serve(async (req) => {
     }
 
     const responses = [];
+    
+    // CRITICAL: Always insert a row for each question, even if AI generation fails
     for (let i = 0; i < questions.length; i++) {
       const question = questions[i];
-      console.log(`Generating response for question ${i + 1}/${questions.length}: ${question.substring(0, 100)}...`);
+      console.log(`Processing question ${i + 1}/${questions.length}: ${question.substring(0, 100)}...`);
       
+      // Always create a base response object first
+      const baseResponse = {
+        tender_id: tenderId,
+        company_profile_id: companyProfile.id,
+        question: question,
+        question_index: i,
+        is_approved: false,
+        ai_generated_answer: null,
+        question_type: null,
+        response_length: 0,
+        model_used: null,
+        research_used: false,
+      };
+
       // Classify question type for optimized response strategy
       const classification = classifyQuestion(question);
       console.log(`Question ${i + 1} classification:`, classification);
+      baseResponse.question_type = classification.type;
 
-      // Check if research is needed and enabled
+      // Check if research is needed and enabled - default to enabled unless explicitly disabled
       let researchSnippet = null;
-      const enableResearch = Deno.env.get('ENABLE_RESEARCH')?.toLowerCase() === 'true';
+      const enableResearch = Deno.env.get('ENABLE_RESEARCH')?.toLowerCase() !== 'false'; // Default to true
+      console.log(`Research enabled: ${enableResearch}`);
       
       if (enableResearch && classification.needsResearch) {
+        console.log(`Attempting research for question: ${question.substring(0, 50)}`);
         const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
-        researchSnippet = await fetchResearchSnippet(question, companyProfile.company_name, perplexityApiKey);
+        try {
+          researchSnippet = await fetchResearchSnippet(question, companyProfile.company_name, perplexityApiKey);
+          if (researchSnippet) {
+            console.log(`Research found: ${researchSnippet.substring(0, 100)}...`);
+            baseResponse.research_used = true;
+          } else {
+            console.log('No research snippet returned');
+          }
+        } catch (error) {
+          console.error(`Research failed for question ${i + 1}:`, error);
+        }
+      } else {
+        console.log(`Research skipped - enabled: ${enableResearch}, needs research: ${classification.needsResearch}`);
       }
 
-      // Generate AI response
+      // Generate AI response with retries
       const prompt = `You are a tender response writer for ${companyProfile.company_name}. Generate a professional response for this tender question.
 
 Company Context:
@@ -342,49 +373,66 @@ ${researchSnippet ? '- Incorporate relevant research findings naturally into you
 
 Generate a tailored response:`;
 
-      try {
-        const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${openAIApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: 'You are a professional tender response writer. Never use placeholder text in brackets like [Name] or [Title]. Always provide complete, professional responses.' },
-              { role: 'user', content: prompt }
-            ],
-            max_tokens: classification.type === 'closed' ? 200 : 500,
-            temperature: 0.3,
-          }),
-        });
-
-        if (!aiResponse.ok) {
-          console.error(`OpenAI API error for question ${i + 1}:`, aiResponse.status, aiResponse.statusText);
-          continue;
-        }
-
-        const aiData = await aiResponse.json();
-        const generatedAnswer = aiData.choices[0]?.message?.content;
-
-        if (generatedAnswer) {
-          responses.push({
-            tender_id: tenderId,
-            company_profile_id: companyProfile.id,
-            question: question,
-            ai_generated_answer: generatedAnswer,
-            question_index: i, // Add explicit ordering
-            question_type: classification.type,
-            response_length: generatedAnswer.length,
-            model_used: 'gpt-4o-mini',
-            research_used: !!researchSnippet,
-            is_approved: false
+      let retryCount = 0;
+      const maxRetries = 2;
+      
+      while (retryCount <= maxRetries) {
+        try {
+          console.log(`Generating response for question ${i + 1}/${questions.length} (attempt ${retryCount + 1}): ${question.substring(0, 100)}...`);
+          
+          const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${openAIApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              messages: [
+                { role: 'system', content: 'You are a professional tender response writer. Never use placeholder text in brackets like [Name] or [Title]. Always provide complete, professional responses.' },
+                { role: 'user', content: prompt }
+              ],
+              max_tokens: classification.type === 'closed' ? 200 : 500,
+              temperature: 0.3,
+            }),
           });
+
+          if (!aiResponse.ok) {
+            const errorText = await aiResponse.text();
+            console.error(`OpenAI API error for question ${i + 1} (attempt ${retryCount + 1}):`, aiResponse.status, aiResponse.statusText, errorText);
+            throw new Error(`API Error: ${aiResponse.status} - ${errorText}`);
+          }
+
+          const aiData = await aiResponse.json();
+          const generatedAnswer = aiData.choices[0]?.message?.content;
+
+          if (generatedAnswer) {
+            baseResponse.ai_generated_answer = generatedAnswer;
+            baseResponse.response_length = generatedAnswer.length;
+            baseResponse.model_used = 'gpt-4o-mini';
+            console.log(`Successfully generated response for question ${i + 1}`);
+            break; // Success, exit retry loop
+          } else {
+            throw new Error('No content returned from OpenAI');
+          }
+        } catch (error) {
+          console.error(`Error generating response for question ${i + 1} (attempt ${retryCount + 1}):`, error);
+          retryCount++;
+          
+          if (retryCount > maxRetries) {
+            console.error(`Failed to generate response for question ${i + 1} after ${maxRetries + 1} attempts`);
+            baseResponse.ai_generated_answer = 'Failed to generate response. Please try regenerating.';
+            baseResponse.model_used = 'error';
+            break;
+          }
+          
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
         }
-      } catch (error) {
-        console.error(`Error generating response for question ${i + 1}:`, error);
       }
+      
+      // ALWAYS push the response, even if AI generation failed
+      responses.push(baseResponse);
     }
 
     if (responses.length === 0) {
@@ -408,7 +456,8 @@ Generate a tailored response:`;
       });
     }
 
-    // Update tender status to draft after successful processing
+    // CRITICAL: Update tender status to draft after successful processing
+    console.log(`Updating tender ${tenderId} status to 'draft'`);
     const { error: statusUpdateError } = await supabaseClient
       .from('tenders')
       .update({ status: 'draft' })
@@ -417,6 +466,8 @@ Generate a tailored response:`;
     if (statusUpdateError) {
       console.error('Error updating tender status:', statusUpdateError);
       // Don't fail the whole process for this
+    } else {
+      console.log(`Successfully updated tender ${tenderId} status to 'draft'`);
     }
 
     console.log(`Successfully processed ${responses.length} questions for tender ${tenderId}`);

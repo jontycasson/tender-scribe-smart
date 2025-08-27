@@ -28,6 +28,21 @@ const Dashboard = () => {
     }
   }, [user]);
 
+  // Auto-refresh processing tenders
+  useEffect(() => {
+    if (!user) return;
+    
+    const hasProcessingTenders = tenders.some(tender => tender.status === 'processing');
+    if (!hasProcessingTenders) return;
+
+    const interval = setInterval(() => {
+      console.log('Auto-refreshing tenders for processing status...');
+      fetchTenders();
+    }, 5000); // Check every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [tenders, user]);
+
   const fetchTenders = async () => {
     try {
       // Get user's company profile ID first
