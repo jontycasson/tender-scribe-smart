@@ -153,35 +153,63 @@ async function createJWT(serviceAccountKey: any): Promise<string> {
     iat: now
   };
 
-  const encodedHeader = btoa(JSON.stringify(header)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-  const encodedPayload = btoa(JSON.stringify(payload)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  // Base64URL encoding helper
+  const base64URLEncode = (obj: any): string => {
+    return btoa(JSON.stringify(obj))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+  };
+
+  const encodedHeader = base64URLEncode(header);
+  const encodedPayload = base64URLEncode(payload);
   
   const message = `${encodedHeader}.${encodedPayload}`;
   
-  // Import the private key
-  const privateKey = serviceAccountKey.private_key.replace(/\\n/g, '\n');
-  const keyData = await crypto.subtle.importKey(
-    'pkcs8',
-    new TextEncoder().encode(privateKey.replace(/-----BEGIN PRIVATE KEY-----/, '').replace(/-----END PRIVATE KEY-----/, '').replace(/\s/g, '')),
-    {
-      name: 'RSASSA-PKCS1-v1_5',
-      hash: 'SHA-256'
-    },
-    false,
-    ['sign']
-  );
+  try {
+    // Clean and prepare the private key
+    const privateKeyPem = serviceAccountKey.private_key;
+    const pemHeader = '-----BEGIN PRIVATE KEY-----';
+    const pemFooter = '-----END PRIVATE KEY-----';
+    
+    const pemContents = privateKeyPem
+      .replace(pemHeader, '')
+      .replace(pemFooter, '')
+      .replace(/\s/g, '');
+    
+    // Convert PEM to ArrayBuffer
+    const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
+    
+    // Import the private key
+    const keyData = await crypto.subtle.importKey(
+      'pkcs8',
+      binaryDer,
+      {
+        name: 'RSASSA-PKCS1-v1_5',
+        hash: 'SHA-256'
+      },
+      false,
+      ['sign']
+    );
 
-  // Sign the message
-  const signature = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5',
-    keyData,
-    new TextEncoder().encode(message)
-  );
+    // Sign the message
+    const signature = await crypto.subtle.sign(
+      'RSASSA-PKCS1-v1_5',
+      keyData,
+      new TextEncoder().encode(message)
+    );
 
-  const encodedSignature = btoa(String.fromCharCode(...new Uint8Array(signature)))
-    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+    // Base64URL encode the signature
+    const encodedSignature = btoa(String.fromCharCode(...new Uint8Array(signature)))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
 
-  return `${message}.${encodedSignature}`;
+    return `${message}.${encodedSignature}`;
+  } catch (error) {
+    console.error('JWT creation failed:', error);
+    throw new Error(`Failed to create JWT: ${error.message}`);
+  }
 }
 
 serve(async (req) => {
