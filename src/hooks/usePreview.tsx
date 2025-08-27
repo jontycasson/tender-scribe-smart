@@ -19,17 +19,38 @@ const defaultState: PreviewState = {
 export const usePreview = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [previewState, setPreviewState] = useState<PreviewState>(() => {
-    // Initialize from URL params or localStorage
+    // Initialize from URL params or localStorage with error handling
     const urlVariant = searchParams.get('variant') as PreviewVariant;
     const urlLayout = searchParams.get('layout') as DashboardLayout;
     const showPanel = searchParams.get('preview') === 'true';
     
-    const stored = localStorage.getItem('lovable-preview-state');
-    const storedState = stored ? JSON.parse(stored) : {};
+    // Validate URL parameters
+    const validVariants: PreviewVariant[] = ['classic', 'document-first', 'split-hero'];
+    const validLayouts: DashboardLayout[] = ['tenders', 'projects'];
+    
+    const safeUrlVariant = validVariants.includes(urlVariant) ? urlVariant : null;
+    const safeUrlLayout = validLayouts.includes(urlLayout) ? urlLayout : null;
+    
+    // Safe localStorage parsing
+    let storedState: Partial<PreviewState> = {};
+    try {
+      const stored = localStorage.getItem('lovable-preview-state');
+      if (stored) {
+        storedState = JSON.parse(stored);
+      }
+    } catch (error) {
+      console.warn('Failed to parse preview state from localStorage:', error);
+      // Remove corrupted data
+      try {
+        localStorage.removeItem('lovable-preview-state');
+      } catch (removeError) {
+        console.warn('Failed to remove corrupted preview state:', removeError);
+      }
+    }
     
     return {
-      homepageVariant: urlVariant || storedState.homepageVariant || defaultState.homepageVariant,
-      dashboardLayout: urlLayout || storedState.dashboardLayout || defaultState.dashboardLayout,
+      homepageVariant: safeUrlVariant || storedState.homepageVariant || defaultState.homepageVariant,
+      dashboardLayout: safeUrlLayout || storedState.dashboardLayout || defaultState.dashboardLayout,
       showPreviewPanel: showPanel || storedState.showPreviewPanel || defaultState.showPreviewPanel
     };
   });
@@ -57,7 +78,13 @@ export const usePreview = () => {
     }
     
     setSearchParams(params, { replace: true });
-    localStorage.setItem('lovable-preview-state', JSON.stringify(previewState));
+    
+    // Safe localStorage write
+    try {
+      localStorage.setItem('lovable-preview-state', JSON.stringify(previewState));
+    } catch (error) {
+      console.warn('Failed to save preview state to localStorage:', error);
+    }
   }, [previewState, setSearchParams]);
 
   const updateHomepageVariant = (variant: PreviewVariant) => {
@@ -74,7 +101,11 @@ export const usePreview = () => {
 
   const resetToDefaults = () => {
     setPreviewState(defaultState);
-    localStorage.removeItem('lovable-preview-state');
+    try {
+      localStorage.removeItem('lovable-preview-state');
+    } catch (error) {
+      console.warn('Failed to remove preview state from localStorage:', error);
+    }
   };
 
   return {

@@ -16,6 +16,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigation } from "@/components/Navigation";
 import { PreviewPanel } from "@/components/PreviewPanel";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Question {
   id: string;
@@ -49,6 +51,8 @@ const processingStages = [
 ];
 
 const NewTender = () => {
+  console.log('NewTender component mounting');
+  
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -109,6 +113,17 @@ const NewTender = () => {
       }
     }
   };
+
+  // Mount logging and auth check
+  useEffect(() => {
+    console.log('NewTender mounted:', { 
+      hasUser: !!user, 
+      userId: user?.id, 
+      currentStep, 
+      processing,
+      hasFile: !!file 
+    });
+  }, []);
 
   // Fetch projects on component mount
   useEffect(() => {
@@ -539,6 +554,14 @@ const NewTender = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Loading skeleton for initial render */}
+      {!user && (
+        <div className="space-y-2 p-4">
+          <Skeleton className="h-4 w-1/3" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      )}
+      
       <Navigation />
       
       {/* Progress indicators */}
@@ -920,7 +943,9 @@ const NewTender = () => {
           </div>
         )}
       </div>
-      <PreviewPanel currentPage="other" />
+      <ErrorBoundary fallback={<div className="fixed bottom-4 right-4 p-2 text-xs text-muted-foreground bg-muted rounded">Preview unavailable</div>}>
+        <PreviewPanel currentPage="other" />
+      </ErrorBoundary>
     </div>
   );
 };
