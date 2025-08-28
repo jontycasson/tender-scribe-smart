@@ -249,11 +249,41 @@ serve(async (req) => {
       }
 
       try {
-        // Parse the service account JSON
-        const serviceAccountKey = JSON.parse(googleServiceAccountJson);
+        // Parse the service account JSON with robust handling
+        let serviceAccountKey;
+        try {
+          // Try parsing as direct JSON first
+          serviceAccountKey = JSON.parse(googleServiceAccountJson);
+        } catch (jsonError) {
+          try {
+            // Try base64 decoding first, then parse
+            const decoded = atob(googleServiceAccountJson);
+            serviceAccountKey = JSON.parse(decoded);
+          } catch (base64Error) {
+            console.error('Failed to parse service account JSON:', jsonError);
+            console.error('Also failed base64 decoding:', base64Error);
+            throw new Error('Invalid service account JSON format');
+          }
+        }
+
+        // Validate required fields
+        if (!serviceAccountKey.project_id || !serviceAccountKey.client_email || !serviceAccountKey.private_key) {
+          throw new Error('Service account JSON missing required fields (project_id, client_email, private_key)');
+        }
+
+        // Normalize private_key (handle escaped newlines)
+        if (serviceAccountKey.private_key) {
+          serviceAccountKey.private_key = serviceAccountKey.private_key.replace(/\\n/g, '\n');
+        }
+
         const projectId = serviceAccountKey.project_id;
-        const location = 'us'; // Default location, can be made configurable
-        const processorId = Deno.env.get('GOOGLE_DOCAI_PROCESSOR_ID') || 'general-processor';
+        const location = Deno.env.get('GOOGLE_DOCAI_LOCATION') || 'us';
+        const processorId = Deno.env.get('GOOGLE_DOCAI_PROCESSOR_ID');
+        
+        if (!processorId) {
+          console.error('Missing GOOGLE_DOCAI_PROCESSOR_ID environment variable');
+          throw new Error('Google Document AI processor ID not configured');
+        }
         
         console.log(`Using Google Document AI with project: ${projectId}, location: ${location}, processor: ${processorId}`);
 
