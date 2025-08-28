@@ -137,6 +137,39 @@ function calculateSimilarity(str1: string, str2: string): number {
   return intersection.size / union.size;
 }
 
+// ============= HELPER FUNCTIONS FOR BASE64 =============
+
+/**  
+ * Normalizes a Base64 string by removing whitespace and handling URL-safe characters
+ */
+function normalizeBase64(base64String: string): string {
+  return base64String
+    .replace(/\s+/g, '') // Remove all whitespace including newlines
+    .replace(/-/g, '+')  // Convert URL-safe Base64 to standard Base64
+    .replace(/_/g, '/'); // Convert URL-safe Base64 to standard Base64
+}
+
+/**
+ * Parses service account JSON from environment with robust Base64 handling
+ */
+function parseServiceAccountEnv(envValue: string): any {
+  // First, try parsing as direct JSON
+  try {
+    return JSON.parse(envValue);
+  } catch (jsonError) {
+    // If direct JSON fails, try Base64 decoding
+    try {
+      const normalizedBase64 = normalizeBase64(envValue);
+      const decoded = atob(normalizedBase64);
+      return JSON.parse(decoded);
+    } catch (base64Error) {
+      throw new Error(`Failed to parse service account JSON: ${jsonError.message}. Base64 decode also failed: ${base64Error.message}`);
+    }
+  }
+}
+
+// ============= END HELPER FUNCTIONS =============
+
 // JWT creation function for Google OAuth
 async function createJWT(serviceAccountKey: any): Promise<string> {
   const header = {
@@ -268,44 +301,9 @@ serve(async (req) => {
       }
 
       try {
-        // Parse the service account JSON with robust handling
-        let serviceAccountKey;
-        try {
-          // Try parsing as direct JSON first
-          serviceAccountKey = JSON.parse(googleServiceAccountJson);
-        } catch (jsonError) {
-          try {
-            // Try base64 decoding first, then parse
-            const decoded = atob(googleServiceAccountJson);
-            serviceAccountKey = JSON.parse(decoded);
-          } catch (base64Error) {
-            console.error('Failed to parse service account JSON:', jsonError);
-            console.error('Also failed base64 decoding:', base64Error);
-            
-            // Update tender with error status (with error handling)
-            try {
-              await supabaseClient
-                .from('tenders')
-                .update({
-                  status: 'error',
-                  error_message: 'Invalid service account JSON format - Failed to parse as direct JSON or base64',
-                  last_activity_at: new Date().toISOString()
-                })
-                .eq('id', tenderId);
-            } catch (dbError) {
-              console.error('Failed to update tender status:', dbError);
-            }
-            
-            return new Response(JSON.stringify({ 
-              error: 'Invalid service account JSON format', 
-              error_code: 'docai_config_invalid',
-              details: 'Failed to parse service account JSON as direct JSON or base64'
-            }), {
-              status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
-          }
-        }
+        // Parse the service account JSON with robust Base64 handling
+        const serviceAccountKey = parseServiceAccountEnv(googleServiceAccountJson);
+        console.log('Successfully parsed service account JSON');
 
         // Validate required fields
         if (!serviceAccountKey.project_id || !serviceAccountKey.client_email || !serviceAccountKey.private_key) {
