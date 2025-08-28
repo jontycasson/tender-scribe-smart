@@ -57,35 +57,64 @@ export const usePreview = () => {
 
   // Update URL and localStorage when state changes
   useEffect(() => {
+    // Prevent unnecessary updates if state hasn't actually changed
     const params = new URLSearchParams(searchParams);
+    let hasChanges = false;
     
     if (previewState.homepageVariant !== defaultState.homepageVariant) {
-      params.set('variant', previewState.homepageVariant);
+      if (params.get('variant') !== previewState.homepageVariant) {
+        params.set('variant', previewState.homepageVariant);
+        hasChanges = true;
+      }
     } else {
-      params.delete('variant');
+      if (params.has('variant')) {
+        params.delete('variant');
+        hasChanges = true;
+      }
     }
     
     if (previewState.dashboardLayout !== defaultState.dashboardLayout) {
-      params.set('layout', previewState.dashboardLayout);
+      if (params.get('layout') !== previewState.dashboardLayout) {
+        params.set('layout', previewState.dashboardLayout);
+        hasChanges = true;
+      }
     } else {
-      params.delete('layout');
+      if (params.has('layout')) {
+        params.delete('layout');
+        hasChanges = true;
+      }
     }
     
     if (previewState.showPreviewPanel) {
-      params.set('preview', 'true');
+      if (params.get('preview') !== 'true') {
+        params.set('preview', 'true');
+        hasChanges = true;
+      }
     } else {
-      params.delete('preview');
+      if (params.has('preview')) {
+        params.delete('preview');
+        hasChanges = true;
+      }
     }
     
-    setSearchParams(params, { replace: true });
-    
-    // Safe localStorage write
-    try {
-      localStorage.setItem('lovable-preview-state', JSON.stringify(previewState));
-    } catch (error) {
-      console.warn('Failed to save preview state to localStorage:', error);
+    // Only update URL if there are actual changes
+    if (hasChanges) {
+      try {
+        setSearchParams(params, { replace: true });
+      } catch (error) {
+        console.warn('Failed to update URL parameters:', error);
+      }
     }
-  }, [previewState, setSearchParams]);
+    
+    // Safe localStorage write - only if we can access localStorage
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        localStorage.setItem('lovable-preview-state', JSON.stringify(previewState));
+      } catch (error) {
+        console.warn('Failed to save preview state to localStorage:', error);
+      }
+    }
+  }, [previewState, setSearchParams, searchParams]);
 
   const updateHomepageVariant = (variant: PreviewVariant) => {
     setPreviewState(prev => ({ ...prev, homepageVariant: variant }));
@@ -101,10 +130,12 @@ export const usePreview = () => {
 
   const resetToDefaults = () => {
     setPreviewState(defaultState);
-    try {
-      localStorage.removeItem('lovable-preview-state');
-    } catch (error) {
-      console.warn('Failed to remove preview state from localStorage:', error);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        localStorage.removeItem('lovable-preview-state');
+      } catch (error) {
+        console.warn('Failed to remove preview state from localStorage:', error);
+      }
     }
   };
 

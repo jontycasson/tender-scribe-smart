@@ -49,8 +49,8 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
               {this.state.error && (
                 <details className="text-xs text-muted-foreground">
                   <summary className="cursor-pointer">Error details</summary>
-                  <pre className="mt-2 p-2 bg-muted rounded text-xs overflow-auto">
-                    {this.state.error.message}
+                  <pre className="mt-2 p-2 bg-muted rounded text-xs overflow-auto max-h-32">
+                    {this.state.error.stack || this.state.error.message}
                   </pre>
                 </details>
               )}

@@ -15,9 +15,18 @@ import { Upload, FileText, Download, Save, Check, X, Building2, ArrowLeft, Chevr
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigation } from "@/components/Navigation";
-import { PreviewPanel } from "@/components/PreviewPanel";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Skeleton } from "@/components/ui/skeleton";
+
+// Utility to safely normalize error messages
+const toErrMsg = (error: unknown): string => {
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String(error.message);
+  }
+  return 'An unexpected error occurred';
+};
 
 interface Question {
   id: string;
@@ -318,10 +327,11 @@ const NewTender = () => {
 
     } catch (error) {
       console.error('Upload and process error:', error);
-      setProcessingError(error.message || "Failed to upload tender document. Please try again.");
+      const errorMsg = toErrMsg(error);
+      setProcessingError(errorMsg);
       toast({
         title: "Upload failed",
-        description: error.message || "Failed to upload tender document. Please try again.",
+        description: errorMsg,
         variant: "destructive",
       });
       setCurrentStep('upload'); // Reset to upload step on error
@@ -387,7 +397,7 @@ const NewTender = () => {
 
     } catch (error) {
       console.error('Processing error:', error);
-      setProcessingError(error.message || "Failed to process document. Please try again.");
+      setProcessingError(toErrMsg(error));
       setCurrentStep('upload');
     } finally {
       // Unsubscribe from real-time updates
@@ -415,7 +425,7 @@ const NewTender = () => {
       });
     } catch (error) {
       console.error('Response fetch error:', error);
-      setProcessingError("Failed to fetch responses");
+      setProcessingError(toErrMsg(error));
       setCurrentStep('upload');
       setProcessing(false);
     }
@@ -562,7 +572,9 @@ const NewTender = () => {
         </div>
       )}
       
-      <Navigation />
+      <ErrorBoundary fallback={<div className="p-2 text-sm text-muted-foreground">Navigation temporarily unavailable</div>}>
+        <Navigation />
+      </ErrorBoundary>
       
       {/* Progress indicators */}
       <div className="border-b bg-card">
@@ -943,9 +955,6 @@ const NewTender = () => {
           </div>
         )}
       </div>
-      <ErrorBoundary fallback={<div className="fixed bottom-4 right-4 p-2 text-xs text-muted-foreground bg-muted rounded">Preview unavailable</div>}>
-        <PreviewPanel currentPage="other" />
-      </ErrorBoundary>
     </div>
   );
 };
