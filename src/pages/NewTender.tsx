@@ -344,6 +344,8 @@ const NewTender = () => {
   const processDocument = async (tenderId: string, filePath: string) => {
     console.log('Starting document processing for tender:', tenderId, 'file:', filePath);
     
+    let channelUnsubscribed = false;
+    
     // Subscribe to real-time updates for this tender
     const channel = supabase
       .channel('tender-progress')
@@ -371,12 +373,23 @@ const NewTender = () => {
           }
           
           if (tender.status === 'draft') {
-            // Processing complete, fetch responses and move to review
+            // Processing complete, set progress to 100% and fetch responses
+            setProcessingProgress(100);
             fetchTenderResponses(tenderId);
+            // Unsubscribe now that we've reached terminal state
+            if (!channelUnsubscribed) {
+              supabase.removeChannel(channel);
+              channelUnsubscribed = true;
+            }
           } else if (tender.status === 'error') {
             setProcessingError(tender.error_message || 'Processing failed');
             setProcessing(false);
             setCurrentStep('upload');
+            // Unsubscribe on error as well
+            if (!channelUnsubscribed) {
+              supabase.removeChannel(channel);
+              channelUnsubscribed = true;
+            }
           }
         }
       )
@@ -393,6 +406,30 @@ const NewTender = () => {
       if (error) {
         console.error('Edge function error:', error);
         throw error;
+      }
+
+      // Fallback: Check tender status after edge function completes
+      // This handles cases where the real-time update might be missed
+      console.log('Edge function completed, checking final status...');
+      
+      const { data: finalTender, error: fetchError } = await supabase
+        .from('tenders')
+        .select('status, progress, error_message')
+        .eq('id', tenderId)
+        .single();
+      
+      if (!fetchError && finalTender) {
+        console.log('Final tender status:', finalTender);
+        
+        if (finalTender.status === 'draft' && !channelUnsubscribed) {
+          // If processing is complete but we haven't navigated yet
+          setProcessingProgress(100);
+          await fetchTenderResponses(tenderId);
+        } else if (finalTender.status === 'error' && !channelUnsubscribed) {
+          setProcessingError(finalTender.error_message || 'Processing failed');
+          setProcessing(false);
+          setCurrentStep('upload');
+        }
       }
 
     } catch (error) {
@@ -448,8 +485,10 @@ const NewTender = () => {
       setProcessingError(displayError);
       setCurrentStep('upload');
     } finally {
-      // Unsubscribe from real-time updates
-      supabase.removeChannel(channel);
+      // Only unsubscribe if we haven't already
+      if (!channelUnsubscribed) {
+        supabase.removeChannel(channel);
+      }
     }
   };
 
