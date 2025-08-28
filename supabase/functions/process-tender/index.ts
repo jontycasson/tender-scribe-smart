@@ -217,13 +217,18 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Declare variables at function scope so they're accessible in catch block
+  let tenderId: string = '';
+  let supabaseClient: any = null;
+
   try {
-    const supabaseClient = createClient(
+    supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { tenderId, extractedText, filePath } = await req.json() as ProcessTenderRequest;
+    const { tenderId: parsedTenderId, extractedText, filePath } = await req.json() as ProcessTenderRequest;
+    tenderId = parsedTenderId;
 
     if (!tenderId || (!extractedText && !filePath)) {
       return new Response(JSON.stringify({ error: 'Missing required fields - need tenderId and either extractedText or filePath' }), {
@@ -276,15 +281,20 @@ serve(async (req) => {
           } catch (base64Error) {
             console.error('Failed to parse service account JSON:', jsonError);
             console.error('Also failed base64 decoding:', base64Error);
-            // Update tender with error status
-            await supabaseClient
-              .from('tenders')
-              .update({
-                status: 'error',
-                error_message: 'Invalid service account JSON format - Failed to parse as direct JSON or base64',
-                last_activity_at: new Date().toISOString()
-              })
-              .eq('id', tenderId);
+            
+            // Update tender with error status (with error handling)
+            try {
+              await supabaseClient
+                .from('tenders')
+                .update({
+                  status: 'error',
+                  error_message: 'Invalid service account JSON format - Failed to parse as direct JSON or base64',
+                  last_activity_at: new Date().toISOString()
+                })
+                .eq('id', tenderId);
+            } catch (dbError) {
+              console.error('Failed to update tender status:', dbError);
+            }
             
             return new Response(JSON.stringify({ 
               error: 'Invalid service account JSON format', 
@@ -299,15 +309,19 @@ serve(async (req) => {
 
         // Validate required fields
         if (!serviceAccountKey.project_id || !serviceAccountKey.client_email || !serviceAccountKey.private_key) {
-          // Update tender with error status
-          await supabaseClient
-            .from('tenders')
-            .update({
-              status: 'error',
-              error_message: 'Service account JSON missing required fields (project_id, client_email, private_key)',
-              last_activity_at: new Date().toISOString()
-            })
-            .eq('id', tenderId);
+          // Update tender with error status (with error handling)
+          try {
+            await supabaseClient
+              .from('tenders')
+              .update({
+                status: 'error',
+                error_message: 'Service account JSON missing required fields (project_id, client_email, private_key)',
+                last_activity_at: new Date().toISOString()
+              })
+              .eq('id', tenderId);
+          } catch (dbError) {
+            console.error('Failed to update tender status:', dbError);
+          }
           
           return new Response(JSON.stringify({ 
             error: 'Service account JSON missing required fields (project_id, client_email, private_key)', 
@@ -830,22 +844,27 @@ Generate a tailored response:`;
   } catch (error) {
     console.error('Error in process-tender function:', error);
     
-    // Update tender to error state
-    try {
-      await supabaseClient
-        .from('tenders')
-        .update({
-          status: 'error',
-          processing_stage: 'error',
-          error_message: error.message || 'Unknown error occurred during processing',
-          last_activity_at: new Date().toISOString()
-        })
-        .eq('id', tenderId);
-    } catch (updateError) {
-      console.error('Failed to update tender error state:', updateError);
+    // Update tender to error state (only if we have valid tenderId and supabaseClient)
+    if (tenderId && supabaseClient) {
+      try {
+        await supabaseClient
+          .from('tenders')
+          .update({
+            status: 'error',
+            processing_stage: 'error',
+            error_message: error.message || 'Unknown error occurred during processing',
+            last_activity_at: new Date().toISOString()
+          })
+          .eq('id', tenderId);
+      } catch (updateError) {
+        console.error('Failed to update tender error state:', updateError);
+      }
     }
     
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ 
+      error: error.message || 'Unknown error occurred during processing',
+      error_code: 'processing_failed'
+    }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
