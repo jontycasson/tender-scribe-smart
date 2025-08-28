@@ -82,6 +82,41 @@ const NewTender = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
 
+  // Helper function to extract text from supported file types
+  const extractTextIfSupported = async (file: File): Promise<string | null> => {
+    const fileType = file.type.toLowerCase();
+    const fileName = file.name.toLowerCase();
+    
+    try {
+      // Handle DOCX files
+      if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
+          fileName.endsWith('.docx')) {
+        const mammoth = await import('mammoth/mammoth.browser');
+        const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+        return result.value || null;
+      }
+      
+      // Handle plain text files
+      if (fileType === 'text/plain' || fileName.endsWith('.txt')) {
+        return await file.text();
+      }
+      
+      // Handle RTF files (basic implementation)
+      if (fileType === 'application/rtf' || fileName.endsWith('.rtf')) {
+        const text = await file.text();
+        // Simple RTF tag stripping - remove everything between { and }
+        const plainText = text.replace(/\{[^}]*\}/g, '').replace(/\\/g, '').trim();
+        return plainText || null;
+      }
+      
+      // For other file types, return null to indicate OCR should be used
+      return null;
+    } catch (error) {
+      console.error('Error extracting text from file:', error);
+      return null;
+    }
+  };
+
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     if (selectedFile) {
@@ -101,25 +136,12 @@ const NewTender = () => {
         return;
       }
       
-      const allowedTypes = [
-        'application/pdf',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      ];
-      
-      if (allowedTypes.includes(selectedFile.type)) {
-        setFile(selectedFile);
-        toast({
-          title: "File selected",
-          description: `${selectedFile.name} is ready to upload.`,
-        });
-      } else {
-        toast({
-          title: "Invalid file type",
-          description: "Please select a PDF, DOCX, or XLSX file.",
-          variant: "destructive",
-        });
-      }
+      // Accept all file types - no type restriction
+      setFile(selectedFile);
+      toast({
+        title: "File selected",
+        description: `${selectedFile.name} is ready to upload.`,
+      });
     }
   };
 
@@ -258,6 +280,13 @@ const NewTender = () => {
     setProcessingError(null);
     
     try {
+      // Try to extract text from file if supported
+      const extractedText = await extractTextIfSupported(file);
+      console.log('Text extraction result:', { 
+        hasExtractedText: !!extractedText, 
+        textLength: extractedText?.length || 0 
+      });
+
       // Upload file to storage
       const fileName = `${Date.now()}-${file.name}`;
       console.log('Uploading file with name:', fileName);
@@ -274,7 +303,13 @@ const NewTender = () => {
 
       console.log('File uploaded successfully:', uploadData);
       setProcessingProgress(40);
-      setCurrentProcessingStage(1);
+      
+      // Skip to stage 2 (identifying) if we extracted text, otherwise go to stage 1 (extracting)
+      if (extractedText) {
+        setCurrentProcessingStage(2);
+      } else {
+        setCurrentProcessingStage(1);
+      }
 
       // Get user's company profile ID first
       const { data: companyProfile } = await supabase
@@ -323,7 +358,7 @@ const NewTender = () => {
       // Don't navigate to review step yet - wait for processing to complete
       
       // Process document with AI and generate responses
-      await processDocument(tenderData.id, uploadData.path);
+      await processDocument(tenderData.id, uploadData.path, extractedText);
 
     } catch (error) {
       console.error('Upload and process error:', error);
@@ -341,7 +376,7 @@ const NewTender = () => {
     }
   };
 
-  const processDocument = async (tenderId: string, filePath: string) => {
+  const processDocument = async (tenderId: string, filePath: string, extractedText?: string) => {
     console.log('Starting document processing for tender:', tenderId, 'file:', filePath);
     
     let channelUnsubscribed = false;
@@ -400,7 +435,7 @@ const NewTender = () => {
       console.log('Calling process-tender edge function...');
       
       const { data, error } = await supabase.functions.invoke('process-tender', {
-        body: { tenderId, filePath }
+        body: { tenderId, filePath, extractedText }
       });
 
       if (error) {
@@ -799,7 +834,7 @@ const NewTender = () => {
                 <div className="border-2 border-dashed border-muted rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer relative overflow-hidden">
                   <input
                     type="file"
-                    accept=".pdf,.docx,.xlsx"
+                    accept="*/*"
                     onChange={handleFileSelect}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                     id="file-upload"
@@ -808,7 +843,7 @@ const NewTender = () => {
                   <div className="space-y-2">
                     <p className="text-lg font-medium">Click to upload your tender document</p>
                     <p className="text-muted-foreground">
-                      Supports PDF, DOCX, and XLSX files up to 10MB
+                      Supports all file types up to 10MB. Text extraction available for DOCX, TXT, and RTF files.
                     </p>
                   </div>
                   <Button type="button" variant="outline" className="mt-4 pointer-events-none">
