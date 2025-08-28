@@ -242,7 +242,11 @@ serve(async (req) => {
       
       if (!googleServiceAccountJson) {
         console.error('Missing Google Document AI service account JSON');
-        return new Response(JSON.stringify({ error: 'OCR service not configured' }), {
+        return new Response(JSON.stringify({ 
+          error: 'OCR service not configured', 
+          error_code: 'docai_config_missing',
+          details: 'GOOGLE_DOCAI_SERVICE_ACCOUNT_JSON not found'
+        }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -262,13 +266,27 @@ serve(async (req) => {
           } catch (base64Error) {
             console.error('Failed to parse service account JSON:', jsonError);
             console.error('Also failed base64 decoding:', base64Error);
-            throw new Error('Invalid service account JSON format');
+            return new Response(JSON.stringify({ 
+              error: 'Invalid service account JSON format', 
+              error_code: 'docai_config_invalid',
+              details: 'Failed to parse service account JSON as direct JSON or base64'
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
           }
         }
 
         // Validate required fields
         if (!serviceAccountKey.project_id || !serviceAccountKey.client_email || !serviceAccountKey.private_key) {
-          throw new Error('Service account JSON missing required fields (project_id, client_email, private_key)');
+          return new Response(JSON.stringify({ 
+            error: 'Service account JSON missing required fields (project_id, client_email, private_key)', 
+            error_code: 'docai_config_incomplete',
+            details: 'Google service account JSON must contain project_id, client_email, and private_key'
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
         }
 
         // Normalize private_key (handle escaped newlines)
@@ -282,7 +300,14 @@ serve(async (req) => {
         
         if (!processorId) {
           console.error('Missing GOOGLE_DOCAI_PROCESSOR_ID environment variable');
-          throw new Error('Google Document AI processor ID not configured');
+          return new Response(JSON.stringify({ 
+            error: 'Google Document AI processor ID not configured', 
+            error_code: 'docai_processor_missing',
+            details: 'GOOGLE_DOCAI_PROCESSOR_ID not found'
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
         }
         
         console.log(`Using Google Document AI with project: ${projectId}, location: ${location}, processor: ${processorId}`);
@@ -324,7 +349,9 @@ serve(async (req) => {
           const tokenError = await tokenResponse.text();
           console.error('Failed to get OAuth token:', tokenError);
           return new Response(JSON.stringify({ 
-            error: `Authentication failed: ${tokenResponse.status}` 
+            error: `Authentication failed: ${tokenResponse.status}`, 
+            error_code: 'oauth_signing_failed',
+            details: `Google OAuth token request failed with status ${tokenResponse.status}`
           }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -384,7 +411,11 @@ serve(async (req) => {
         console.log(`Extracted ${textToProcess.length} characters from document using Google Document AI`);
       } catch (ocrError) {
         console.error('OCR processing error:', ocrError);
-        return new Response(JSON.stringify({ error: 'Failed to process document with OCR' }), {
+        return new Response(JSON.stringify({ 
+          error: 'Failed to process document with OCR', 
+          error_code: 'docai_processing_failed',
+          details: ocrError.message || 'Unknown OCR processing error'
+        }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });

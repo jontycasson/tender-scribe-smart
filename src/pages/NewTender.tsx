@@ -397,7 +397,51 @@ const NewTender = () => {
 
     } catch (error) {
       console.error('Processing error:', error);
-      setProcessingError(toErrMsg(error));
+      
+      // Extract error details from structured responses
+      let errorMessage = 'Processing failed';
+      let errorDetails = '';
+      
+      if (error?.message) {
+        try {
+          const parsedError = JSON.parse(error.message);
+          if (parsedError.error_code) {
+            errorMessage = parsedError.error;
+            errorDetails = parsedError.details || '';
+            
+            // Show specific error messages based on error code
+            switch (parsedError.error_code) {
+              case 'docai_config_missing':
+                errorMessage = 'Document AI not configured';
+                errorDetails = 'Please contact support to set up document processing';
+                break;
+              case 'docai_processor_missing':
+                errorMessage = 'Document processor not configured';
+                errorDetails = 'Please contact support to configure the document processor';
+                break;
+              case 'docai_config_invalid':
+                errorMessage = 'Document AI configuration invalid';
+                errorDetails = 'Please contact support to fix the configuration';
+                break;
+              case 'oauth_signing_failed':
+                errorMessage = 'Authentication failed';
+                errorDetails = 'Unable to authenticate with document processing service';
+                break;
+              case 'docai_processing_failed':
+                errorMessage = 'Document processing failed';
+                errorDetails = 'The document could not be processed. Please try a different file';
+                break;
+            }
+          } else {
+            errorMessage = error.message;
+          }
+        } catch {
+          errorMessage = error.message || 'Processing failed';
+        }
+      }
+      
+      const displayError = errorDetails ? `${errorMessage} (${errorDetails})` : errorMessage;
+      setProcessingError(displayError);
       setCurrentStep('upload');
     } finally {
       // Unsubscribe from real-time updates
