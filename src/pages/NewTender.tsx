@@ -431,6 +431,10 @@ const NewTender = () => {
                 errorMessage = 'Document processing failed';
                 errorDetails = 'The document could not be processed. Please try a different file';
                 break;
+              case 'docai_no_text_extracted':
+                errorMessage = 'No text found in document';
+                errorDetails = 'The document appears to be empty or contains no readable text';
+                break;
             }
           } else {
             errorMessage = error.message;

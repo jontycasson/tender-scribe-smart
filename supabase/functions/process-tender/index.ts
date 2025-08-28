@@ -242,6 +242,16 @@ serve(async (req) => {
       
       if (!googleServiceAccountJson) {
         console.error('Missing Google Document AI service account JSON');
+        // Update tender with error status
+        await supabaseClient
+          .from('tenders')
+          .update({
+            status: 'error',
+            error_message: 'OCR service not configured - GOOGLE_DOCAI_SERVICE_ACCOUNT_JSON not found',
+            last_activity_at: new Date().toISOString()
+          })
+          .eq('id', tenderId);
+        
         return new Response(JSON.stringify({ 
           error: 'OCR service not configured', 
           error_code: 'docai_config_missing',
@@ -266,6 +276,16 @@ serve(async (req) => {
           } catch (base64Error) {
             console.error('Failed to parse service account JSON:', jsonError);
             console.error('Also failed base64 decoding:', base64Error);
+            // Update tender with error status
+            await supabaseClient
+              .from('tenders')
+              .update({
+                status: 'error',
+                error_message: 'Invalid service account JSON format - Failed to parse as direct JSON or base64',
+                last_activity_at: new Date().toISOString()
+              })
+              .eq('id', tenderId);
+            
             return new Response(JSON.stringify({ 
               error: 'Invalid service account JSON format', 
               error_code: 'docai_config_invalid',
@@ -279,6 +299,16 @@ serve(async (req) => {
 
         // Validate required fields
         if (!serviceAccountKey.project_id || !serviceAccountKey.client_email || !serviceAccountKey.private_key) {
+          // Update tender with error status
+          await supabaseClient
+            .from('tenders')
+            .update({
+              status: 'error',
+              error_message: 'Service account JSON missing required fields (project_id, client_email, private_key)',
+              last_activity_at: new Date().toISOString()
+            })
+            .eq('id', tenderId);
+          
           return new Response(JSON.stringify({ 
             error: 'Service account JSON missing required fields (project_id, client_email, private_key)', 
             error_code: 'docai_config_incomplete',
@@ -295,11 +325,23 @@ serve(async (req) => {
         }
 
         const projectId = serviceAccountKey.project_id;
-        const location = Deno.env.get('GOOGLE_DOCAI_LOCATION') || 'us';
+        // Normalize location to standard regions (us, eu)
+        const rawLocation = Deno.env.get('GOOGLE_DOCAI_LOCATION') || 'us';
+        const location = rawLocation.toLowerCase().includes('eu') ? 'eu' : 'us';
         const processorId = Deno.env.get('GOOGLE_DOCAI_PROCESSOR_ID');
         
         if (!processorId) {
           console.error('Missing GOOGLE_DOCAI_PROCESSOR_ID environment variable');
+          // Update tender with error status
+          await supabaseClient
+            .from('tenders')
+            .update({
+              status: 'error',
+              error_message: 'Google Document AI processor ID not configured - GOOGLE_DOCAI_PROCESSOR_ID not found',
+              last_activity_at: new Date().toISOString()
+            })
+            .eq('id', tenderId);
+          
           return new Response(JSON.stringify({ 
             error: 'Google Document AI processor ID not configured', 
             error_code: 'docai_processor_missing',
@@ -348,6 +390,16 @@ serve(async (req) => {
         if (!tokenResponse.ok) {
           const tokenError = await tokenResponse.text();
           console.error('Failed to get OAuth token:', tokenError);
+          // Update tender with error status
+          await supabaseClient
+            .from('tenders')
+            .update({
+              status: 'error',
+              error_message: `Google OAuth authentication failed: ${tokenResponse.status} - ${tokenError.substring(0, 200)}`,
+              last_activity_at: new Date().toISOString()
+            })
+            .eq('id', tenderId);
+          
           return new Response(JSON.stringify({ 
             error: `Authentication failed: ${tokenResponse.status}`, 
             error_code: 'oauth_signing_failed',
@@ -381,8 +433,20 @@ serve(async (req) => {
         if (!docAIResponse.ok) {
           const errorText = await docAIResponse.text();
           console.error('Google Document AI API error:', docAIResponse.status, errorText);
+          // Update tender with error status
+          await supabaseClient
+            .from('tenders')
+            .update({
+              status: 'error',
+              error_message: `Document AI processing failed: ${docAIResponse.status} - ${errorText.substring(0, 200)}`,
+              last_activity_at: new Date().toISOString()
+            })
+            .eq('id', tenderId);
+          
           return new Response(JSON.stringify({ 
-            error: `OCR service error: ${docAIResponse.status} - ${errorText.substring(0, 200)}` 
+            error: `OCR service error: ${docAIResponse.status} - ${errorText.substring(0, 200)}`,
+            error_code: 'docai_processing_failed',
+            details: errorText.substring(0, 300)
           }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -402,7 +466,21 @@ serve(async (req) => {
         
         if (!textToProcess) {
           console.error('No text extracted from document');
-          return new Response(JSON.stringify({ error: 'No text could be extracted from the document' }), {
+          // Update tender with error status
+          await supabaseClient
+            .from('tenders')
+            .update({
+              status: 'error',
+              error_message: 'No text could be extracted from the document',
+              last_activity_at: new Date().toISOString()
+            })
+            .eq('id', tenderId);
+          
+          return new Response(JSON.stringify({ 
+            error: 'No text could be extracted from the document',
+            error_code: 'docai_no_text_extracted',
+            details: 'Document AI processed the file but no text content was found'
+          }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
@@ -411,6 +489,16 @@ serve(async (req) => {
         console.log(`Extracted ${textToProcess.length} characters from document using Google Document AI`);
       } catch (ocrError) {
         console.error('OCR processing error:', ocrError);
+        // Update tender with error status
+        await supabaseClient
+          .from('tenders')
+          .update({
+            status: 'error',
+            error_message: `OCR processing failed: ${ocrError.message || 'Unknown OCR processing error'}`,
+            last_activity_at: new Date().toISOString()
+          })
+          .eq('id', tenderId);
+        
         return new Response(JSON.stringify({ 
           error: 'Failed to process document with OCR', 
           error_code: 'docai_processing_failed',
