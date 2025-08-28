@@ -638,12 +638,12 @@ const NewTender = () => {
                 <div>
                   <Label>Assign to Project (Optional)</Label>
                   <div className="flex gap-2">
-                    <Select value={selectedProject} onValueChange={setSelectedProject}>
+                    <Select value={selectedProject} onValueChange={(v) => setSelectedProject(v === "__unassigned" ? "" : v)}>
                       <SelectTrigger className="flex-1">
                         <SelectValue placeholder="Select a project or leave unassigned" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">No Project (Unassigned)</SelectItem>
+                        <SelectItem value="__unassigned">No Project (Unassigned)</SelectItem>
                         {projects.map((project) => (
                           <SelectItem key={project.id} value={project.id}>
                             {project.name}
