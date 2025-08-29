@@ -12,6 +12,8 @@ interface ProcessTenderRequest {
   extractedText?: string;
   extractedTextPath?: string;
   filePath?: string;
+  batchStart?: number;
+  questions?: string[];
 }
 
 function extractQuestionsFromText(text: string): string[] {
@@ -245,8 +247,10 @@ async function createJWT(serviceAccountKey: any): Promise<string> {
   }
 }
 
-// Background processing function
-async function processTenderInBackground(tenderId: string, extractedText?: string, extractedTextPath?: string, filePath?: string) {
+const BATCH_SIZE = 8; // Process 8 questions per batch to avoid timeouts
+
+// Background processing function with batched processing
+async function processTenderInBackground(tenderId: string, extractedText?: string, extractedTextPath?: string, filePath?: string, batchStart = 0, questions?: string[]) {
   let supabaseClient: any = null;
   
   try {
@@ -501,28 +505,37 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
       })
       .eq('id', tenderId);
 
-    // Extract questions from the text
-    console.log(`Extracting questions from text of length: ${textToProcess?.length || 0}`);
-    const questions = extractQuestionsFromText(textToProcess || '');
-    console.log(`Extracted ${questions.length} questions`);
+    let allQuestions = questions;
+    
+    // Only extract questions if this is the first batch (batchStart = 0) and no questions provided
+    if (batchStart === 0 && !allQuestions) {
+      // Extract questions from the text
+      console.log(`Extracting questions from text of length: ${textToProcess?.length || 0}`);
+      allQuestions = extractQuestionsFromText(textToProcess || '');
+      console.log(`Extracted ${allQuestions.length} questions`);
 
-    // Update tender with question count and progress
-    await supabaseClient
-      .from('tenders')
-      .update({
-        processing_stage: 'identifying',
-        total_questions: questions.length,
-        processed_questions: 0,
-        progress: 20,
-        last_activity_at: new Date().toISOString()
-      })
-      .eq('id', tenderId);
+      // Update tender with question count and progress
+      await supabaseClient
+        .from('tenders')
+        .update({
+          processing_stage: 'identifying',
+          total_questions: allQuestions.length,
+          processed_questions: 0,
+          progress: 20,
+          last_activity_at: new Date().toISOString()
+        })
+        .eq('id', tenderId);
 
-    if (questions.length === 0) {
-      throw new Error('No questions found in the document');
+      if (allQuestions.length === 0) {
+        throw new Error('No questions found in the document');
+      }
+
+      console.log(`Found ${allQuestions.length} questions to process`);
+    } else if (allQuestions) {
+      console.log(`Continuing with ${allQuestions.length} questions, starting from batch ${batchStart}`);
+    } else {
+      throw new Error('No questions provided for batch processing');
     }
-
-    console.log(`Found ${questions.length} questions to process`);
 
     // Get tender details and company profile
     const { data: tender, error: tenderError } = await supabaseClient
@@ -541,6 +554,13 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
       throw new Error('Company profile not found');
     }
 
+    // Calculate batch boundaries
+    const totalQuestions = allQuestions.length;
+    const batchEnd = Math.min(batchStart + BATCH_SIZE, totalQuestions);
+    const questionsThisBatch = allQuestions.slice(batchStart, batchEnd);
+    
+    console.log(`Processing batch: questions ${batchStart + 1}-${batchEnd} of ${totalQuestions}`);
+
     // Generate AI responses for each question with proper ordering
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
     if (!openAIApiKey) {
@@ -549,26 +569,29 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
 
     const responses = [];
     
-    // Update to generation stage
-    await supabaseClient
-      .from('tenders')
-      .update({
-        processing_stage: 'generating',
-        last_activity_at: new Date().toISOString()
-      })
-      .eq('id', tenderId);
+    // Update to generation stage (only on first batch)
+    if (batchStart === 0) {
+      await supabaseClient
+        .from('tenders')
+        .update({
+          processing_stage: 'generating',
+          last_activity_at: new Date().toISOString()
+        })
+        .eq('id', tenderId);
+    }
 
     // CRITICAL: Always insert a row for each question, even if AI generation fails
-    for (let i = 0; i < questions.length; i++) {
-      const question = questions[i];
-      console.log(`Processing question ${i + 1}/${questions.length}: ${question.substring(0, 100)}...`);
+    for (let i = 0; i < questionsThisBatch.length; i++) {
+      const question = questionsThisBatch[i];
+      const globalIndex = batchStart + i;
+      console.log(`Processing question ${globalIndex + 1}/${totalQuestions}: ${question.substring(0, 100)}...`);
       
       // Always create a base response object first
       const baseResponse = {
         tender_id: tenderId,
         company_profile_id: companyProfile.id,
         question: question,
-        question_index: i,
+        question_index: globalIndex,
         is_approved: false,
         ai_generated_answer: null,
         question_type: null,
@@ -650,7 +673,7 @@ Generate a tailored response:`;
       
       while (retryCount <= maxRetries) {
         try {
-          console.log(`Generating response for question ${i + 1}/${questions.length} (attempt ${retryCount + 1}): ${question.substring(0, 100)}...`);
+          console.log(`Generating response for question ${globalIndex + 1}/${totalQuestions} (attempt ${retryCount + 1}): ${question.substring(0, 100)}...`);
           
           const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -682,17 +705,17 @@ Generate a tailored response:`;
             baseResponse.ai_generated_answer = generatedAnswer;
             baseResponse.response_length = generatedAnswer.length;
             baseResponse.model_used = 'gpt-4o-mini';
-            console.log(`Successfully generated response for question ${i + 1}`);
+            console.log(`Successfully generated response for question ${globalIndex + 1}`);
             break; // Success, exit retry loop
           } else {
             throw new Error('No content returned from OpenAI');
           }
         } catch (error) {
-          console.error(`Error generating response for question ${i + 1} (attempt ${retryCount + 1}):`, error);
+          console.error(`Error generating response for question ${globalIndex + 1} (attempt ${retryCount + 1}):`, error);
           retryCount++;
           
           if (retryCount > maxRetries) {
-            console.error(`Failed to generate response for question ${i + 1} after ${maxRetries + 1} attempts`);
+            console.error(`Failed to generate response for question ${globalIndex + 1} after ${maxRetries + 1} attempts`);
             baseResponse.ai_generated_answer = 'Failed to generate response. Please try regenerating.';
             baseResponse.model_used = 'error';
             break;
@@ -707,8 +730,8 @@ Generate a tailored response:`;
       responses.push(baseResponse);
       
       // Update progress after each question
-      const processedQuestions = i + 1;
-      const progressPercentage = Math.min(99, Math.round(20 + (processedQuestions / questions.length) * 79));
+      const processedQuestions = globalIndex + 1;
+      const progressPercentage = Math.min(99, Math.round(20 + (processedQuestions / totalQuestions) * 79));
       
       await supabaseClient
         .from('tenders')
@@ -719,7 +742,7 @@ Generate a tailored response:`;
         })
         .eq('id', tenderId);
       
-      console.log(`Progress update: ${processedQuestions}/${questions.length} (${progressPercentage}%)`);
+      console.log(`Progress update: ${processedQuestions}/${totalQuestions} (${progressPercentage}%)`);
     }
 
     if (responses.length === 0) {
@@ -758,26 +781,50 @@ Generate a tailored response:`;
       throw new Error('Failed to save responses');
     }
 
-    // CRITICAL: Update tender status to draft after successful processing
-    console.log(`Updating tender ${tenderId} status to 'draft'`);
-    const { error: statusUpdateError } = await supabaseClient
-      .from('tenders')
-      .update({ 
-        status: 'draft',
-        processing_stage: 'complete',
-        progress: 100,
-        last_activity_at: new Date().toISOString()
-      })
-      .eq('id', tenderId);
-
-    if (statusUpdateError) {
-      console.error('Error updating tender status:', statusUpdateError);
-      // Don't fail the whole process for this
+    console.log(`Successfully processed batch: ${responses.length} questions for tender ${tenderId}`);
+    
+    // Check if there are more questions to process
+    if (batchEnd < totalQuestions) {
+      console.log(`Invoking next batch: questions ${batchEnd + 1}-${Math.min(batchEnd + BATCH_SIZE, totalQuestions)} of ${totalQuestions}`);
+      
+      // Self-invoke for the next batch
+      const nextBatchResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/process-tender`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tenderId,
+          batchStart: batchEnd,
+          questions: allQuestions
+        }),
+      });
+      
+      if (!nextBatchResponse.ok) {
+        console.error('Failed to invoke next batch:', await nextBatchResponse.text());
+      } else {
+        console.log('Successfully invoked next batch');
+      }
     } else {
-      console.log(`Successfully updated tender ${tenderId} status to 'draft'`);
-    }
+      // All questions processed - update tender status to draft
+      console.log(`All batches complete. Updating tender ${tenderId} status to 'draft'`);
+      const { error: statusUpdateError } = await supabaseClient
+        .from('tenders')
+        .update({ 
+          status: 'draft',
+          processing_stage: 'complete',
+          progress: 100,
+          last_activity_at: new Date().toISOString()
+        })
+        .eq('id', tenderId);
 
-    console.log(`Successfully processed ${responses.length} questions for tender ${tenderId}`);
+      if (statusUpdateError) {
+        console.error('Error updating tender status:', statusUpdateError);
+      } else {
+        console.log(`Successfully updated tender ${tenderId} status to 'draft'`);
+      }
+    }
 
   } catch (error) {
     console.error('Error in background processing:', error);
@@ -807,17 +854,17 @@ serve(async (req) => {
   }
 
   try {
-    const { tenderId, extractedText, extractedTextPath, filePath } = await req.json() as ProcessTenderRequest;
+    const { tenderId, extractedText, extractedTextPath, filePath, batchStart = 0, questions } = await req.json() as ProcessTenderRequest;
 
-    if (!tenderId || (!extractedText && !extractedTextPath && !filePath)) {
-      return new Response(JSON.stringify({ error: 'Missing required fields - need tenderId and at least one of: extractedText, extractedTextPath, or filePath' }), {
+    if (!tenderId || (batchStart === 0 && !extractedText && !extractedTextPath && !filePath)) {
+      return new Response(JSON.stringify({ error: 'Missing required fields - need tenderId and at least one of: extractedText, extractedTextPath, or filePath for initial processing' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     // Start background processing
-    EdgeRuntime.waitUntil(processTenderInBackground(tenderId, extractedText, extractedTextPath, filePath));
+    EdgeRuntime.waitUntil(processTenderInBackground(tenderId, extractedText, extractedTextPath, filePath, batchStart, questions));
 
     // Return immediate success response
     return new Response(JSON.stringify({ 
