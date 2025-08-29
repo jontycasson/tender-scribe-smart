@@ -38,13 +38,21 @@ export const Navigation = ({ showNewTenderButton = false }: NavigationProps) => 
     <header className="border-b bg-card">
       <div className="max-w-7xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
-          <Link to="/" className="flex items-center hover:opacity-80 transition-opacity">
-            <img 
-              src="/lovable-uploads/730698ea-a3a2-4ade-b2a7-2b63eb99bdf2.png" 
-              alt="Proposal.fit" 
-              className="h-16"
-            />
-          </Link>
+          <div className="flex items-center">
+            <Link to="/" className="flex items-center hover:opacity-80 transition-opacity">
+              <img 
+                src="/lovable-uploads/730698ea-a3a2-4ade-b2a7-2b63eb99bdf2.png" 
+                alt="Proposal.fit" 
+                className="h-16"
+              />
+            </Link>
+            
+            <nav className="hidden md:flex items-center space-x-6 ml-6">
+              <Link to="/security" className="text-sm text-muted-foreground hover:text-foreground">
+                Security
+              </Link>
+            </nav>
+          </div>
 
           <div className="flex items-center space-x-4">
             {user && showNewTenderButton && (
