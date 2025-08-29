@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
@@ -246,29 +245,18 @@ async function createJWT(serviceAccountKey: any): Promise<string> {
   }
 }
 
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  // Declare variables at function scope so they're accessible in catch block
-  let tenderId: string = '';
+// Background processing function
+async function processTenderInBackground(tenderId: string, extractedText?: string, extractedTextPath?: string, filePath?: string) {
   let supabaseClient: any = null;
-
+  
   try {
     supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { tenderId: parsedTenderId, extractedText, extractedTextPath, filePath } = await req.json() as ProcessTenderRequest;
-    tenderId = parsedTenderId;
-
     if (!tenderId || (!extractedText && !extractedTextPath && !filePath)) {
-      return new Response(JSON.stringify({ error: 'Missing required fields - need tenderId and at least one of: extractedText, extractedTextPath, or filePath' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      throw new Error('Missing required fields');
     }
 
     let textToProcess = extractedText;
@@ -330,14 +318,7 @@ serve(async (req) => {
           })
           .eq('id', tenderId);
         
-        return new Response(JSON.stringify({ 
-          error: 'OCR service not configured', 
-          error_code: 'docai_config_missing',
-          details: 'GOOGLE_DOCAI_SERVICE_ACCOUNT_JSON not found'
-        }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        throw new Error('OCR service not configured');
       }
 
       try {
@@ -347,28 +328,16 @@ serve(async (req) => {
 
         // Validate required fields
         if (!serviceAccountKey.project_id || !serviceAccountKey.client_email || !serviceAccountKey.private_key) {
-          // Update tender with error status (with error handling)
-          try {
-            await supabaseClient
-              .from('tenders')
-              .update({
-                status: 'error',
-                error_message: 'Service account JSON missing required fields (project_id, client_email, private_key)',
-                last_activity_at: new Date().toISOString()
-              })
-              .eq('id', tenderId);
-          } catch (dbError) {
-            console.error('Failed to update tender status:', dbError);
-          }
+          await supabaseClient
+            .from('tenders')
+            .update({
+              status: 'error',
+              error_message: 'Service account JSON missing required fields (project_id, client_email, private_key)',
+              last_activity_at: new Date().toISOString()
+            })
+            .eq('id', tenderId);
           
-          return new Response(JSON.stringify({ 
-            error: 'Service account JSON missing required fields (project_id, client_email, private_key)', 
-            error_code: 'docai_config_incomplete',
-            details: 'Google service account JSON must contain project_id, client_email, and private_key'
-          }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          throw new Error('Service account JSON missing required fields');
         }
 
         // Normalize private_key (handle escaped newlines)
@@ -384,7 +353,6 @@ serve(async (req) => {
         
         if (!processorId) {
           console.error('Missing GOOGLE_DOCAI_PROCESSOR_ID environment variable');
-          // Update tender with error status
           await supabaseClient
             .from('tenders')
             .update({
@@ -394,14 +362,7 @@ serve(async (req) => {
             })
             .eq('id', tenderId);
           
-          return new Response(JSON.stringify({ 
-            error: 'Google Document AI processor ID not configured', 
-            error_code: 'docai_processor_missing',
-            details: 'GOOGLE_DOCAI_PROCESSOR_ID not found'
-          }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          throw new Error('Google Document AI processor ID not configured');
         }
         
         console.log(`Using Google Document AI with project: ${projectId}, location: ${location}, processor: ${processorId}`);
@@ -413,10 +374,7 @@ serve(async (req) => {
 
         if (fileError || !fileData) {
           console.error('Failed to download file:', fileError);
-          return new Response(JSON.stringify({ error: 'Failed to download file for processing' }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          throw new Error('Failed to download file for processing');
         }
 
         // Convert file to base64
@@ -442,7 +400,6 @@ serve(async (req) => {
         if (!tokenResponse.ok) {
           const tokenError = await tokenResponse.text();
           console.error('Failed to get OAuth token:', tokenError);
-          // Update tender with error status
           await supabaseClient
             .from('tenders')
             .update({
@@ -452,14 +409,7 @@ serve(async (req) => {
             })
             .eq('id', tenderId);
           
-          return new Response(JSON.stringify({ 
-            error: `Authentication failed: ${tokenResponse.status}`, 
-            error_code: 'oauth_signing_failed',
-            details: `Google OAuth token request failed with status ${tokenResponse.status}`
-          }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          throw new Error(`Authentication failed: ${tokenResponse.status}`);
         }
 
         const tokenData = await tokenResponse.json();
@@ -485,7 +435,6 @@ serve(async (req) => {
         if (!docAIResponse.ok) {
           const errorText = await docAIResponse.text();
           console.error('Google Document AI API error:', docAIResponse.status, errorText);
-          // Update tender with error status
           await supabaseClient
             .from('tenders')
             .update({
@@ -495,14 +444,7 @@ serve(async (req) => {
             })
             .eq('id', tenderId);
           
-          return new Response(JSON.stringify({ 
-            error: `OCR service error: ${docAIResponse.status} - ${errorText.substring(0, 200)}`,
-            error_code: 'docai_processing_failed',
-            details: errorText.substring(0, 300)
-          }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          throw new Error(`OCR service error: ${docAIResponse.status}`);
         }
 
         const docAIData = await docAIResponse.json();
@@ -518,7 +460,6 @@ serve(async (req) => {
         
         if (!textToProcess) {
           console.error('No text extracted from document');
-          // Update tender with error status
           await supabaseClient
             .from('tenders')
             .update({
@@ -528,20 +469,12 @@ serve(async (req) => {
             })
             .eq('id', tenderId);
           
-          return new Response(JSON.stringify({ 
-            error: 'No text could be extracted from the document',
-            error_code: 'docai_no_text_extracted',
-            details: 'Document AI processed the file but no text content was found'
-          }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          throw new Error('No text could be extracted from the document');
         }
 
         console.log(`Extracted ${textToProcess.length} characters from document using Google Document AI`);
       } catch (ocrError) {
         console.error('OCR processing error:', ocrError);
-        // Update tender with error status
         await supabaseClient
           .from('tenders')
           .update({
@@ -551,14 +484,7 @@ serve(async (req) => {
           })
           .eq('id', tenderId);
         
-        return new Response(JSON.stringify({ 
-          error: 'Failed to process document with OCR', 
-          error_code: 'docai_processing_failed',
-          details: ocrError.message || 'Unknown OCR processing error'
-        }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        throw new Error('Failed to process document with OCR');
       }
     }
 
@@ -593,10 +519,7 @@ serve(async (req) => {
       .eq('id', tenderId);
 
     if (questions.length === 0) {
-      return new Response(JSON.stringify({ error: 'No questions found in the document' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      throw new Error('No questions found in the document');
     }
 
     console.log(`Found ${questions.length} questions to process`);
@@ -610,27 +533,18 @@ serve(async (req) => {
 
     if (tenderError || !tender) {
       console.error('Error fetching tender:', tenderError);
-      return new Response(JSON.stringify({ error: 'Tender not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      throw new Error('Tender not found');
     }
 
     const companyProfile = tender.company_profiles;
     if (!companyProfile) {
-      return new Response(JSON.stringify({ error: 'Company profile not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      throw new Error('Company profile not found');
     }
 
     // Generate AI responses for each question with proper ordering
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
     if (!openAIApiKey) {
-      return new Response(JSON.stringify({ error: 'OpenAI API key not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      throw new Error('OpenAI API key not configured');
     }
 
     const responses = [];
@@ -819,10 +733,7 @@ Generate a tailored response:`;
         })
         .eq('id', tenderId);
         
-      return new Response(JSON.stringify({ error: 'Failed to generate any responses' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      throw new Error('Failed to generate any responses');
     }
 
     // Insert all responses
@@ -844,10 +755,7 @@ Generate a tailored response:`;
         })
         .eq('id', tenderId);
         
-      return new Response(JSON.stringify({ error: 'Failed to save responses' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      throw new Error('Failed to save responses');
     }
 
     // CRITICAL: Update tender status to draft after successful processing
@@ -871,19 +779,11 @@ Generate a tailored response:`;
 
     console.log(`Successfully processed ${responses.length} questions for tender ${tenderId}`);
 
-    return new Response(JSON.stringify({
-      success: true,
-      questionsProcessed: responses.length,
-      responses: insertedResponses
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-
   } catch (error) {
-    console.error('Error in process-tender function:', error);
+    console.error('Error in background processing:', error);
     
-    // Update tender to error state (only if we have valid tenderId and supabaseClient)
-    if (tenderId && supabaseClient) {
+    // Update tender to error state
+    if (supabaseClient && tenderId) {
       try {
         await supabaseClient
           .from('tenders')
@@ -898,12 +798,41 @@ Generate a tailored response:`;
         console.error('Failed to update tender error state:', updateError);
       }
     }
-    
+  }
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const { tenderId, extractedText, extractedTextPath, filePath } = await req.json() as ProcessTenderRequest;
+
+    if (!tenderId || (!extractedText && !extractedTextPath && !filePath)) {
+      return new Response(JSON.stringify({ error: 'Missing required fields - need tenderId and at least one of: extractedText, extractedTextPath, or filePath' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Start background processing
+    EdgeRuntime.waitUntil(processTenderInBackground(tenderId, extractedText, extractedTextPath, filePath));
+
+    // Return immediate success response
     return new Response(JSON.stringify({ 
-      error: error.message || 'Unknown error occurred during processing',
-      error_code: 'processing_failed'
+      message: 'Tender processing started',
+      tenderId,
+      status: 'processing'
     }), {
-      status: 500,
+      status: 202,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+
+  } catch (error) {
+    console.error('Error in main request handler:', error);
+    return new Response(JSON.stringify({ error: 'Invalid request format' }), {
+      status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
@@ -952,7 +881,7 @@ async function fetchResearchSnippet(question: string, companyName: string, perpl
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'sonar',
+        model: 'llama-3.1-sonar-small-128k-online',
         messages: [
           {
             role: 'system',
