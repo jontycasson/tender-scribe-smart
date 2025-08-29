@@ -59,6 +59,8 @@ const processingStages = [
   }
 ];
 
+const MAX_INLINE_TEXT_BYTES = 400 * 1024; // 400KB threshold for inline text
+
 const NewTender = () => {
   console.log('NewTender component mounting');
   
@@ -303,9 +305,41 @@ const NewTender = () => {
 
       console.log('File uploaded successfully:', uploadData);
       setProcessingProgress(40);
+
+      // Handle large extracted text by uploading to storage
+      let extractedTextPath: string | undefined;
+      let inlineText: string | undefined;
+
+      if (extractedText) {
+        const textSize = new Blob([extractedText]).size;
+        console.log(`Extracted text size: ${textSize} bytes`);
+
+        if (textSize > MAX_INLINE_TEXT_BYTES) {
+          // Upload extracted text to storage as a separate file
+          const textFileName = `${uploadData.path}.txt`;
+          console.log('Text too large, uploading to storage as:', textFileName);
+          
+          const { error: textUploadError } = await supabase.storage
+            .from('tender-documents')
+            .upload(textFileName, new Blob([extractedText], { type: 'text/plain' }), {
+              upsert: true
+            });
+
+          if (textUploadError) {
+            console.error('Failed to upload extracted text:', textUploadError);
+            // Fall back to inline text despite size
+            inlineText = extractedText;
+          } else {
+            extractedTextPath = textFileName;
+            console.log('Successfully uploaded extracted text to storage');
+          }
+        } else {
+          inlineText = extractedText;
+        }
+      }
       
       // Skip to stage 2 (identifying) if we extracted text, otherwise go to stage 1 (extracting)
-      if (extractedText) {
+      if (inlineText || extractedTextPath) {
         setCurrentProcessingStage(2);
       } else {
         setCurrentProcessingStage(1);
@@ -358,7 +392,7 @@ const NewTender = () => {
       // Don't navigate to review step yet - wait for processing to complete
       
       // Process document with AI and generate responses
-      await processDocument(tenderData.id, uploadData.path, extractedText);
+      await processDocument(tenderData.id, uploadData.path, inlineText, extractedTextPath);
 
     } catch (error) {
       console.error('Upload and process error:', error);
@@ -376,8 +410,8 @@ const NewTender = () => {
     }
   };
 
-  const processDocument = async (tenderId: string, filePath: string, extractedText?: string) => {
-    console.log('Starting document processing for tender:', tenderId, 'file:', filePath);
+  const processDocument = async (tenderId: string, filePath: string, extractedText?: string, extractedTextPath?: string) => {
+    console.log('Starting document processing for tender:', tenderId, 'file:', filePath, 'hasInlineText:', !!extractedText, 'hasTextPath:', !!extractedTextPath);
     
     let channelUnsubscribed = false;
     
@@ -435,7 +469,7 @@ const NewTender = () => {
       console.log('Calling process-tender edge function...');
       
       const { data, error } = await supabase.functions.invoke('process-tender', {
-        body: { tenderId, filePath, extractedText }
+        body: { tenderId, filePath, extractedText, extractedTextPath }
       });
 
       if (error) {

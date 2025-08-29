@@ -11,6 +11,7 @@ const corsHeaders = {
 interface ProcessTenderRequest {
   tenderId: string;
   extractedText?: string;
+  extractedTextPath?: string;
   filePath?: string;
 }
 
@@ -260,20 +261,59 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { tenderId: parsedTenderId, extractedText, filePath } = await req.json() as ProcessTenderRequest;
+    const { tenderId: parsedTenderId, extractedText, extractedTextPath, filePath } = await req.json() as ProcessTenderRequest;
     tenderId = parsedTenderId;
 
-    if (!tenderId || (!extractedText && !filePath)) {
-      return new Response(JSON.stringify({ error: 'Missing required fields - need tenderId and either extractedText or filePath' }), {
+    if (!tenderId || (!extractedText && !extractedTextPath && !filePath)) {
+      return new Response(JSON.stringify({ error: 'Missing required fields - need tenderId and at least one of: extractedText, extractedTextPath, or filePath' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     let textToProcess = extractedText;
+    
+    // If no inline text but we have a text path, download the text from storage
+    if (!textToProcess && extractedTextPath) {
+      console.log(`Downloading extracted text from storage: ${extractedTextPath}`);
+      try {
+        const { data: textData, error: textError } = await supabaseClient.storage
+          .from('tender-documents')
+          .download(extractedTextPath);
 
-    // If filePath is provided but no extractedText, use Google Document AI to extract text
-    if (!extractedText && filePath) {
+        if (textError || !textData) {
+          console.error('Failed to download extracted text:', textError);
+          // Continue to try other methods
+        } else {
+          textToProcess = await textData.text();
+          console.log(`Successfully loaded text from storage (${textToProcess.length} characters)`);
+        }
+      } catch (error) {
+        console.error('Error downloading extracted text:', error);
+        // Continue to try other methods
+      }
+    }
+
+    // If still no text and we have filePath, try to find a derived .txt file for reprocessing
+    if (!textToProcess && filePath) {
+      const derivedTextPath = `${filePath}.txt`;
+      console.log(`Checking for derived text file: ${derivedTextPath}`);
+      try {
+        const { data: derivedTextData, error: derivedTextError } = await supabaseClient.storage
+          .from('tender-documents')
+          .download(derivedTextPath);
+
+        if (!derivedTextError && derivedTextData) {
+          textToProcess = await derivedTextData.text();
+          console.log(`Successfully loaded text from derived file (${textToProcess.length} characters)`);
+        }
+      } catch (error) {
+        console.log('No derived text file found, will use OCR');
+      }
+    }
+
+    // If no text available yet and filePath is provided, use Google Document AI to extract text
+    if (!textToProcess && filePath) {
       console.log(`No extracted text provided, using Google Document AI to extract from: ${filePath}`);
       
       const googleServiceAccountJson = Deno.env.get('GOOGLE_DOCAI_SERVICE_ACCOUNT_JSON');
