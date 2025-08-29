@@ -47,11 +47,6 @@ export const Navigation = ({ showNewTenderButton = false }: NavigationProps) => 
               />
             </Link>
             
-            <nav className="hidden md:flex items-center space-x-6 ml-6">
-              <Link to="/security" className="text-sm text-muted-foreground hover:text-foreground">
-                Security
-              </Link>
-            </nav>
           </div>
 
           <div className="flex items-center space-x-4">
