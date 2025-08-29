@@ -67,41 +67,22 @@ serve(async (req) => {
       });
     }
 
-    // Generate document content
-    let documentContent = `Tender Response: ${tender.title}\n\n`;
-    
-    responses.forEach((response, index) => {
-      const finalAnswer = response.user_edited_answer || response.ai_generated_answer;
-      documentContent += `${index + 1}. ${response.question}\n\n`;
-      documentContent += `${finalAnswer}\n\n`;
-      documentContent += '---\n\n';
-    });
+    // Prepare structured data for client-side document generation
+    const exportData = {
+      title: tender.title,
+      items: responses.map((response, index) => ({
+        questionNumber: index + 1,
+        question: response.question,
+        answer: response.user_edited_answer || response.ai_generated_answer
+      })),
+      format
+    };
 
-    if (format === 'docx') {
-      // For DOCX format, return the content as text for now
-      // In a production environment, you would use a library like docx to generate proper DOCX files
-      return new Response(documentContent, {
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          'Content-Disposition': `attachment; filename="${tender.title.replace(/[^a-zA-Z0-9]/g, '_')}_responses.docx"`,
-        },
-      });
-    } else if (format === 'pdf') {
-      // For PDF format, return the content as text for now
-      // In a production environment, you would use a library like jsPDF or puppeteer to generate proper PDF files
-      return new Response(documentContent, {
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/pdf',
-          'Content-Disposition': `attachment; filename="${tender.title.replace(/[^a-zA-Z0-9]/g, '_')}_responses.pdf"`,
-        },
-      });
-    }
-
-    return new Response(JSON.stringify({ error: 'Unsupported format' }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    return new Response(JSON.stringify(exportData), {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+      },
     });
 
   } catch (error) {
