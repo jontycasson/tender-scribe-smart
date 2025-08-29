@@ -50,15 +50,17 @@ npm run dev
 - Click on "New codespace" to launch a new Codespace environment.
 - Edit files directly within the Codespace and commit and push your changes once you're done.
 
-## What technologies are used for this project?
+## Tech Stack
 
-This project is built with:
+**Core:** React 18, Vite, TypeScript  
+**Styling & UI:** Tailwind CSS, shadcn/ui (Radix UI primitives), Lucide icons  
+**Routing & Data:** React Router 6, TanStack Query  
+**Forms:** React Hook Form, Zod validation  
+**Backend:** Supabase (auth, database, storage, edge functions)  
+**Files & Export:** XLSX, DOCX, PDF generation  
+**Charts:** Recharts  
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+See full details with versions in [docs/TECH_STACK.md](docs/TECH_STACK.md)
 
 ## How can I deploy this project?
 
