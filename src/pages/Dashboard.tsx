@@ -10,15 +10,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigation } from "@/components/Navigation";
 import { useToast } from "@/hooks/use-toast";
-import { usePreview } from "@/hooks/usePreview";
-import { PreviewPanel } from "@/components/PreviewPanel";
 import { ProjectsView } from "@/components/dashboard/ProjectsView";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 
 const Dashboard = () => {
-  const { dashboardLayout } = usePreview();
-  const [activeTab, setActiveTab] = useState(dashboardLayout === 'projects' ? "projects" : "tenders");
+  const [activeTab, setActiveTab] = useState("tenders");
   const [tenders, setTenders] = useState<any[]>([]);
   const [companyProfile, setCompanyProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -388,9 +385,9 @@ const Dashboard = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className={`grid w-full ${dashboardLayout === 'projects' ? 'grid-cols-3 lg:w-[500px]' : 'grid-cols-2 lg:w-[400px]'}`}>
+          <TabsList className="grid w-full grid-cols-3 lg:w-[500px]">
             <TabsTrigger value="tenders">Recent Tenders</TabsTrigger>
-            {dashboardLayout === 'projects' && <TabsTrigger value="projects">Projects</TabsTrigger>}
+            <TabsTrigger value="projects">Projects</TabsTrigger>
             <TabsTrigger value="profile">Company Profile</TabsTrigger>
           </TabsList>
 
@@ -751,16 +748,14 @@ const Dashboard = () => {
             </div>
           </TabsContent>
 
-          {dashboardLayout === 'projects' && (
-            <TabsContent value="projects" className="mt-6">
-              <ProjectsView 
-                tenders={tenders} 
-                onTenderDeleted={(tenderId) => {
-                  setTenders(prev => prev.filter(t => t.id !== tenderId));
-                }} 
-              />
-            </TabsContent>
-          )}
+          <TabsContent value="projects" className="mt-6">
+            <ProjectsView 
+              tenders={tenders} 
+              onTenderDeleted={(tenderId) => {
+                setTenders(prev => prev.filter(t => t.id !== tenderId));
+              }} 
+            />
+          </TabsContent>
 
           <TabsContent value="profile" className="mt-6">
             <div className="space-y-6">
@@ -845,7 +840,6 @@ const Dashboard = () => {
           </TabsContent>
         </Tabs>
       </div>
-      <PreviewPanel currentPage="dashboard" />
     </div>
   );
 };
