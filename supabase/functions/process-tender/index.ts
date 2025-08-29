@@ -259,8 +259,20 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    if (!tenderId || (!extractedText && !extractedTextPath && !filePath)) {
-      throw new Error('Missing required fields');
+    // Distinguish between initial batch (needs text/file) and subsequent batches (need questions array)
+    const isInitialBatch = batchStart === 0;
+    const isSubsequentBatch = !isInitialBatch && questions && questions.length > 0;
+    
+    if (!tenderId) {
+      throw new Error('Missing tenderId');
+    }
+    
+    if (isInitialBatch && (!extractedText && !extractedTextPath && !filePath)) {
+      throw new Error('Initial batch missing required text/file fields');
+    }
+    
+    if (!isInitialBatch && !isSubsequentBatch) {
+      throw new Error('Subsequent batch missing questions array');
     }
 
     let textToProcess = extractedText;
