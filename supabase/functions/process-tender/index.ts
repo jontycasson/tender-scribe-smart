@@ -7,6 +7,43 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Rate limiting store (in-memory for this deployment)
+const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_MAX_REQUESTS = 10; // Max requests per hour per user
+const RATE_LIMIT_WINDOW = 60 * 60 * 1000; // 1 hour in milliseconds
+
+// Input validation helpers
+function validateTenderId(tenderId: string): boolean {
+  return typeof tenderId === 'string' && tenderId.length > 0 && tenderId.length < 100;
+}
+
+function sanitizeText(text: string): string {
+  if (typeof text !== 'string') return '';
+  // Remove potential XSS and injection patterns
+  return text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+             .replace(/javascript:/gi, '')
+             .replace(/on\w+\s*=/gi, '')
+             .trim();
+}
+
+function checkRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const userKey = `user_${userId}`;
+  const userLimit = rateLimitStore.get(userKey);
+  
+  if (!userLimit || now > userLimit.resetTime) {
+    rateLimitStore.set(userKey, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    return true;
+  }
+  
+  if (userLimit.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return false;
+  }
+  
+  userLimit.count++;
+  return true;
+}
+
 interface ProcessTenderRequest {
   tenderId: string;
   extractedText?: string;
@@ -21,7 +58,6 @@ function extractQuestionsFromText(text: string): string[] {
   const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
   
   console.log(`Processing ${lines.length} lines from extracted text`);
-  console.log('Raw lines:', lines);
   
   // Track parent context for sub-questions
   let lastMainQuestion = '';
@@ -80,22 +116,19 @@ function extractQuestionsFromText(text: string): string[] {
           // Find the parent question to link with
           const parentPrefix = lastMainQuestion.substring(0, 30); // First part of parent
           bestMatch = `${parentPrefix} - ${bestMatch}`;
-          console.log(`Linking sub-question "${bestMatch}" to parent "${lastMainQuestion}"`);
+          console.log(`Linking sub-question to parent`);
         } else if (!isSubQuestion) {
           // This is a main question, remember it for future sub-questions
           lastMainQuestion = bestMatch;
         }
         
         questions.push(bestMatch);
-        console.log(`Added question ${questions.length}: ${bestMatch.substring(0, 100)}... (confidence: ${bestConfidence.toFixed(2)}, sub-question: ${isSubQuestion})`);
-      } else {
-        console.log(`Skipped duplicate question: ${bestMatch.substring(0, 50)}...`);
+        console.log(`Added question ${questions.length} (confidence: ${bestConfidence.toFixed(2)})`);
       }
     }
   }
   
   console.log(`Extracted ${questions.length} questions from text`);
-  console.log('Final questions list:', questions);
   return questions;
 }
 
@@ -165,7 +198,7 @@ function parseServiceAccountEnv(envValue: string): any {
       const decoded = atob(normalizedBase64);
       return JSON.parse(decoded);
     } catch (base64Error) {
-      throw new Error(`Failed to parse service account JSON: ${jsonError.message}. Base64 decode also failed: ${base64Error.message}`);
+      throw new Error('Failed to parse service account JSON');
     }
   }
 }
@@ -242,8 +275,8 @@ async function createJWT(serviceAccountKey: any): Promise<string> {
 
     return `${message}.${encodedSignature}`;
   } catch (error) {
-    console.error('JWT creation failed:', error);
-    throw new Error(`Failed to create JWT: ${error.message}`);
+    console.error('JWT creation failed');
+    throw new Error('Failed to create JWT for authentication');
   }
 }
 
@@ -259,13 +292,14 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
+    // Input validation
+    if (!validateTenderId(tenderId)) {
+      throw new Error('Invalid tender ID format');
+    }
+
     // Distinguish between initial batch (needs text/file) and subsequent batches (need questions array)
     const isInitialBatch = batchStart === 0;
     const isSubsequentBatch = !isInitialBatch && questions && questions.length > 0;
-    
-    if (!tenderId) {
-      throw new Error('Missing tenderId');
-    }
     
     if (isInitialBatch && (!extractedText && !extractedTextPath && !filePath)) {
       throw new Error('Initial batch missing required text/file fields');
@@ -275,25 +309,26 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
       throw new Error('Subsequent batch missing questions array');
     }
 
-    let textToProcess = extractedText;
+    let textToProcess = extractedText ? sanitizeText(extractedText) : undefined;
     
     // If no inline text but we have a text path, download the text from storage
     if (!textToProcess && extractedTextPath) {
-      console.log(`Downloading extracted text from storage: ${extractedTextPath}`);
+      console.log('Downloading extracted text from storage');
       try {
         const { data: textData, error: textError } = await supabaseClient.storage
           .from('tender-documents')
           .download(extractedTextPath);
 
         if (textError || !textData) {
-          console.error('Failed to download extracted text:', textError);
+          console.error('Failed to download extracted text');
           // Continue to try other methods
         } else {
-          textToProcess = await textData.text();
+          const rawText = await textData.text();
+          textToProcess = sanitizeText(rawText);
           console.log(`Successfully loaded text from storage (${textToProcess.length} characters)`);
         }
       } catch (error) {
-        console.error('Error downloading extracted text:', error);
+        console.error('Error downloading extracted text');
         // Continue to try other methods
       }
     }
@@ -308,7 +343,8 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
           .download(derivedTextPath);
 
         if (!derivedTextError && derivedTextData) {
-          textToProcess = await derivedTextData.text();
+          const rawText = await derivedTextData.text();
+          textToProcess = sanitizeText(rawText);
           console.log(`Successfully loaded text from derived file (${textToProcess.length} characters)`);
         }
       } catch (error) {
@@ -318,7 +354,7 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
 
     // If no text available yet and filePath is provided, use Google Document AI to extract text
     if (!textToProcess && filePath) {
-      console.log(`No extracted text provided, using Google Document AI to extract from: ${filePath}`);
+      console.log('Using Google Document AI to extract text');
       
       const googleServiceAccountJson = Deno.env.get('GOOGLE_DOCAI_SERVICE_ACCOUNT_JSON');
       
@@ -329,7 +365,7 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
           .from('tenders')
           .update({
             status: 'error',
-            error_message: 'OCR service not configured - GOOGLE_DOCAI_SERVICE_ACCOUNT_JSON not found',
+            error_message: 'OCR service not configured',
             last_activity_at: new Date().toISOString()
           })
           .eq('id', tenderId);
@@ -348,7 +384,7 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
             .from('tenders')
             .update({
               status: 'error',
-              error_message: 'Service account JSON missing required fields (project_id, client_email, private_key)',
+              error_message: 'Service account JSON missing required fields',
               last_activity_at: new Date().toISOString()
             })
             .eq('id', tenderId);
@@ -373,7 +409,7 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
             .from('tenders')
             .update({
               status: 'error',
-              error_message: 'Google Document AI processor ID not configured - GOOGLE_DOCAI_PROCESSOR_ID not found',
+              error_message: 'Google Document AI processor ID not configured',
               last_activity_at: new Date().toISOString()
             })
             .eq('id', tenderId);
@@ -381,7 +417,7 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
           throw new Error('Google Document AI processor ID not configured');
         }
         
-        console.log(`Using Google Document AI with project: ${projectId}, location: ${location}, processor: ${processorId}`);
+        console.log(`Using Google Document AI with project: ${projectId}, location: ${location}`);
 
         // Get the file from Supabase storage
         const { data: fileData, error: fileError } = await supabaseClient.storage
@@ -389,7 +425,7 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
           .download(filePath);
 
         if (fileError || !fileData) {
-          console.error('Failed to download file:', fileError);
+          console.error('Failed to download file');
           throw new Error('Failed to download file for processing');
         }
 
@@ -415,12 +451,12 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
 
         if (!tokenResponse.ok) {
           const tokenError = await tokenResponse.text();
-          console.error('Failed to get OAuth token:', tokenError);
+          console.error('Failed to get OAuth token');
           await supabaseClient
             .from('tenders')
             .update({
               status: 'error',
-              error_message: `Google OAuth authentication failed: ${tokenResponse.status} - ${tokenError.substring(0, 200)}`,
+              error_message: `Google OAuth authentication failed: ${tokenResponse.status}`,
               last_activity_at: new Date().toISOString()
             })
             .eq('id', tenderId);
@@ -450,12 +486,12 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
 
         if (!docAIResponse.ok) {
           const errorText = await docAIResponse.text();
-          console.error('Google Document AI API error:', docAIResponse.status, errorText);
+          console.error('Google Document AI API error');
           await supabaseClient
             .from('tenders')
             .update({
               status: 'error',
-              error_message: `Document AI processing failed: ${docAIResponse.status} - ${errorText.substring(0, 200)}`,
+              error_message: `Document AI processing failed: ${docAIResponse.status}`,
               last_activity_at: new Date().toISOString()
             })
             .eq('id', tenderId);
@@ -464,438 +500,409 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
         }
 
         const docAIData = await docAIResponse.json();
-        console.log('Google Document AI response received');
-        
-        // Extract text from Document AI response
-        let extractedText = '';
-        if (docAIData.document && docAIData.document.text) {
-          extractedText = docAIData.document.text;
-        }
-        
-        textToProcess = extractedText;
-        
-        if (!textToProcess) {
-          console.error('No text extracted from document');
-          await supabaseClient
-            .from('tenders')
-            .update({
-              status: 'error',
-              error_message: 'No text could be extracted from the document',
-              last_activity_at: new Date().toISOString()
-            })
-            .eq('id', tenderId);
+        const extractedTextRaw = docAIData.document?.text || '';
+        textToProcess = sanitizeText(extractedTextRaw);
+
+        // Save the extracted text to storage for future use
+        if (textToProcess) {
+          const textBlob = new Blob([textToProcess], { type: 'text/plain' });
+          const textFileName = `${filePath}.txt`;
           
-          throw new Error('No text could be extracted from the document');
+          try {
+            await supabaseClient.storage
+              .from('tender-documents')
+              .upload(textFileName, textBlob, {
+                cacheControl: '3600',
+                upsert: true
+              });
+            console.log('Extracted text saved to storage for future use');
+          } catch (uploadError) {
+            console.log('Could not save extracted text to storage (non-critical)');
+          }
         }
 
-        console.log(`Extracted ${textToProcess.length} characters from document using Google Document AI`);
-      } catch (ocrError) {
-        console.error('OCR processing error:', ocrError);
+      } catch (error) {
+        console.error('Error in Google Document AI processing');
         await supabaseClient
           .from('tenders')
           .update({
             status: 'error',
-            error_message: `OCR processing failed: ${ocrError.message || 'Unknown OCR processing error'}`,
+            error_message: 'Document processing failed',
             last_activity_at: new Date().toISOString()
           })
           .eq('id', tenderId);
         
-        throw new Error('Failed to process document with OCR');
+        throw error;
       }
     }
 
-    console.log(`Processing tender ${tenderId} with ${textToProcess?.length || 0} characters of text`);
+    let questionsToProcess: string[] = [];
 
-    // Update tender to extracting stage
-    await supabaseClient
-      .from('tenders')
-      .update({
-        status: 'processing',
-        processing_stage: 'extracting',
-        progress: 10,
-        last_activity_at: new Date().toISOString()
-      })
-      .eq('id', tenderId);
+    if (isInitialBatch && textToProcess) {
+      // Extract questions from the text for the first batch
+      questionsToProcess = extractQuestionsFromText(textToProcess);
+      
+      if (questionsToProcess.length === 0) {
+        console.log('No questions found in document');
+        await supabaseClient
+          .from('tenders')
+          .update({
+            status: 'completed',
+            processing_stage: 'completed',
+            total_questions: 0,
+            processed_questions: 0,
+            progress: 100,
+            last_activity_at: new Date().toISOString()
+          })
+          .eq('id', tenderId);
+        return;
+      }
 
-    let allQuestions = questions;
-    
-    // Only extract questions if this is the first batch (batchStart = 0) and no questions provided
-    if (batchStart === 0 && !allQuestions) {
-      // Extract questions from the text
-      console.log(`Extracting questions from text of length: ${textToProcess?.length || 0}`);
-      allQuestions = extractQuestionsFromText(textToProcess || '');
-      console.log(`Extracted ${allQuestions.length} questions`);
-
-      // Update tender with question count and progress
+      // Update tender with total questions count
       await supabaseClient
         .from('tenders')
         .update({
-          processing_stage: 'identifying',
-          total_questions: allQuestions.length,
-          processed_questions: 0,
-          progress: 20,
+          total_questions: questionsToProcess.length,
+          processing_stage: 'processing_questions',
           last_activity_at: new Date().toISOString()
         })
         .eq('id', tenderId);
 
-      if (allQuestions.length === 0) {
-        throw new Error('No questions found in the document');
-      }
-
-      console.log(`Found ${allQuestions.length} questions to process`);
-    } else if (allQuestions) {
-      console.log(`Continuing with ${allQuestions.length} questions, starting from batch ${batchStart}`);
+    } else if (isSubsequentBatch && questions) {
+      // Use provided questions for subsequent batches
+      questionsToProcess = questions.map(q => sanitizeText(q));
     } else {
-      throw new Error('No questions provided for batch processing');
+      throw new Error('Unable to determine questions to process');
     }
 
-    // Get tender details and company profile
-    const { data: tender, error: tenderError } = await supabaseClient
+    // Determine which questions to process in this batch
+    const questionsForThisBatch = questionsToProcess.slice(batchStart, batchStart + BATCH_SIZE);
+    
+    if (questionsForThisBatch.length === 0) {
+      console.log('No questions in this batch, marking as completed');
+      await supabaseClient
+        .from('tenders')
+        .update({
+          status: 'completed',
+          processing_stage: 'completed',
+          progress: 100,
+          last_activity_at: new Date().toISOString()
+        })
+        .eq('id', tenderId);
+      return;
+    }
+
+    console.log(`Processing batch ${batchStart / BATCH_SIZE + 1}: ${questionsForThisBatch.length} questions`);
+
+    // Get the tender details to access company profile
+    const { data: tenderData, error: tenderError } = await supabaseClient
       .from('tenders')
       .select('*, company_profiles(*)')
       .eq('id', tenderId)
       .single();
 
-    if (tenderError || !tender) {
-      console.error('Error fetching tender:', tenderError);
-      throw new Error('Tender not found');
+    if (tenderError || !tenderData) {
+      console.error('Failed to fetch tender data');
+      throw new Error('Failed to fetch tender data');
     }
 
-    const companyProfile = tender.company_profiles;
+    const companyProfile = tenderData.company_profiles;
     if (!companyProfile) {
-      throw new Error('Company profile not found');
+      console.error('No company profile found for tender');
+      throw new Error('No company profile found for tender');
     }
 
-    // Calculate batch boundaries
-    const totalQuestions = allQuestions.length;
-    const batchEnd = Math.min(batchStart + BATCH_SIZE, totalQuestions);
-    const questionsThisBatch = allQuestions.slice(batchStart, batchEnd);
-    
-    console.log(`Processing batch: questions ${batchStart + 1}-${batchEnd} of ${totalQuestions}`);
-
-    // Generate AI responses for each question with proper ordering
+    // Process each question with AI
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+    const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
+    const enableResearch = Deno.env.get('ENABLE_RESEARCH') === 'true';
+
     if (!openAIApiKey) {
-      throw new Error('OpenAI API key not configured');
+      console.error('OpenAI API key not configured');
+      throw new Error('AI service not configured');
     }
 
-    const responses = [];
+    const processedQuestions = [];
     
-    // Update to generation stage (only on first batch)
-    if (batchStart === 0) {
-      await supabaseClient
-        .from('tenders')
-        .update({
-          processing_stage: 'generating',
-          last_activity_at: new Date().toISOString()
-        })
-        .eq('id', tenderId);
-    }
-
-    // CRITICAL: Always insert a row for each question, even if AI generation fails
-    for (let i = 0; i < questionsThisBatch.length; i++) {
-      const question = questionsThisBatch[i];
-      const globalIndex = batchStart + i;
-      console.log(`Processing question ${globalIndex + 1}/${totalQuestions}: ${question.substring(0, 100)}...`);
+    for (let i = 0; i < questionsForThisBatch.length; i++) {
+      const question = questionsForThisBatch[i];
+      const questionIndex = batchStart + i;
       
-      // Always create a base response object first
-      const baseResponse = {
-        tender_id: tenderId,
-        company_profile_id: companyProfile.id,
-        question: question,
-        question_index: globalIndex,
-        is_approved: false,
-        ai_generated_answer: null,
-        question_type: null,
-        response_length: 0,
-        model_used: null,
-        research_used: false,
-      };
+      console.log(`Processing question ${questionIndex + 1}/${questionsToProcess.length}: ${question.substring(0, 100)}...`);
 
-      // Classify question type for optimized response strategy
-      const classification = classifyQuestion(question);
-      console.log(`Question ${i + 1} classification:`, classification);
-      baseResponse.question_type = classification.type;
-
-      // Fetch relevant memory from previous answers
-      let memoryContext = null;
       try {
-        memoryContext = await fetchRelevantMemory(question, companyProfile.id, supabaseClient, openAIApiKey);
-        if (memoryContext) {
-          console.log(`Memory context found: ${memoryContext.substring(0, 100)}...`);
-        }
-      } catch (error) {
-        console.error(`Memory retrieval failed for question ${i + 1}:`, error);
-      }
+        // Classify the question
+        const classification = classifyQuestion(question);
+        console.log(`Question classified as: ${classification.type} (${classification.reasoning})`);
 
-      // Check if research is needed and enabled - default to enabled unless explicitly disabled
-      let researchSnippet = null;
-      const enableResearch = Deno.env.get('ENABLE_RESEARCH')?.toLowerCase() !== 'false'; // Default to true
-      console.log(`Research enabled: ${enableResearch}`);
-      
-      if (enableResearch && classification.needsResearch) {
-        console.log(`Attempting research for question: ${question.substring(0, 50)}`);
-        const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
-        try {
+        // Fetch relevant memory
+        let memoryContext = null;
+        if (openAIApiKey) {
+          memoryContext = await fetchRelevantMemory(question, companyProfile.id, supabaseClient, openAIApiKey);
+        }
+
+        // Fetch research if enabled and needed
+        let researchSnippet = null;
+        if (enableResearch && perplexityApiKey && classification.needsResearch) {
           researchSnippet = await fetchResearchSnippet(question, companyProfile.company_name, perplexityApiKey);
-          if (researchSnippet) {
-            console.log(`Research found: ${researchSnippet.substring(0, 100)}...`);
-            baseResponse.research_used = true;
-          } else {
-            console.log('No research snippet returned');
-          }
-        } catch (error) {
-          console.error(`Research failed for question ${i + 1}:`, error);
         }
-      } else {
-        console.log(`Research skipped - enabled: ${enableResearch}, needs research: ${classification.needsResearch}`);
-      }
 
-      // Generate AI response with retries
-      const prompt = `You are a tender response writer for ${companyProfile.company_name}. Generate a professional response for this tender question.
+        const startTime = Date.now();
+        
+        // Generate AI response
+        const aiResponse = await generateAIResponse(
+          question, 
+          companyProfile, 
+          classification.type,
+          memoryContext,
+          researchSnippet,
+          openAIApiKey
+        );
+        
+        const processingTime = Date.now() - startTime;
 
-Company Context:
-${JSON.stringify(companyProfile, null, 2)}
-
-Question: ${question}
-Question Type: ${classification.type} (${classification.reasoning})
-
-${memoryContext ? `Previous Similar Questions & Answers:
-${memoryContext}
-
-` : ''}${researchSnippet ? `Research Context: ${researchSnippet}
-
-` : ''}Requirements:
-- Write in British English
-- Be professional and confident
-- Use specific company details from the profile when available
-${memoryContext ? '- Reference and build upon the previous similar answers provided above, but adapt them specifically to this question' : ''}
-- For ${classification.type} questions, provide ${classification.type === 'closed' ? 'direct, factual answers' : 'detailed explanations with examples'}
-- CRITICAL: NEVER use placeholder text like [Name], [CEO Name], [Title], [Position], or similar brackets. If specific information is not available in the company profile, provide professional responses like "We have appropriate personnel in place" or "We maintain suitable governance structures"
-- Focus on capabilities and experience relevant to the question
-- Keep response appropriate in length for the question type
-- Base responses only on information provided in the company context
-- If specific details are not available, acknowledge this professionally without using placeholders
-${researchSnippet ? '- Incorporate relevant research findings naturally into your response' : ''}
-
-Generate a tailored response:`;
-
-      let retryCount = 0;
-      const maxRetries = 2;
-      
-      while (retryCount <= maxRetries) {
-        try {
-          console.log(`Generating response for question ${globalIndex + 1}/${totalQuestions} (attempt ${retryCount + 1}): ${question.substring(0, 100)}...`);
-          
-          const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${openAIApiKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o-mini',
-              messages: [
-                { role: 'system', content: 'You are a professional tender response writer who uses British English spelling and terminology. Never use placeholder text in brackets like [Name] or [Title]. Always provide complete, professional responses.' },
-                { role: 'user', content: prompt }
-              ],
-              max_tokens: classification.type === 'closed' ? 200 : 500,
-              temperature: 0.3,
-            }),
+        // Store the response in database
+        const { error: insertError } = await supabaseClient
+          .from('tender_responses')
+          .insert({
+            tender_id: tenderId,
+            company_profile_id: companyProfile.id,
+            question: question,
+            question_index: questionIndex,
+            question_type: classification.type,
+            ai_generated_answer: aiResponse.answer,
+            model_used: aiResponse.model_used,
+            research_used: !!researchSnippet,
+            response_length: aiResponse.answer.length,
+            processing_time_ms: processingTime,
+            is_approved: false
           });
 
-          if (!aiResponse.ok) {
-            const errorText = await aiResponse.text();
-            console.error(`OpenAI API error for question ${i + 1} (attempt ${retryCount + 1}):`, aiResponse.status, aiResponse.statusText, errorText);
-            throw new Error(`API Error: ${aiResponse.status} - ${errorText}`);
-          }
-
-          const aiData = await aiResponse.json();
-          const generatedAnswer = aiData.choices[0]?.message?.content;
-
-          if (generatedAnswer) {
-            baseResponse.ai_generated_answer = generatedAnswer;
-            baseResponse.response_length = generatedAnswer.length;
-            baseResponse.model_used = 'gpt-4o-mini';
-            console.log(`Successfully generated response for question ${globalIndex + 1}`);
-            break; // Success, exit retry loop
-          } else {
-            throw new Error('No content returned from OpenAI');
-          }
-        } catch (error) {
-          console.error(`Error generating response for question ${globalIndex + 1} (attempt ${retryCount + 1}):`, error);
-          retryCount++;
-          
-          if (retryCount > maxRetries) {
-            console.error(`Failed to generate response for question ${globalIndex + 1} after ${maxRetries + 1} attempts`);
-            baseResponse.ai_generated_answer = 'Failed to generate response. Please try regenerating.';
-            baseResponse.model_used = 'error';
-            break;
-          }
-          
-          // Wait before retry
-          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        if (insertError) {
+          console.error('Failed to insert response');
+          throw insertError;
         }
+
+        processedQuestions.push({
+          question,
+          answer: aiResponse.answer,
+          questionIndex
+        });
+
+        console.log(`Successfully processed question ${questionIndex + 1}`);
+
+      } catch (error) {
+        console.error(`Failed to process question ${questionIndex + 1}`);
+        
+        // Insert error response
+        await supabaseClient
+          .from('tender_responses')
+          .insert({
+            tender_id: tenderId,
+            company_profile_id: companyProfile.id,
+            question: question,
+            question_index: questionIndex,
+            question_type: 'error',
+            ai_generated_answer: 'Error processing this question. Please edit manually.',
+            model_used: 'error',
+            research_used: false,
+            response_length: 0,
+            processing_time_ms: 0,
+            is_approved: false
+          });
       }
-      
-      // ALWAYS push the response, even if AI generation failed
-      responses.push(baseResponse);
-      
-      // Update progress after each question
-      const processedQuestions = globalIndex + 1;
-      const progressPercentage = Math.min(99, Math.round(20 + (processedQuestions / totalQuestions) * 79));
-      
-      await supabaseClient
-        .from('tenders')
-        .update({
-          processed_questions: processedQuestions,
-          progress: progressPercentage,
-          last_activity_at: new Date().toISOString()
-        })
-        .eq('id', tenderId);
-      
-      console.log(`Progress update: ${processedQuestions}/${totalQuestions} (${progressPercentage}%)`);
     }
 
-    if (responses.length === 0) {
-      await supabaseClient
-        .from('tenders')
-        .update({
-          status: 'error',
-          processing_stage: 'error',
-          error_message: 'Failed to generate any responses',
-          last_activity_at: new Date().toISOString()
-        })
-        .eq('id', tenderId);
-        
-      throw new Error('Failed to generate any responses');
-    }
-
-    // Insert all responses
-    const { data: insertedResponses, error: insertError } = await supabaseClient
-      .from('tender_responses')
-      .insert(responses)
-      .select();
-
-    if (insertError) {
-      console.error('Error inserting responses:', insertError);
-      
-      await supabaseClient
-        .from('tenders')
-        .update({
-          status: 'error',
-          processing_stage: 'error',
-          error_message: 'Failed to save responses to database',
-          last_activity_at: new Date().toISOString()
-        })
-        .eq('id', tenderId);
-        
-      throw new Error('Failed to save responses');
-    }
-
-    console.log(`Successfully processed batch: ${responses.length} questions for tender ${tenderId}`);
+    // Update progress
+    const totalProcessedSoFar = batchStart + processedQuestions.length;
+    const progress = Math.round((totalProcessedSoFar / questionsToProcess.length) * 100);
     
-    // Check if there are more questions to process
-    if (batchEnd < totalQuestions) {
-      console.log(`Invoking next batch: questions ${batchEnd + 1}-${Math.min(batchEnd + BATCH_SIZE, totalQuestions)} of ${totalQuestions}`);
+    await supabaseClient
+      .from('tenders')
+      .update({
+        processed_questions: totalProcessedSoFar,
+        progress: progress,
+        last_activity_at: new Date().toISOString()
+      })
+      .eq('id', tenderId);
+
+    // Check if we need to process more batches
+    const remainingQuestions = questionsToProcess.length - (batchStart + BATCH_SIZE);
+    
+    if (remainingQuestions > 0) {
+      // Schedule next batch processing
+      console.log(`Scheduling next batch: ${remainingQuestions} questions remaining`);
       
-      // Self-invoke for the next batch
-      const nextBatchResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/process-tender`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          tenderId,
-          batchStart: batchEnd,
-          questions: allQuestions
-        }),
-      });
-      
-      if (!nextBatchResponse.ok) {
-        console.error('Failed to invoke next batch:', await nextBatchResponse.text());
-      } else {
-        console.log('Successfully invoked next batch');
-      }
+      // Call the function recursively for the next batch
+      setTimeout(async () => {
+        try {
+          await processTenderInBackground(
+            tenderId, 
+            undefined, // No need to pass text again
+            undefined, 
+            undefined, 
+            batchStart + BATCH_SIZE, 
+            questionsToProcess // Pass all questions
+          );
+        } catch (error) {
+          console.error('Error processing next batch');
+          await supabaseClient
+            .from('tenders')
+            .update({
+              status: 'error',
+              error_message: 'Error processing questions batch',
+              last_activity_at: new Date().toISOString()
+            })
+            .eq('id', tenderId);
+        }
+      }, 1000); // 1 second delay between batches
     } else {
-      // All questions processed - update tender status to draft
-      console.log(`All batches complete. Updating tender ${tenderId} status to 'draft'`);
-      const { error: statusUpdateError } = await supabaseClient
+      // All questions processed
+      console.log('All questions processed successfully');
+      await supabaseClient
         .from('tenders')
-        .update({ 
-          status: 'draft',
-          processing_stage: 'complete',
+        .update({
+          status: 'completed',
+          processing_stage: 'completed',
           progress: 100,
           last_activity_at: new Date().toISOString()
         })
         .eq('id', tenderId);
-
-      if (statusUpdateError) {
-        console.error('Error updating tender status:', statusUpdateError);
-      } else {
-        console.log(`Successfully updated tender ${tenderId} status to 'draft'`);
-      }
     }
 
   } catch (error) {
-    console.error('Error in background processing:', error);
+    console.error('Error in processTenderInBackground');
     
-    // Update tender to error state
-    if (supabaseClient && tenderId) {
-      try {
-        await supabaseClient
-          .from('tenders')
-          .update({
-            status: 'error',
-            processing_stage: 'error',
-            error_message: error.message || 'Unknown error occurred during processing',
-            last_activity_at: new Date().toISOString()
-          })
-          .eq('id', tenderId);
-      } catch (updateError) {
-        console.error('Failed to update tender error state:', updateError);
-      }
+    if (supabaseClient) {
+      await supabaseClient
+        .from('tenders')
+        .update({
+          status: 'error',
+          error_message: error.message || 'Unknown processing error',
+          last_activity_at: new Date().toISOString()
+        })
+        .eq('id', tenderId);
     }
+    
+    throw error;
   }
 }
 
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+// Generate AI response function
+async function generateAIResponse(
+  question: string, 
+  companyProfile: any, 
+  questionType: string,
+  memoryContext: string | null,
+  researchSnippet: string | null,
+  openAIApiKey: string
+): Promise<{ answer: string; model_used: string }> {
+  
+  // Build context from company profile
+  const companyContext = `
+Company Name: ${companyProfile.company_name}
+Industry: ${companyProfile.industry}
+Team Size: ${companyProfile.team_size}
+Years in Business: ${companyProfile.years_in_business}
+Services Offered: ${companyProfile.services_offered?.join(', ') || 'Not specified'}
+Specializations: ${companyProfile.specializations}
+Mission: ${companyProfile.mission}
+Values: ${companyProfile.values}
+Past Projects: ${companyProfile.past_projects}
+${companyProfile.policies ? `Policies: ${companyProfile.policies}` : ''}
+${companyProfile.accreditations ? `Accreditations: ${companyProfile.accreditations}` : ''}
+  `.trim();
+
+  // Build the full prompt
+  let systemPrompt = `You are an expert tender response writer for ${companyProfile.company_name}. Write professional, detailed responses that showcase the company's capabilities and experience.
+
+COMPANY INFORMATION:
+${companyContext}
+
+RESPONSE GUIDELINES:
+- Write in first person plural ("we", "our company")
+- Be specific and detailed, using company information provided
+- Show expertise and experience
+- Address compliance and regulatory requirements when relevant
+- Use professional business language
+- Structure responses clearly with headings when appropriate
+- Keep responses focused and relevant to the question`;
+
+  if (questionType === 'closed') {
+    systemPrompt += `
+- This is a Yes/No or factual question - provide a direct answer first, then elaborate briefly
+- Keep the response concise but informative`;
+  } else {
+    systemPrompt += `
+- This is an open-ended question requiring detailed explanation
+- Provide comprehensive information showing your expertise
+- Include specific examples and methodologies where relevant`;
+  }
+
+  let userPrompt = `Question: ${question}
+
+Please provide a professional tender response.`;
+
+  // Add memory context if available
+  if (memoryContext) {
+    userPrompt += `
+
+RELEVANT PREVIOUS RESPONSES (for reference):
+${memoryContext}
+
+Please use these previous responses as reference but ensure your answer is specifically tailored to the current question.`;
+  }
+
+  // Add research context if available
+  if (researchSnippet) {
+    userPrompt += `
+
+ADDITIONAL RESEARCH CONTEXT:
+${researchSnippet}
+
+Please incorporate relevant information from this research into your response where appropriate.`;
   }
 
   try {
-    const { tenderId, extractedText, extractedTextPath, filePath, batchStart = 0, questions } = await req.json() as ProcessTenderRequest;
+    // Use GPT-4o-mini for reliable results
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        max_tokens: questionType === 'closed' ? 500 : 1000,
+        temperature: 0.7
+      }),
+    });
 
-    if (!tenderId || (batchStart === 0 && !extractedText && !extractedTextPath && !filePath)) {
-      return new Response(JSON.stringify({ error: 'Missing required fields - need tenderId and at least one of: extractedText, extractedTextPath, or filePath for initial processing' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (!response.ok) {
+      console.error('OpenAI API error');
+      throw new Error(`OpenAI API error: ${response.status}`);
     }
 
-    // Start background processing
-    EdgeRuntime.waitUntil(processTenderInBackground(tenderId, extractedText, extractedTextPath, filePath, batchStart, questions));
+    const data = await response.json();
+    const aiAnswer = data.choices[0]?.message?.content || 'Unable to generate response';
 
-    // Return immediate success response
-    return new Response(JSON.stringify({ 
-      message: 'Tender processing started',
-      tenderId,
-      status: 'processing'
-    }), {
-      status: 202,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return {
+      answer: aiAnswer,
+      model_used: 'gpt-4o-mini'
+    };
 
   } catch (error) {
-    console.error('Error in main request handler:', error);
-    return new Response(JSON.stringify({ error: 'Invalid request format' }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    console.error('Error generating AI response');
+    return {
+      answer: 'Error generating response. Please provide a manual answer for this question.',
+      model_used: 'error'
+    };
   }
-});
+}
 
 // Helper function to identify entity questions that need research
 function needsEntityResearch(question: string): boolean {
@@ -923,7 +930,7 @@ async function fetchResearchSnippet(question: string, companyName: string, perpl
   }
   
   try {
-    console.log(`Fetching research snippet for question: ${question.substring(0, 100)}...`);
+    console.log('Fetching research snippet');
     
     // Enhanced prompt for entity-specific research
     let researchPrompt;
@@ -959,7 +966,7 @@ async function fetchResearchSnippet(question: string, companyName: string, perpl
     });
     
     if (!response.ok) {
-      console.error('Perplexity API error:', response.status, response.statusText);
+      console.error('Perplexity API error');
       return null;
     }
     
@@ -971,11 +978,11 @@ async function fetchResearchSnippet(question: string, companyName: string, perpl
       return null;
     }
     
-    console.log(`Research snippet fetched: ${researchText.substring(0, 200)}...`);
+    console.log('Research snippet fetched successfully');
     return researchText;
     
   } catch (error) {
-    console.error('Error fetching research snippet:', error);
+    console.error('Error fetching research snippet');
     return null;
   }
 }
@@ -983,7 +990,7 @@ async function fetchResearchSnippet(question: string, companyName: string, perpl
 // Function to retrieve relevant memory using vector similarity
 async function fetchRelevantMemory(question: string, companyProfileId: string, supabaseClient: any, openAIApiKey: string): Promise<string | null> {
   try {
-    console.log(`Fetching relevant memory for question: ${question.substring(0, 100)}...`);
+    console.log('Fetching relevant memory');
     
     // Generate embedding for the question
     const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
@@ -999,7 +1006,7 @@ async function fetchRelevantMemory(question: string, companyProfileId: string, s
     });
 
     if (!embeddingResponse.ok) {
-      console.error('Failed to generate embedding:', embeddingResponse.status, embeddingResponse.statusText);
+      console.error('Failed to generate embedding');
       return null;
     }
 
@@ -1016,7 +1023,7 @@ async function fetchRelevantMemory(question: string, companyProfileId: string, s
       });
 
     if (memoryError) {
-      console.error('Error fetching memory:', memoryError);
+      console.error('Error fetching memory');
       return null;
     }
 
@@ -1034,7 +1041,7 @@ async function fetchRelevantMemory(question: string, companyProfileId: string, s
 
     return memoryContext;
   } catch (error) {
-    console.error('Error fetching relevant memory:', error);
+    console.error('Error fetching relevant memory');
     return null;
   }
 }
@@ -1080,3 +1087,85 @@ function classifyQuestion(question: string): { type: 'closed' | 'open', reasonin
     };
   }
 }
+
+serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    // Get user ID from JWT for rate limiting
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Authentication required' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Extract user ID from JWT (simplified - in production use proper JWT validation)
+    const token = authHeader.replace('Bearer ', '');
+    let userId = 'anonymous';
+    
+    try {
+      // Decode JWT payload (Note: This is basic decoding, not verification)
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      userId = payload.sub || 'anonymous';
+    } catch {
+      // If JWT decode fails, use anonymous but still allow processing
+      userId = 'anonymous';
+    }
+
+    // Check rate limit
+    if (!checkRateLimit(userId)) {
+      return new Response(JSON.stringify({ 
+        error: 'Rate limit exceeded. Maximum 10 requests per hour.' 
+      }), {
+        status: 429,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const requestData = await req.json() as ProcessTenderRequest;
+    
+    // Input validation
+    if (!requestData.tenderId || !validateTenderId(requestData.tenderId)) {
+      return new Response(JSON.stringify({ error: 'Invalid or missing tender ID' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log(`Processing tender: ${requestData.tenderId}`);
+
+    // Start background processing (don't wait for completion)
+    processTenderInBackground(
+      requestData.tenderId,
+      requestData.extractedText,
+      requestData.extractedTextPath,
+      requestData.filePath,
+      requestData.batchStart || 0,
+      requestData.questions
+    ).catch(error => {
+      console.error('Background processing failed:', error);
+    });
+
+    // Return immediate response
+    return new Response(JSON.stringify({ 
+      message: 'Tender processing started successfully',
+      tenderId: requestData.tenderId 
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+
+  } catch (error) {
+    console.error('Error in serve handler:', error);
+    return new Response(JSON.stringify({ 
+      error: 'Internal server error'
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+});

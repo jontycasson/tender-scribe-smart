@@ -190,7 +190,7 @@ export type Database = {
       tender_responses: {
         Row: {
           ai_generated_answer: string | null
-          company_profile_id: string | null
+          company_profile_id: string
           created_at: string
           id: string
           is_approved: boolean | null
@@ -207,7 +207,7 @@ export type Database = {
         }
         Insert: {
           ai_generated_answer?: string | null
-          company_profile_id?: string | null
+          company_profile_id: string
           created_at?: string
           id?: string
           is_approved?: boolean | null
@@ -224,7 +224,7 @@ export type Database = {
         }
         Update: {
           ai_generated_answer?: string | null
-          company_profile_id?: string | null
+          company_profile_id?: string
           created_at?: string
           id?: string
           is_approved?: boolean | null
@@ -240,6 +240,20 @@ export type Database = {
           user_edited_answer?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "fk_tender_responses_company_profile"
+            columns: ["company_profile_id"]
+            isOneToOne: false
+            referencedRelation: "company_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_tender_responses_tender"
+            columns: ["tender_id"]
+            isOneToOne: false
+            referencedRelation: "tenders"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "tender_responses_company_profile_id_fkey"
             columns: ["company_profile_id"]
@@ -258,7 +272,7 @@ export type Database = {
       }
       tenders: {
         Row: {
-          company_profile_id: string | null
+          company_profile_id: string
           created_at: string
           deadline: string | null
           error_message: string | null
@@ -279,7 +293,7 @@ export type Database = {
           value: number | null
         }
         Insert: {
-          company_profile_id?: string | null
+          company_profile_id: string
           created_at?: string
           deadline?: string | null
           error_message?: string | null
@@ -300,7 +314,7 @@ export type Database = {
           value?: number | null
         }
         Update: {
-          company_profile_id?: string | null
+          company_profile_id?: string
           created_at?: string
           deadline?: string | null
           error_message?: string | null
@@ -321,6 +335,13 @@ export type Database = {
           value?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "fk_tenders_company_profile"
+            columns: ["company_profile_id"]
+            isOneToOne: false
+            referencedRelation: "company_profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "tenders_company_profile_id_fkey"
             columns: ["company_profile_id"]
