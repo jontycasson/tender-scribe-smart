@@ -22,13 +22,6 @@ export const SplitHeroVariant = () => {
         {/* Left Content */}
         <div className="flex-1 flex flex-col justify-center px-6 lg:px-12 py-12">
           <div className="max-w-xl">
-            <div className="flex items-center mb-6">
-              <img 
-                src="/lovable-uploads/730698ea-a3a2-4ade-b2a7-2b63eb99bdf2.png" 
-                alt="Proposal.fit" 
-                className="h-20 sm:h-24"
-              />
-            </div>
             
             <h1 className="text-4xl lg:text-6xl font-bold mb-6 leading-tight">
               Win More 
