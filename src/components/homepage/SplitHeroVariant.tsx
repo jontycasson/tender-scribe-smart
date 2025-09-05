@@ -111,56 +111,23 @@ export const SplitHeroVariant = () => {
         </div>
       </div>
 
-      {/* Features Section */}
-      <div className="py-20 px-6">
+      {/* How It Works Section */}
+      <div className="py-20 px-6 bg-background">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl lg:text-4xl font-bold mb-4">
-              Everything you need to win tenders
+              How It Works
             </h2>
-            <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              Our AI-powered platform handles the heavy lifting, so you can focus on what matters most
-            </p>
           </div>
           
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
             <div className="text-center p-6">
               <div className="bg-primary/10 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
                 <FileText className="h-8 w-8 text-primary" />
               </div>
-              <h3 className="text-xl font-semibold mb-3">Smart Document Analysis</h3>
+              <h3 className="text-xl font-semibold mb-3">Upload & Analyse</h3>
               <p className="text-muted-foreground">
-                Advanced AI parsing extracts key requirements and questions from complex tender documents
-              </p>
-            </div>
-            
-            <div className="text-center p-6">
-              <div className="bg-primary/10 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-                <Users className="h-8 w-8 text-primary" />
-              </div>
-              <h3 className="text-xl font-semibold mb-3">Personalised Responses</h3>
-              <p className="text-muted-foreground">
-                Tailored responses based on your company profile, experience, and past successes
-              </p>
-            </div>
-            
-            <div className="text-center p-6">
-              <div className="bg-primary/10 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-                <Shield className="h-8 w-8 text-primary" />
-              </div>
-              <h3 className="text-xl font-semibold mb-3">Quality Assurance</h3>
-              <p className="text-muted-foreground">
-                Review, edit, and approve all responses before submission with built-in quality checks
-              </p>
-            </div>
-            
-            <div className="text-center p-6">
-              <div className="bg-primary/10 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-                <Clock className="h-8 w-8 text-primary" />
-              </div>
-              <h3 className="text-xl font-semibold mb-3">Save Time</h3>
-              <p className="text-muted-foreground">
-                Reduce tender response time from weeks to hours with automated document processing
+                Upload any tender document (PDF, Word, Excel). We scan and extract all questions automatically.
               </p>
             </div>
             
@@ -168,22 +135,95 @@ export const SplitHeroVariant = () => {
               <div className="bg-primary/10 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
                 <Zap className="h-8 w-8 text-primary" />
               </div>
-              <h3 className="text-xl font-semibold mb-3">Instant Insights</h3>
+              <h3 className="text-xl font-semibold mb-3">Auto-Draft Answers</h3>
               <p className="text-muted-foreground">
-                Get immediate analysis of tender requirements and compliance scoring
+                Answers are generated using your company profile, past responses, and best-practice AI models.
               </p>
             </div>
             
             <div className="text-center p-6">
               <div className="bg-primary/10 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-                <Target className="h-8 w-8 text-primary" />
+                <Shield className="h-8 w-8 text-primary" />
               </div>
-              <h3 className="text-xl font-semibold mb-3">Higher Success Rate</h3>
+              <h3 className="text-xl font-semibold mb-3">Edit, Approve & Export</h3>
               <p className="text-muted-foreground">
-                Improve your tender win rate with professional, consistent, and compelling responses
+                Review and edit drafts in-app, then export your completed response in your preferred format.
+              </p>
+            </div>
+            
+            <div className="text-center p-6">
+              <div className="bg-primary/10 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+                <Users className="h-8 w-8 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold mb-3">Built for Collaboration</h3>
+              <p className="text-muted-foreground">
+                Assign questions to team members, track progress, and collaborate securely in real-time.
               </p>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Benefits Section */}
+      <div className="py-20 px-6 bg-muted/30">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl lg:text-4xl font-bold mb-4">
+              Why Teams Choose Proposal.fit
+            </h2>
+          </div>
+          
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+            <div className="text-center p-6 bg-background rounded-lg shadow-sm">
+              <div className="text-3xl mb-4">⏱️</div>
+              <h3 className="text-xl font-semibold mb-3">Save Days of Work</h3>
+              <p className="text-muted-foreground">
+                Reduce manual copy/paste and formatting from hours to minutes.
+              </p>
+            </div>
+            
+            <div className="text-center p-6 bg-background rounded-lg shadow-sm">
+              <div className="text-3xl mb-4">🧠</div>
+              <h3 className="text-xl font-semibold mb-3">Smarter Every Time</h3>
+              <p className="text-muted-foreground">
+                Built-in memory learns your preferred answers, tone, and exclusions.
+              </p>
+            </div>
+            
+            <div className="text-center p-6 bg-background rounded-lg shadow-sm">
+              <div className="text-3xl mb-4">🔐</div>
+              <h3 className="text-xl font-semibold mb-3">Secure & Compliant</h3>
+              <p className="text-muted-foreground">
+                Powered by OpenAI, Google Document AI (EU deployment), and SOC2-compliant Supabase.
+              </p>
+            </div>
+            
+            <div className="text-center p-6 bg-background rounded-lg shadow-sm">
+              <div className="text-3xl mb-4">⚙️</div>
+              <h3 className="text-xl font-semibold mb-3">No Setup Required</h3>
+              <p className="text-muted-foreground">
+                Works out-of-the-box. Upload your first tender and go.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Final CTA Section */}
+      <div className="py-20 px-6 bg-background">
+        <div className="max-w-4xl mx-auto text-center">
+          <h2 className="text-3xl lg:text-4xl font-bold mb-6">
+            Start winning tenders faster — today.
+          </h2>
+          <p className="text-xl text-muted-foreground mb-8">
+            No credit card required. EU-based document processing.
+          </p>
+          <Button asChild size="lg" className="text-lg px-8 py-4">
+            <Link to="/auth">
+              Get Started Free
+              <ArrowRight className="ml-2 h-5 w-5" />
+            </Link>
+          </Button>
         </div>
       </div>
     </>
