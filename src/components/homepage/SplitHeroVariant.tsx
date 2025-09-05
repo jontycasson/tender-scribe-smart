@@ -21,7 +21,7 @@ export const SplitHeroVariant = () => {
       <div className="flex flex-col lg:flex-row min-h-[calc(100vh-80px)]">
         {/* Left Content */}
         <div className="flex-1 flex flex-col justify-center px-6 lg:px-12 py-12">
-          <div className="max-w-xl">
+          <div className="max-w-2xl">
             
             <h1 className="text-4xl lg:text-6xl font-bold mb-6 leading-tight">
               Win More Tenders — 
