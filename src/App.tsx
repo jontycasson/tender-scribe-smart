@@ -11,6 +11,7 @@ import NotFound from "./pages/NotFound";
 import NewTender from "./pages/NewTender";
 import TenderDetails from "./pages/TenderDetails";
 import Security from "./pages/Security";
+import Terms from "./pages/Terms";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -32,6 +33,7 @@ const App = () => (
               <Route path="/new-tender" element={<NewTender />} />
               <Route path="/tender/:id" element={<TenderDetails />} />
               <Route path="/security" element={<Security />} />
+              <Route path="/terms" element={<Terms />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
