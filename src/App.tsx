@@ -13,6 +13,7 @@ import TenderDetails from "./pages/TenderDetails";
 import Security from "./pages/Security";
 import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
+import AcceptableUse from "./pages/AcceptableUse";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -36,6 +37,7 @@ const App = () => (
               <Route path="/security" element={<Security />} />
               <Route path="/terms" element={<Terms />} />
               <Route path="/privacy" element={<Privacy />} />
+              <Route path="/acceptable-use" element={<AcceptableUse />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
