@@ -107,9 +107,69 @@ const Privacy = () => {
 
             <section className="mb-8">
               <h2 className="text-2xl font-semibold text-foreground mb-4">6. International Data Transfers</h2>
-              <p className="text-muted-foreground leading-relaxed">
-                Where data is processed outside the UK or EU (e.g. by OpenAI in the United States), we rely on Standard Contractual Clauses (SCCs) as the legal mechanism for transfer, in compliance with GDPR.
-              </p>
+              
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-foreground mb-3">🌐 Geographic Hosting Overview</h3>
+                <p className="text-muted-foreground leading-relaxed mb-4">
+                  Proposal.fit operates a multi-region infrastructure. Your data may be processed or stored in the following locations:
+                </p>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse border border-border mb-4">
+                    <thead>
+                      <tr className="bg-muted/50">
+                        <th className="border border-border px-4 py-2 text-left font-semibold text-foreground">Service</th>
+                        <th className="border border-border px-4 py-2 text-left font-semibold text-foreground">Purpose</th>
+                        <th className="border border-border px-4 py-2 text-left font-semibold text-foreground">Region</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="border border-border px-4 py-2 text-muted-foreground">Google Document AI</td>
+                        <td className="border border-border px-4 py-2 text-muted-foreground">OCR and document processing</td>
+                        <td className="border border-border px-4 py-2 text-muted-foreground">EU-hosted</td>
+                      </tr>
+                      <tr>
+                        <td className="border border-border px-4 py-2 text-muted-foreground">Supabase</td>
+                        <td className="border border-border px-4 py-2 text-muted-foreground">Authentication, DB, storage</td>
+                        <td className="border border-border px-4 py-2 text-muted-foreground">EU-hosted</td>
+                      </tr>
+                      <tr>
+                        <td className="border border-border px-4 py-2 text-muted-foreground">OpenAI</td>
+                        <td className="border border-border px-4 py-2 text-muted-foreground">AI-generated tender responses</td>
+                        <td className="border border-border px-4 py-2 text-muted-foreground">United States</td>
+                      </tr>
+                      <tr>
+                        <td className="border border-border px-4 py-2 text-muted-foreground">Google Analytics</td>
+                        <td className="border border-border px-4 py-2 text-muted-foreground">Usage analytics (planned)</td>
+                        <td className="border border-border px-4 py-2 text-muted-foreground">EU and US</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-foreground mb-3">Data Transfer Safeguards</h3>
+                <p className="text-muted-foreground leading-relaxed mb-4">
+                  Where data is transferred outside of the UK or European Union (e.g. to the United States), Proposal.fit:
+                </p>
+                <ul className="list-disc list-inside text-muted-foreground leading-relaxed space-y-2 ml-4">
+                  <li>Relies on Standard Contractual Clauses (SCCs) as the legal basis for international transfers</li>
+                  <li>Ensures sub-processors are GDPR-compliant and reputable</li>
+                  <li>Regularly reviews data handling policies of all integrated services</li>
+                </ul>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold text-foreground mb-3">Sub-processors and Transparency</h3>
+                <p className="text-muted-foreground leading-relaxed mb-4">
+                  A dedicated <a href="/security" className="text-primary hover:underline">Security & Sub-processors</a> page will list all current service providers and their hosting locations.
+                </p>
+                <p className="text-muted-foreground leading-relaxed">
+                  This page will be updated when infrastructure or processing partners change, ensuring full transparency for users and customers.
+                </p>
+              </div>
             </section>
 
             <section className="mb-8">
@@ -144,11 +204,50 @@ const Privacy = () => {
 
             <section className="mb-8">
               <h2 className="text-2xl font-semibold text-foreground mb-4">9. Cookies</h2>
-              <ul className="list-disc list-inside text-muted-foreground leading-relaxed space-y-2 ml-4">
-                <li>We use essential cookies for session management and user authentication.</li>
-                <li>We do not currently use tracking or marketing cookies.</li>
-                <li>Users are passively notified about cookies via our interface — no banner is currently shown.</li>
-              </ul>
+              
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-foreground mb-3">🍪 What Cookies We Use</h3>
+                <p className="text-muted-foreground leading-relaxed mb-4">
+                  Proposal.fit uses minimal, essential cookies that are necessary to:
+                </p>
+                <ul className="list-disc list-inside text-muted-foreground leading-relaxed space-y-2 ml-4">
+                  <li>Keep users logged in during a session</li>
+                  <li>Enable basic navigation and access to secure areas</li>
+                  <li>Remember short-term preferences (e.g. tab states)</li>
+                </ul>
+                <p className="text-muted-foreground leading-relaxed mt-4 mb-4">
+                  These cookies are first-party session cookies and expire automatically.
+                </p>
+                <p className="text-muted-foreground leading-relaxed font-medium">
+                  🔒 We do not use tracking, marketing, or advertising cookies.
+                </p>
+              </div>
+
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-foreground mb-3">Cookie Consent Approach</h3>
+                <p className="text-muted-foreground leading-relaxed mb-4">
+                  Proposal.fit follows a passive cookie notification approach, in line with many B2B SaaS platforms:
+                </p>
+                <ul className="list-disc list-inside text-muted-foreground leading-relaxed space-y-2 ml-4">
+                  <li>No cookie banner is shown by default.</li>
+                  <li>Continued use of the site is treated as consent to use essential cookies only.</li>
+                  <li>If we introduce additional cookie types (e.g. analytics or third-party trackers), we will implement appropriate opt-in mechanisms in compliance with GDPR and PECR.</li>
+                </ul>
+              </div>
+
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-foreground mb-3">Planned Future Use of Cookies</h3>
+                <p className="text-muted-foreground leading-relaxed">
+                  We may introduce Google Analytics 4 (GA4) cookies in the future to better understand user behaviour and improve product features. These will be anonymised and never used for remarketing or advertising purposes.
+                </p>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold text-foreground mb-3">Managing Cookies</h3>
+                <p className="text-muted-foreground leading-relaxed">
+                  You can control or delete cookies via your browser settings. Blocking essential cookies may limit your ability to use core features of Proposal.fit.
+                </p>
+              </div>
             </section>
 
             <section className="mb-8">
