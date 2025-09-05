@@ -24,14 +24,14 @@ export const SplitHeroVariant = () => {
           <div className="max-w-xl">
             
             <h1 className="text-4xl lg:text-6xl font-bold mb-6 leading-tight">
-              Win More 
-              <span className="text-primary block">Tenders</span>
-              with AI
+              Respond to Tenders 
+              <span className="text-primary block">10x Faster</span>
+              — with AI
             </h1>
             
             <p className="text-xl text-muted-foreground mb-6 leading-relaxed">
-              Streamline your tender response process with intelligent document analysis, 
-              automated drafting, and personalised company profile matching.
+              <strong>Proposal.fit</strong> automates tender responses with lightning-fast document analysis, 
+              intelligent drafting, and instant company profile matching — all in one simple platform.
             </p>
             
             {/* Speed Highlight */}
@@ -39,8 +39,8 @@ export const SplitHeroVariant = () => {
               <div className="flex items-center gap-3">
                 <Zap className="h-6 w-6 text-primary" />
                 <div>
-                  <div className="text-2xl font-bold text-primary">10x Faster</div>
-                  <div className="text-sm text-muted-foreground">Generate responses in minutes, not weeks</div>
+                  <div className="text-2xl font-bold text-primary">⚡ 10x Faster Tender Responses</div>
+                  <div className="text-sm text-muted-foreground">Generate accurate answers in minutes — not days</div>
                 </div>
               </div>
             </div>
@@ -48,7 +48,7 @@ export const SplitHeroVariant = () => {
             <div className="flex flex-col sm:flex-row gap-4 mb-8">
               <Button asChild size="lg">
                 <Link to="/auth">
-                  Get Started
+                  Get Started – Try Now
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>
               </Button>
@@ -57,16 +57,16 @@ export const SplitHeroVariant = () => {
             {/* Stats */}
             <div className="grid grid-cols-3 gap-6 pt-8 border-t">
               <div className="text-center">
-                <div className="text-2xl font-bold text-primary">10x</div>
-                <div className="text-sm text-muted-foreground">Faster responses</div>
+                <div className="text-2xl font-bold text-primary">🚀 10x Faster</div>
+                <div className="text-sm text-muted-foreground">Speed up submissions dramatically</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-primary">95%</div>
-                <div className="text-sm text-muted-foreground">Accuracy rate</div>
+                <div className="text-2xl font-bold text-primary">✅ 95% Accuracy</div>
+                <div className="text-sm text-muted-foreground">Built for precision and compliance</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-primary">500+</div>
-                <div className="text-sm text-muted-foreground">Tenders processed</div>
+                <div className="text-2xl font-bold text-primary">📄 500+ Tenders Automated</div>
+                <div className="text-sm text-muted-foreground">Trusted by teams across industries</div>
               </div>
             </div>
           </div>
