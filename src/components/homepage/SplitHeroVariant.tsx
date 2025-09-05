@@ -29,20 +29,28 @@ export const SplitHeroVariant = () => {
               with AI
             </h1>
             
-            <p className="text-xl text-muted-foreground mb-8 leading-relaxed">
+            <p className="text-xl text-muted-foreground mb-6 leading-relaxed">
               Streamline your tender response process with intelligent document analysis, 
               automated drafting, and personalised company profile matching.
             </p>
             
+            {/* Speed Highlight */}
+            <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 mb-8">
+              <div className="flex items-center gap-3">
+                <Zap className="h-6 w-6 text-primary" />
+                <div>
+                  <div className="text-2xl font-bold text-primary">10x Faster</div>
+                  <div className="text-sm text-muted-foreground">Generate responses in minutes, not weeks</div>
+                </div>
+              </div>
+            </div>
+            
             <div className="flex flex-col sm:flex-row gap-4 mb-8">
               <Button asChild size="lg">
                 <Link to="/auth">
-                  Get Started Free
+                  Get Started
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>
-              </Button>
-              <Button variant="outline" size="lg" onClick={handleDashboardClick}>
-                {user ? "View Dashboard" : "Sign In"}
               </Button>
             </div>
             

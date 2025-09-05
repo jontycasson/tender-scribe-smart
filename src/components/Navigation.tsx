@@ -36,7 +36,7 @@ export const Navigation = ({ showNewTenderButton = false }: NavigationProps) => 
 
   return (
     <header className="border-b bg-card">
-      <div className="max-w-7xl mx-auto px-6 py-4">
+      <div className="max-w-7xl mx-auto px-6 lg:px-12 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center">
             <Link to="/" className="flex items-center hover:opacity-80 transition-opacity">
