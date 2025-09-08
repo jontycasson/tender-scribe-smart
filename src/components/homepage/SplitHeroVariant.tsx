@@ -220,7 +220,7 @@ export const SplitHeroVariant = () => {
           </p>
           <Button asChild size="lg" className="text-lg px-8 py-4">
             <Link to="/auth">
-              Get Started Free
+              Get Started
               <ArrowRight className="ml-2 h-5 w-5" />
             </Link>
           </Button>
