@@ -70,8 +70,14 @@ const Try = () => {
 
       if (error) {
         console.error('Function error:', error);
-        if (error.message?.includes('LIMIT_REACHED') || data?.error === 'LIMIT_REACHED') {
+        // Check if it's a rate limit error (429 status)
+        if (error.context?.res?.status === 429 || error.message?.includes('LIMIT_REACHED') || data?.error === 'LIMIT_REACHED') {
           setIsLimitReached(true);
+          toast({
+            title: "Demo Limit Reached",
+            description: "You've reached your free demo limit. Subscribe to continue using Proposal.fit.",
+            variant: "destructive"
+          });
         } else {
           toast({
             title: "Error",
@@ -84,9 +90,16 @@ const Try = () => {
 
       if (data?.error === 'LIMIT_REACHED') {
         setIsLimitReached(true);
+        toast({
+          title: "Demo Limit Reached", 
+          description: data.message || "You've reached your free demo limit. Subscribe to continue using Proposal.fit.",
+          variant: "destructive"
+        });
       } else if (data?.response) {
         setResponse(data.response);
-        setRemainingUses(data.remainingUses);
+        if (typeof data.remainingUses === 'number') {
+          setRemainingUses(data.remainingUses);
+        }
       } else {
         toast({
           title: "Error",

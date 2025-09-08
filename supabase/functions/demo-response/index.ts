@@ -5,6 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
@@ -25,8 +26,9 @@ serve(async (req) => {
       });
     }
 
-    // Get client IP for rate limiting
-    const clientIP = req.headers.get('x-forwarded-for') || 
+    // Get client IP for rate limiting (parse only the first IP from X-Forwarded-For)
+    const forwardedFor = req.headers.get('x-forwarded-for');
+    const clientIP = forwardedFor ? forwardedFor.split(',')[0].trim() : 
                      req.headers.get('x-real-ip') || 
                      'unknown';
 
@@ -36,26 +38,42 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Check usage limits (3 per email/IP)
-    const { data: existingUses, error: countError } = await supabase
+    // Check usage limits (3 per email/IP) - separate queries to avoid parsing issues
+    const { count: emailCount, error: emailError } = await supabase
       .from('demo_uses')
-      .select('id')
-      .or(`email.eq.${email},ip_address.eq.${clientIP}`);
+      .select('*', { count: 'exact', head: true })
+      .eq('email', email);
 
-    if (countError) {
-      console.error('Error checking usage limits:', countError);
+    const { count: ipCount, error: ipError } = await supabase
+      .from('demo_uses')
+      .select('*', { count: 'exact', head: true })
+      .eq('ip_address', clientIP);
+
+    if (emailError || ipError) {
+      console.error('Error checking usage limits:', emailError || ipError);
       return new Response(JSON.stringify({ error: 'Database error' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    if (existingUses && existingUses.length >= 3) {
+    const totalUses = Math.max(emailCount || 0, ipCount || 0);
+    
+    if (totalUses >= 3) {
       return new Response(JSON.stringify({ 
         error: 'LIMIT_REACHED',
         message: "You've reached your free demo limit. Subscribe to continue using Proposal.fit." 
       }), {
         status: 429,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Check if OpenAI API key is available
+    if (!openAIApiKey) {
+      console.error('OpenAI API key not configured');
+      return new Response(JSON.stringify({ error: 'AI service not configured' }), {
+        status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -120,7 +138,7 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ 
       response: aiResponse,
-      remainingUses: Math.max(0, 2 - (existingUses?.length || 0))
+      remainingUses: Math.max(0, 3 - (totalUses + 1))
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
