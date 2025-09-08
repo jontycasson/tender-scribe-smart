@@ -103,6 +103,33 @@ export type Database = {
         }
         Relationships: []
       }
+      demo_uses: {
+        Row: {
+          company_name: string | null
+          created_at: string
+          email: string
+          id: string
+          ip_address: string | null
+          question: string
+        }
+        Insert: {
+          company_name?: string | null
+          created_at?: string
+          email: string
+          id?: string
+          ip_address?: string | null
+          question: string
+        }
+        Update: {
+          company_name?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          ip_address?: string | null
+          question?: string
+        }
+        Relationships: []
+      }
       projects: {
         Row: {
           client_name: string | null

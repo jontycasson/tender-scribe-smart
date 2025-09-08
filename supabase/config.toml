@@ -42,6 +42,9 @@ verify_jwt = true
 [functions.upsert-memory]
 verify_jwt = true
 
+[functions.demo-response]
+verify_jwt = false
+
 [edge-runtime]
 inspector_port = 8083
 
