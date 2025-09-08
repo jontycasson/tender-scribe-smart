@@ -46,7 +46,7 @@ export const SplitHeroVariant = () => {
             
             <div className="flex flex-col sm:flex-row gap-4 mb-8">
               <Button asChild size="lg">
-                <Link to="/auth">
+                <Link to="/try">
                   Try Proposal.fit Now
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>
