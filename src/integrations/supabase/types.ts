@@ -394,6 +394,10 @@ export type Database = {
         Args: { "": string } | { "": unknown }
         Returns: unknown
       }
+      cleanup_old_demo_uses: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       get_user_company_profile_id: {
         Args: Record<PropertyKey, never>
         Returns: string
