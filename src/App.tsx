@@ -15,6 +15,10 @@ import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
 import AcceptableUse from "./pages/AcceptableUse";
 import Try from "./pages/Try";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminUsers from "./pages/admin/AdminUsers";
+import AdminCompanies from "./pages/admin/AdminCompanies";
+import AdminDemoUsage from "./pages/admin/AdminDemoUsage";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -40,6 +44,13 @@ const App = () => (
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/acceptable-use" element={<AcceptableUse />} />
               <Route path="/try" element={<Try />} />
+              
+              {/* Admin Routes */}
+              <Route path="/admin" element={<AdminDashboard />} />
+              <Route path="/admin/users" element={<AdminUsers />} />
+              <Route path="/admin/companies" element={<AdminCompanies />} />
+              <Route path="/admin/demo-usage" element={<AdminDemoUsage />} />
+              
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
