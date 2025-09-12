@@ -38,31 +38,29 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Check usage limits (3 per email/IP) - separate queries to avoid parsing issues
-    const { count: emailCount, error: emailError } = await supabase
-      .from('demo_uses')
-      .select('*', { count: 'exact', head: true })
-      .eq('email', email);
+    // Enhanced rate limiting check
+    const { data: rateLimitCheck, error: rateLimitError } = await supabase
+      .rpc('check_demo_rate_limit', {
+        email_param: email,
+        ip_param: clientIP
+      });
 
-    const { count: ipCount, error: ipError } = await supabase
-      .from('demo_uses')
-      .select('*', { count: 'exact', head: true })
-      .eq('ip_address', clientIP);
-
-    if (emailError || ipError) {
-      console.error('Error checking usage limits:', emailError || ipError);
-      return new Response(JSON.stringify({ error: 'Database error' }), {
+    if (rateLimitError) {
+      console.error('Error checking rate limits:', rateLimitError);
+      return new Response(JSON.stringify({ error: 'Rate limit check failed' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const totalUses = Math.max(emailCount || 0, ipCount || 0);
-    
-    if (totalUses >= 3) {
+    if (!rateLimitCheck?.can_proceed) {
+      const limitType = rateLimitCheck?.hourly_limit_reached ? 
+        'hourly limit (2 per hour)' : 'total limit (3 total)';
+      
       return new Response(JSON.stringify({ 
         error: 'LIMIT_REACHED',
-        message: "You've reached your free demo limit. Subscribe to continue using Proposal.fit." 
+        message: `You've reached your ${limitType}. Please try again later or subscribe to continue using Proposal.fit.`,
+        details: rateLimitCheck
       }), {
         status: 429,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -121,14 +119,16 @@ serve(async (req) => {
 
     const aiResponse = aiData.choices[0].message.content;
 
-    // Log the demo use
+    // Log the demo use with additional security data
     const { error: insertError } = await supabase
       .from('demo_uses')
       .insert({
         email,
         ip_address: clientIP,
         company_name: companyName,
-        question: question.substring(0, 500) // Truncate if too long
+        question: question.substring(0, 500), // Truncate if too long
+        user_agent: req.headers.get('user-agent')?.substring(0, 200) || null,
+        referer: req.headers.get('referer')?.substring(0, 200) || null
       });
 
     if (insertError) {
@@ -138,7 +138,12 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ 
       response: aiResponse,
-      remainingUses: Math.max(0, 3 - (totalUses + 1))
+      remainingUses: Math.max(0, 3 - ((rateLimitCheck?.email_count || 0) + 1)),
+      rateLimitInfo: {
+        emailCount: (rateLimitCheck?.email_count || 0) + 1,
+        ipCount: (rateLimitCheck?.ip_count || 0) + 1,
+        hourlyCount: (rateLimitCheck?.hourly_ip_count || 0) + 1
+      }
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

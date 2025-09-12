@@ -137,8 +137,36 @@ const NewTender = () => {
         });
         return;
       }
+
+      // Validate MIME types - allow common document formats
+      const allowedTypes = [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+        'application/msword', // .doc
+        'application/vnd.ms-excel', // .xls
+        'application/vnd.ms-powerpoint', // .ppt
+        'text/plain', // .txt
+        'application/rtf', // .rtf
+        'text/csv', // .csv
+        'application/zip', // .zip
+        'image/png',
+        'image/jpeg',
+        'image/jpg',
+        'image/gif',
+        'image/tiff'
+      ];
+
+      if (selectedFile.type && !allowedTypes.includes(selectedFile.type)) {
+        toast({
+          title: "Invalid file type",
+          description: "Please select a PDF, Word document, Excel file, or other supported document format.",
+          variant: "destructive",
+        });
+        return;
+      }
       
-      // Accept all file types - no type restriction
       setFile(selectedFile);
       toast({
         title: "File selected",
@@ -289,10 +317,44 @@ const NewTender = () => {
         textLength: extractedText?.length || 0 
       });
 
-      // Upload file to storage
-      const fileName = `${Date.now()}-${file.name}`;
-      console.log('Uploading file with name:', fileName);
+      // Get company profile for secure file path
+      const { data: companyProfile } = await supabase
+        .from('company_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .single();
+
+      if (!companyProfile) {
+        toast({
+          title: "Company profile required",
+          description: "Please complete your company profile first.",
+          variant: "destructive",
+        });
+        navigate('/onboarding');
+        return;
+      }
+
+      // Sanitize filename and create company-scoped path
+      const { data: sanitizedName } = await supabase
+        .rpc('sanitize_filename', { original_name: file.name });
+      
+      const timestamp = Date.now();
+      const fileName = `${companyProfile.id}/${timestamp}-${sanitizedName || file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      
+      console.log('Uploading file with secure path:', fileName);
       setProcessingProgress(25);
+
+      // Log upload attempt for security monitoring
+      const uploadLog = {
+        user_id: user.id,
+        company_profile_id: companyProfile.id,
+        original_filename: file.name,
+        sanitized_filename: fileName,
+        file_size: file.size,
+        mime_type: file.type || 'unknown',
+        ip_address: 'client', // Client-side upload
+        user_agent: navigator.userAgent.substring(0, 200)
+      };
       
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('tender-documents')
@@ -304,6 +366,12 @@ const NewTender = () => {
       }
 
       console.log('File uploaded successfully:', uploadData);
+      
+      // Log successful upload
+      await supabase
+        .from('file_upload_logs')
+        .insert({ ...uploadLog, upload_success: true });
+        
       setProcessingProgress(40);
 
       // Handle large extracted text by uploading to storage
@@ -343,23 +411,6 @@ const NewTender = () => {
         setCurrentProcessingStage(2);
       } else {
         setCurrentProcessingStage(1);
-      }
-
-      // Get user's company profile ID first
-      const { data: companyProfile } = await supabase
-        .from('company_profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .single();
-
-      if (!companyProfile) {
-        toast({
-          title: "Company profile required",
-          description: "Please complete your company profile first.",
-          variant: "destructive",
-        });
-        navigate('/onboarding');
-        return;
       }
 
       // Create tender record
