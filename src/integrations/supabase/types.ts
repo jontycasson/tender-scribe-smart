@@ -111,6 +111,8 @@ export type Database = {
           id: string
           ip_address: string | null
           question: string
+          referer: string | null
+          user_agent: string | null
         }
         Insert: {
           company_name?: string | null
@@ -119,6 +121,8 @@ export type Database = {
           id?: string
           ip_address?: string | null
           question: string
+          referer?: string | null
+          user_agent?: string | null
         }
         Update: {
           company_name?: string | null
@@ -127,6 +131,50 @@ export type Database = {
           id?: string
           ip_address?: string | null
           question?: string
+          referer?: string | null
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
+      file_upload_logs: {
+        Row: {
+          company_profile_id: string | null
+          created_at: string | null
+          file_size: number
+          id: string
+          ip_address: string | null
+          mime_type: string | null
+          original_filename: string
+          sanitized_filename: string
+          upload_success: boolean | null
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          company_profile_id?: string | null
+          created_at?: string | null
+          file_size: number
+          id?: string
+          ip_address?: string | null
+          mime_type?: string | null
+          original_filename: string
+          sanitized_filename: string
+          upload_success?: boolean | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          company_profile_id?: string | null
+          created_at?: string | null
+          file_size?: number
+          id?: string
+          ip_address?: string | null
+          mime_type?: string | null
+          original_filename?: string
+          sanitized_filename?: string
+          upload_success?: boolean | null
+          user_agent?: string | null
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -394,6 +442,10 @@ export type Database = {
         Args: { "": string } | { "": unknown }
         Returns: unknown
       }
+      check_demo_rate_limit: {
+        Args: { email_param: string; ip_param: string }
+        Returns: Json
+      }
       cleanup_old_demo_uses: {
         Args: Record<PropertyKey, never>
         Returns: undefined
@@ -471,6 +523,10 @@ export type Database = {
           source_tender_id: string
           usage_count: number
         }[]
+      }
+      sanitize_filename: {
+        Args: { original_name: string }
+        Returns: string
       }
       sparsevec_out: {
         Args: { "": unknown }
