@@ -507,6 +507,23 @@ export type Database = {
           user_id: string
         }[]
       }
+      get_all_users_for_admin_bypass: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          company_created_at: string
+          company_name: string
+          company_profile_id: string
+          company_updated_at: string
+          created_at: string
+          email: string
+          email_confirmed_at: string
+          has_company_profile: boolean
+          industry: string
+          last_sign_in_at: string
+          team_size: string
+          user_id: string
+        }[]
+      }
       get_all_users_for_admin_test: {
         Args: Record<PropertyKey, never>
         Returns: {

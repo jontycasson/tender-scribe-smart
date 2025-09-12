@@ -61,7 +61,7 @@ const AdminUsers = () => {
     try {
       console.log('Fetching users...');
       const { data, error } = await supabase
-        .rpc('get_all_users_for_admin');
+        .rpc('get_all_users_for_admin_bypass');
 
       console.log('RPC Response:', { data, error });
       
