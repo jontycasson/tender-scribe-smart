@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "12.2.12 (cd3cf9e)"
+    PostgrestVersion: "13.0.5"
   }
   public: {
     Tables: {
@@ -148,7 +148,7 @@ export type Database = {
           sanitized_filename: string
           upload_success: boolean | null
           user_agent: string | null
-          user_id: string | null
+          user_id: string
         }
         Insert: {
           company_profile_id?: string | null
@@ -161,7 +161,7 @@ export type Database = {
           sanitized_filename: string
           upload_success?: boolean | null
           user_agent?: string | null
-          user_id?: string | null
+          user_id: string
         }
         Update: {
           company_profile_id?: string | null
@@ -174,7 +174,7 @@ export type Database = {
           sanitized_filename?: string
           upload_success?: boolean | null
           user_agent?: string | null
-          user_id?: string | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -438,6 +438,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      auto_cleanup_demo_uses: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       binary_quantize: {
         Args: { "": string } | { "": unknown }
         Returns: unknown
@@ -505,6 +509,10 @@ export type Database = {
       l2_normalize: {
         Args: { "": string } | { "": unknown } | { "": unknown }
         Returns: unknown
+      }
+      log_security_event: {
+        Args: { details?: Json; event_type: string }
+        Returns: undefined
       }
       match_qa_memory: {
         Args: {
