@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Mail, Phone, MapPin, Send } from "lucide-react";
+import { Send } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ReCAPTCHA from "react-google-recaptcha";
 
@@ -82,61 +82,9 @@ const Contact = () => {
             </p>
           </div>
 
-          <div className="grid lg:grid-cols-3 gap-12">
-            {/* Contact Info */}
-            <div className="lg:col-span-1 space-y-8">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Mail className="h-5 w-5 text-primary" />
-                    Email Us
-                  </CardTitle>
-                  <CardDescription>
-                    We typically respond within 24 hours
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-foreground font-medium">hello@proposal.fit</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Phone className="h-5 w-5 text-primary" />
-                    Call Us
-                  </CardTitle>
-                  <CardDescription>
-                    Mon-Fri, 9am-5pm GMT
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-foreground font-medium">+44 (0) 20 1234 5678</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MapPin className="h-5 w-5 text-primary" />
-                    Visit Us
-                  </CardTitle>
-                  <CardDescription>
-                    Our headquarters
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-foreground font-medium">
-                    123 Business Street<br />
-                    London, EC1A 1BB<br />
-                    United Kingdom
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-
+          <div className="max-w-2xl mx-auto">
             {/* Contact Form */}
-            <div className="lg:col-span-2">
+            <div>
               <Card>
                 <CardHeader>
                   <CardTitle>Send us a Message</CardTitle>
