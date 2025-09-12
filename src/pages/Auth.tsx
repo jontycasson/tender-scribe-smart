@@ -29,14 +29,9 @@ const Auth = () => {
     e.preventDefault();
     setLoading(true);
     
-    const redirectUrl = `${window.location.origin}/dashboard`;
-    
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        emailRedirectTo: redirectUrl
-      }
     });
 
     if (error) {
@@ -47,9 +42,15 @@ const Auth = () => {
       });
     } else {
       toast({
-        title: "Check your email",
-        description: "We've sent you a confirmation link to complete your registration.",
+        title: "Account created successfully!",
+        description: "You can now sign in with your credentials.",
+        variant: "default",
       });
+      // Switch to sign in tab after successful signup
+      const signInTab = document.querySelector('[value="signin"]') as HTMLButtonElement;
+      if (signInTab) {
+        signInTab.click();
+      }
     }
     setLoading(false);
   };
