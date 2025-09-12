@@ -22,6 +22,7 @@ import AdminDemoUsage from "./pages/admin/AdminDemoUsage";
 import AdminSecurity from "./pages/admin/AdminSecurity";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { AnalyticsProvider } from "@/components/AnalyticsProvider";
 
 const queryClient = new QueryClient();
 
@@ -29,11 +30,12 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <ErrorBoundary>
-            <Routes>
+        <AnalyticsProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <ErrorBoundary>
+              <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
               <Route path="/dashboard" element={<Dashboard />} />
@@ -55,9 +57,10 @@ const App = () => (
               
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
-            </Routes>
-          </ErrorBoundary>
-        </BrowserRouter>
+              </Routes>
+            </ErrorBoundary>
+          </BrowserRouter>
+        </AnalyticsProvider>
       </TooltipProvider>
     </AuthProvider>
   </QueryClientProvider>
