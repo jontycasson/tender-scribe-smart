@@ -59,17 +59,24 @@ const AdminUsers = () => {
 
   const fetchUsers = async () => {
     try {
+      console.log('Fetching users...');
       const { data, error } = await supabase
         .rpc('get_all_users_for_admin');
 
-      if (error) throw error;
+      console.log('RPC Response:', { data, error });
       
+      if (error) {
+        console.error('RPC Error details:', error);
+        throw error;
+      }
+      
+      console.log('Users fetched successfully:', data?.length || 0);
       setUsers(data || []);
     } catch (error) {
       console.error('Error fetching users:', error);
       toast({
         title: "Error",
-        description: "Failed to fetch users",
+        description: `Failed to fetch users: ${error.message || 'Unknown error'}`,
         variant: "destructive",
       });
     } finally {
