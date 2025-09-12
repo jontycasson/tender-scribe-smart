@@ -459,7 +459,16 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      admin_users: {
+        Row: {
+          admin_since: string | null
+          email: string | null
+          role: Database["public"]["Enums"]["app_role"] | null
+          user_created_at: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       auto_cleanup_demo_uses: {
@@ -554,6 +563,10 @@ export type Database = {
       log_security_event: {
         Args: { details?: Json; event_type: string }
         Returns: undefined
+      }
+      make_user_admin: {
+        Args: { target_email: string }
+        Returns: boolean
       }
       match_qa_memory: {
         Args: {
