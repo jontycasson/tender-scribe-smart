@@ -45,6 +45,9 @@ verify_jwt = true
 [functions.demo-response]
 verify_jwt = false
 
+[functions.send-contact-email]
+verify_jwt = false
+
 [edge-runtime]
 inspector_port = 8083
 
