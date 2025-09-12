@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
-import { Search, Mail, Calendar, Building, MoreHorizontal, UserPlus } from "lucide-react";
+import { Search, Mail, Calendar, Building, MoreHorizontal, UserPlus, CheckCircle, XCircle, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { 
   DropdownMenu, 
@@ -77,7 +77,8 @@ const AdminUsers = () => {
     }
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return 'Never';
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -85,7 +86,8 @@ const AdminUsers = () => {
     });
   };
 
-  const getTeamSizeBadgeColor = (teamSize: string) => {
+  const getTeamSizeBadgeColor = (teamSize: string | null) => {
+    if (!teamSize) return 'bg-gray-100 text-gray-800';
     switch (teamSize) {
       case '1-10': return 'bg-green-100 text-green-800';
       case '11-50': return 'bg-blue-100 text-blue-800';
@@ -93,6 +95,24 @@ const AdminUsers = () => {
       case '201-1000': return 'bg-orange-100 text-orange-800';
       case '1000+': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getOnboardingStatusBadge = (hasProfile: boolean) => {
+    if (hasProfile) {
+      return (
+        <Badge variant="secondary" className="bg-green-100 text-green-800">
+          <CheckCircle className="w-3 h-3 mr-1" />
+          Completed
+        </Badge>
+      );
+    } else {
+      return (
+        <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+          <Clock className="w-3 h-3 mr-1" />
+          Pending
+        </Badge>
+      );
     }
   };
 
@@ -118,6 +138,9 @@ const AdminUsers = () => {
     );
   }
 
+  const completedUsers = users.filter(user => user.has_company_profile).length;
+  const pendingUsers = users.length - completedUsers;
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -125,7 +148,7 @@ const AdminUsers = () => {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
             <p className="text-muted-foreground">
-              Manage user accounts and company profiles ({users.length} total)
+              {users.length} total users • {completedUsers} completed onboarding • {pendingUsers} pending
             </p>
           </div>
           <Button>
@@ -139,14 +162,14 @@ const AdminUsers = () => {
           <CardHeader>
             <CardTitle>Search Users</CardTitle>
             <CardDescription>
-              Filter users by email, company name or industry
+              Filter users by email, company name, or industry
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center space-x-2">
               <Search className="h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by email, company name or industry..."
+                placeholder="Search by email, company name, or industry..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="flex-1"
@@ -160,7 +183,7 @@ const AdminUsers = () => {
           <CardHeader>
             <CardTitle>Users ({filteredUsers.length})</CardTitle>
             <CardDescription>
-              All registered users and their company information
+              All registered users and their onboarding status
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -175,8 +198,8 @@ const AdminUsers = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Email</TableHead>
-                    <TableHead>Company</TableHead>
                     <TableHead>Onboarding Status</TableHead>
+                    <TableHead>Company</TableHead>
                     <TableHead>Industry</TableHead>
                     <TableHead>Team Size</TableHead>
                     <TableHead>Registered</TableHead>
@@ -194,7 +217,10 @@ const AdminUsers = () => {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {user.has_company_profile ? (
+                        {getOnboardingStatusBadge(user.has_company_profile)}
+                      </TableCell>
+                      <TableCell>
+                        {user.company_name ? (
                           <div className="flex items-center space-x-2">
                             <Building className="h-4 w-4 text-muted-foreground" />
                             <span>{user.company_name}</span>
@@ -202,14 +228,6 @@ const AdminUsers = () => {
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge 
-                          variant={user.has_company_profile ? "default" : "secondary"}
-                          className={user.has_company_profile ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}
-                        >
-                          {user.has_company_profile ? "Complete" : "Pending"}
-                        </Badge>
                       </TableCell>
                       <TableCell>
                         {user.industry ? (
@@ -240,7 +258,7 @@ const AdminUsers = () => {
                       </TableCell>
                       <TableCell>
                         <span className="text-sm text-muted-foreground">
-                          {user.last_sign_in_at ? formatDate(user.last_sign_in_at) : 'Never'}
+                          {formatDate(user.last_sign_in_at)}
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
