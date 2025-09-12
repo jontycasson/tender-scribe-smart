@@ -433,6 +433,30 @@ export type Database = {
           },
         ]
       }
+      user_roles: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -450,9 +474,22 @@ export type Database = {
         Args: { email_param: string; ip_param: string }
         Returns: Json
       }
+      cleanup_old_demo_pii: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       cleanup_old_demo_uses: {
         Args: Record<PropertyKey, never>
         Returns: undefined
+      }
+      get_demo_usage_stats: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          submissions_last_24h: number
+          submissions_last_week: number
+          total_submissions: number
+          unique_companies: number
+        }[]
       }
       get_user_company_profile_id: {
         Args: Record<PropertyKey, never>
@@ -489,6 +526,10 @@ export type Database = {
       hnswhandler: {
         Args: { "": unknown }
         Returns: unknown
+      }
+      is_admin: {
+        Args: { check_user_id?: string }
+        Returns: boolean
       }
       ivfflat_bit_support: {
         Args: { "": unknown }
@@ -574,7 +615,7 @@ export type Database = {
       }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "moderator" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -701,6 +742,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "moderator", "user"],
+    },
   },
 } as const
