@@ -12,7 +12,7 @@ declare global {
 export const usePageTracking = () => {
   useEffect(() => {
     if (typeof window.gtag === 'function') {
-      window.gtag('config', 'G-XXXXXXXXXX', {
+      window.gtag('config', 'G-E6HW4ESXQT', {
         page_path: window.location.pathname,
       });
     }
@@ -33,7 +33,7 @@ export const useAnalytics = () => {
 
   const trackPageView = useCallback((pageName: string) => {
     if (typeof window.gtag === 'function') {
-      window.gtag('config', 'G-XXXXXXXXXX', {
+      window.gtag('config', 'G-E6HW4ESXQT', {
         page_title: pageName,
         page_path: window.location.pathname,
       });

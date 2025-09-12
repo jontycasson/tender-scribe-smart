@@ -1,12 +1,10 @@
 // Analytics configuration and utilities
 
-// Initialize Google Analytics with the tracking ID from environment
+// Initialize Google Analytics with the tracking ID
 export const initializeAnalytics = () => {
-  // The actual tracking ID will be injected at runtime via environment variable
-  // This placeholder will be replaced by the build process
-  const GA_TRACKING_ID = process.env.GOOGLE_ANALYTICS_ID || 'G-XXXXXXXXXX';
+  const GA_TRACKING_ID = 'G-E6HW4ESXQT';
   
-  // Update the gtag config with the actual tracking ID
+  // Update the gtag config with the tracking ID
   if (typeof window !== 'undefined' && window.gtag) {
     window.gtag('config', GA_TRACKING_ID, {
       page_path: window.location.pathname,
