@@ -459,16 +459,7 @@ export type Database = {
       }
     }
     Views: {
-      admin_users: {
-        Row: {
-          admin_since: string | null
-          email: string | null
-          role: Database["public"]["Enums"]["app_role"] | null
-          user_created_at: string | null
-          user_id: string | null
-        }
-        Relationships: []
-      }
+      [_ in never]: never
     }
     Functions: {
       auto_cleanup_demo_uses: {
@@ -490,6 +481,14 @@ export type Database = {
       cleanup_old_demo_uses: {
         Args: Record<PropertyKey, never>
         Returns: undefined
+      }
+      get_admin_users: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          created_at: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }[]
       }
       get_demo_usage_stats: {
         Args: Record<PropertyKey, never>

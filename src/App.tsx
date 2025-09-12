@@ -19,6 +19,7 @@ import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminCompanies from "./pages/admin/AdminCompanies";
 import AdminDemoUsage from "./pages/admin/AdminDemoUsage";
+import AdminSecurity from "./pages/admin/AdminSecurity";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -50,6 +51,7 @@ const App = () => (
               <Route path="/admin/users" element={<AdminUsers />} />
               <Route path="/admin/companies" element={<AdminCompanies />} />
               <Route path="/admin/demo-usage" element={<AdminDemoUsage />} />
+              <Route path="/admin/security" element={<AdminSecurity />} />
               
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
