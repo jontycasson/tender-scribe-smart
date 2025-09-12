@@ -23,13 +23,18 @@ import {
 } from "@/components/ui/table";
 
 interface UserData {
-  id: string;
-  company_name: string;
-  industry: string;
-  team_size: string;
-  created_at: string;
-  updated_at: string;
   user_id: string;
+  email: string;
+  email_confirmed_at: string | null;
+  created_at: string;
+  last_sign_in_at: string | null;
+  has_company_profile: boolean;
+  company_profile_id: string | null;
+  company_name: string | null;
+  industry: string | null;
+  team_size: string | null;
+  company_created_at: string | null;
+  company_updated_at: string | null;
 }
 
 const AdminUsers = () => {
@@ -45,8 +50,9 @@ const AdminUsers = () => {
 
   useEffect(() => {
     const filtered = users.filter(user =>
-      user.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.industry.toLowerCase().includes(searchTerm.toLowerCase())
+      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (user.company_name && user.company_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (user.industry && user.industry.toLowerCase().includes(searchTerm.toLowerCase()))
     );
     setFilteredUsers(filtered);
   }, [users, searchTerm]);
@@ -54,9 +60,7 @@ const AdminUsers = () => {
   const fetchUsers = async () => {
     try {
       const { data, error } = await supabase
-        .from('company_profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .rpc('get_all_users_for_admin');
 
       if (error) throw error;
       
@@ -135,14 +139,14 @@ const AdminUsers = () => {
           <CardHeader>
             <CardTitle>Search Users</CardTitle>
             <CardDescription>
-              Filter users by company name or industry
+              Filter users by email, company name or industry
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center space-x-2">
               <Search className="h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by company name or industry..."
+                placeholder="Search by email, company name or industry..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="flex-1"
@@ -170,33 +174,61 @@ const AdminUsers = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Email</TableHead>
                     <TableHead>Company</TableHead>
+                    <TableHead>Onboarding Status</TableHead>
                     <TableHead>Industry</TableHead>
                     <TableHead>Team Size</TableHead>
                     <TableHead>Registered</TableHead>
-                    <TableHead>Last Updated</TableHead>
+                    <TableHead>Last Sign In</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredUsers.map((user) => (
-                    <TableRow key={user.id}>
+                    <TableRow key={user.user_id}>
                       <TableCell>
                         <div className="flex items-center space-x-2">
-                          <Building className="h-4 w-4 text-muted-foreground" />
-                          <span className="font-medium">{user.company_name}</span>
+                          <Mail className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-medium">{user.email}</span>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">{user.industry}</Badge>
+                        {user.has_company_profile ? (
+                          <div className="flex items-center space-x-2">
+                            <Building className="h-4 w-4 text-muted-foreground" />
+                            <span>{user.company_name}</span>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge 
-                          variant="secondary"
-                          className={getTeamSizeBadgeColor(user.team_size)}
+                          variant={user.has_company_profile ? "default" : "secondary"}
+                          className={user.has_company_profile ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}
                         >
-                          {user.team_size}
+                          {user.has_company_profile ? "Complete" : "Pending"}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {user.industry ? (
+                          <Badge variant="outline">{user.industry}</Badge>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {user.team_size ? (
+                          <Badge 
+                            variant="secondary"
+                            className={getTeamSizeBadgeColor(user.team_size)}
+                          >
+                            {user.team_size}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-1">
@@ -208,7 +240,7 @@ const AdminUsers = () => {
                       </TableCell>
                       <TableCell>
                         <span className="text-sm text-muted-foreground">
-                          {formatDate(user.updated_at)}
+                          {user.last_sign_in_at ? formatDate(user.last_sign_in_at) : 'Never'}
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
@@ -222,12 +254,19 @@ const AdminUsers = () => {
                             <DropdownMenuItem>
                               View Profile
                             </DropdownMenuItem>
-                            <DropdownMenuItem>
-                              View Tenders
-                            </DropdownMenuItem>
+                            {user.has_company_profile && (
+                              <DropdownMenuItem>
+                                View Tenders
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem>
                               Send Email
                             </DropdownMenuItem>
+                            {!user.has_company_profile && (
+                              <DropdownMenuItem>
+                                Send Onboarding Reminder
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem className="text-destructive">
                               Suspend User
                             </DropdownMenuItem>
