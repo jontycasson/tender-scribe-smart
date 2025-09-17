@@ -348,9 +348,15 @@ export type Database = {
       tenders: {
         Row: {
           company_profile_id: string
+          content_segments_count: number | null
           created_at: string
           deadline: string | null
           error_message: string | null
+          extracted_context: Json | null
+          extracted_instructions: Json | null
+          extracted_other: Json | null
+          extracted_questions: Json | null
+          file_type_detected: string | null
           file_url: string
           id: string
           last_activity_at: string | null
@@ -369,9 +375,15 @@ export type Database = {
         }
         Insert: {
           company_profile_id: string
+          content_segments_count?: number | null
           created_at?: string
           deadline?: string | null
           error_message?: string | null
+          extracted_context?: Json | null
+          extracted_instructions?: Json | null
+          extracted_other?: Json | null
+          extracted_questions?: Json | null
+          file_type_detected?: string | null
           file_url: string
           id?: string
           last_activity_at?: string | null
@@ -390,9 +402,15 @@ export type Database = {
         }
         Update: {
           company_profile_id?: string
+          content_segments_count?: number | null
           created_at?: string
           deadline?: string | null
           error_message?: string | null
+          extracted_context?: Json | null
+          extracted_instructions?: Json | null
+          extracted_other?: Json | null
+          extracted_questions?: Json | null
+          file_type_detected?: string | null
           file_url?: string
           id?: string
           last_activity_at?: string | null

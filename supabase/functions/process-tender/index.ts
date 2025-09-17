@@ -280,6 +280,166 @@ async function createJWT(serviceAccountKey: any): Promise<string> {
   }
 }
 
+// ============= CONTENT SEGMENTATION FUNCTIONS =============
+
+// Function to categorize content into segments using AI
+async function categorizeContent(text: string, openAIApiKey: string): Promise<{
+  context: string[];
+  instructions: string[];
+  questions: string[];
+  other: string[];
+}> {
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert at analyzing tender documents and categorizing content. Your task is to analyze the given text and categorize each paragraph/section into one of four categories:
+
+1. CONTEXT: Background information, company details, project scope, objectives, requirements overview
+2. INSTRUCTIONS: Submission rules, format requirements, evaluation criteria, timelines, compliance requirements  
+3. QUESTIONS: Specific items requiring vendor responses (numbered requirements, "Describe...", "Provide...", "What...", "How...", etc.)
+4. OTHER: Terms and conditions, legal text, appendices, contact information
+
+Return your response as a JSON object with four arrays: "context", "instructions", "questions", and "other". Each array should contain the relevant text segments.
+
+Focus on identifying vendor response items for the "questions" category - these are specific requirements that need answers from bidders.`
+          },
+          {
+            role: 'user', 
+            content: `Please categorize the following tender document text:\n\n${text.substring(0, 15000)}`
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 4000
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+    
+    // Try to parse JSON response
+    try {
+      return JSON.parse(content);
+    } catch {
+      // Fallback if JSON parsing fails
+      console.warn('Failed to parse categorization JSON, using fallback');
+      return {
+        context: [text.substring(0, 1000)],
+        instructions: [],
+        questions: [],
+        other: []
+      };
+    }
+  } catch (error) {
+    console.error('Error in content categorization:', error);
+    // Fallback categorization
+    return {
+      context: [text.substring(0, 1000)],
+      instructions: [],
+      questions: [],
+      other: []
+    };
+  }
+}
+
+// Enhanced function to extract vendor-specific questions
+async function extractVendorQuestions(categorizedContent: any, openAIApiKey: string): Promise<string[]> {
+  const allQuestionText = [
+    ...categorizedContent.questions,
+    ...categorizedContent.instructions.filter((item: string) => 
+      item.toLowerCase().includes('describe') || 
+      item.toLowerCase().includes('provide') ||
+      item.toLowerCase().includes('explain')
+    )
+  ].join('\n');
+
+  if (!allQuestionText.trim()) {
+    return [];
+  }
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `Extract individual vendor response requirements from tender text. Look for:
+- Numbered requirements or questions
+- Items starting with "Describe", "Provide", "Explain", "What", "How"  
+- Specific deliverables or information requests
+- Evaluation criteria that require vendor input
+
+Return each question as a separate line. Preserve original numbering where possible. Focus only on items requiring vendor responses, not general information.`
+          },
+          {
+            role: 'user',
+            content: allQuestionText.substring(0, 10000)
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 2000
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+    
+    return content.split('\n')
+      .map((line: string) => line.trim())
+      .filter((line: string) => line.length > 10)
+      .slice(0, 50); // Limit to 50 questions max
+      
+  } catch (error) {
+    console.error('Error extracting vendor questions:', error);
+    // Fallback to simple extraction
+    return allQuestionText.split('\n')
+      .filter((line: string) => line.trim().length > 10)
+      .slice(0, 20);
+  }
+}
+
+// Function to detect file type from filename and content
+function detectFileType(fileName: string, extractedText?: string): string {
+  const name = fileName.toLowerCase();
+  
+  if (name.endsWith('.pdf')) return 'pdf';
+  if (name.endsWith('.docx')) return 'docx'; 
+  if (name.endsWith('.xlsx')) return 'xlsx';
+  if (name.endsWith('.txt')) return 'txt';
+  if (name.endsWith('.rtf')) return 'rtf';
+  
+  // Fallback detection based on content patterns
+  if (extractedText) {
+    if (extractedText.includes('===') && extractedText.includes('|')) return 'xlsx';
+  }
+  
+  return 'unknown';
+}
+
+// ============= END CONTENT SEGMENTATION FUNCTIONS =============
+
 const BATCH_SIZE = 8; // Process 8 questions per batch to avoid timeouts
 
 // Background processing function with batched processing
@@ -537,10 +697,30 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
     }
 
     let questionsToProcess: string[] = [];
+    let segmentedContent: any = null;
 
     if (isInitialBatch && textToProcess) {
-      // Extract questions from the text for the first batch
-      questionsToProcess = extractQuestionsFromText(textToProcess);
+      // Get file type for processing logic
+      const fileType = detectFileType(tenderData?.original_filename || '', textToProcess);
+      
+      console.log(`Detected file type: ${fileType}`);
+      
+      // Segment content using AI categorization
+      console.log('Starting content segmentation...');
+      const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+      
+      if (openAIApiKey) {
+        segmentedContent = await categorizeContent(textToProcess, openAIApiKey);
+        
+        console.log(`Content segmented: ${segmentedContent.context.length} context items, ${segmentedContent.instructions.length} instruction items, ${segmentedContent.questions.length} question items, ${segmentedContent.other.length} other items`);
+        
+        // Extract vendor-specific questions from segmented content
+        questionsToProcess = await extractVendorQuestions(segmentedContent, openAIApiKey);
+      } else {
+        // Fallback to original extraction if no OpenAI key
+        console.warn('No OpenAI API key, using fallback question extraction');
+        questionsToProcess = extractQuestionsFromText(textToProcess);
+      }
       
       if (questionsToProcess.length === 0) {
         console.log('No questions found in document');
@@ -552,20 +732,33 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
             total_questions: 0,
             processed_questions: 0,
             progress: 100,
+            file_type_detected: fileType,
+            content_segments_count: segmentedContent ? Object.values(segmentedContent).flat().length : 0,
             last_activity_at: new Date().toISOString()
           })
           .eq('id', tenderId);
         return;
       }
 
-      // Update tender with total questions count
+      // Update tender with segmented content and questions count
+      const updateData: any = {
+        total_questions: questionsToProcess.length,
+        processing_stage: 'processing_questions',
+        file_type_detected: fileType,
+        content_segments_count: segmentedContent ? Object.values(segmentedContent).flat().length : 0,
+        last_activity_at: new Date().toISOString()
+      };
+      
+      if (segmentedContent) {
+        updateData.extracted_context = segmentedContent.context;
+        updateData.extracted_instructions = segmentedContent.instructions; 
+        updateData.extracted_questions = segmentedContent.questions;
+        updateData.extracted_other = segmentedContent.other;
+      }
+      
       await supabaseClient
         .from('tenders')
-        .update({
-          total_questions: questionsToProcess.length,
-          processing_stage: 'processing_questions',
-          last_activity_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', tenderId);
 
     } else if (isSubsequentBatch && questions) {
@@ -649,13 +842,14 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
 
         const startTime = Date.now();
         
-        // Generate AI response
+        // Generate AI response with enhanced context
         const aiResponse = await generateAIResponse(
           question, 
           companyProfile, 
           classification.type,
           memoryContext,
           researchSnippet,
+          segmentedContent, // Pass segmented content for context
           openAIApiKey
         );
         
@@ -795,6 +989,7 @@ async function generateAIResponse(
   questionType: string,
   memoryContext: string | null,
   researchSnippet: string | null,
+  segmentedContent: any | null,
   openAIApiKey: string
 ): Promise<{ answer: string; model_used: string }> {
   
@@ -813,11 +1008,22 @@ ${companyProfile.policies ? `Policies: ${companyProfile.policies}` : ''}
 ${companyProfile.accreditations ? `Accreditations: ${companyProfile.accreditations}` : ''}
   `.trim();
 
+  // Build document context from segmented content
+  let documentContext = '';
+  if (segmentedContent) {
+    if (segmentedContent.context && segmentedContent.context.length > 0) {
+      documentContext += `\nTENDER BACKGROUND & CONTEXT:\n${segmentedContent.context.join('\n\n')}\n`;
+    }
+    if (segmentedContent.instructions && segmentedContent.instructions.length > 0) {
+      documentContext += `\nSUBMISSION INSTRUCTIONS & REQUIREMENTS:\n${segmentedContent.instructions.join('\n\n')}\n`;
+    }
+  }
+
   // Build the full prompt
   let systemPrompt = `You are an expert tender response writer for ${companyProfile.company_name}. Write professional, detailed responses that showcase the company's capabilities and experience.
 
 COMPANY INFORMATION:
-${companyContext}
+${companyContext}${documentContext}
 
 RESPONSE GUIDELINES:
 - Write in first person plural ("we", "our company")
@@ -826,7 +1032,8 @@ RESPONSE GUIDELINES:
 - Address compliance and regulatory requirements when relevant
 - Use professional business language
 - Structure responses clearly with headings when appropriate
-- Keep responses focused and relevant to the question`;
+- Keep responses focused and relevant to the question
+- Ensure responses align with any submission instructions provided above`;
 
   if (questionType === 'closed') {
     systemPrompt += `

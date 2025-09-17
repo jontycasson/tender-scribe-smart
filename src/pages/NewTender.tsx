@@ -48,14 +48,19 @@ const processingStages = [
     description: "Using advanced OCR to extract text from your document"
   },
   {
+    id: "segmenting",
+    label: "Segmenting content",
+    description: "Categorizing content into context, instructions, and questions"
+  },
+  {
     id: "identifying",
     label: "Identifying questions",
-    description: "Analyzing document structure to find tender questions"
+    description: "Analyzing document structure to find vendor response items"
   },
   {
     id: "generating",
     label: "Generating responses",
-    description: "Creating AI-powered responses using your company profile"
+    description: "Creating AI-powered responses using your company profile and document context"
   }
 ];
 
@@ -79,6 +84,16 @@ const NewTender = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentStep, setCurrentStep] = useState<'upload' | 'review' | 'complete'>('upload');
   const [currentPage, setCurrentPage] = useState(1);
+  const [contentPreview, setContentPreview] = useState<{
+    totalQuestions: number;
+    sampleQuestions: string[];
+    segmentCounts: {
+      context: number;
+      instructions: number; 
+      questions: number;
+      other: number;
+    };
+  } | null>(null);
   const questionsPerPage = 5;
   const { toast } = useToast();
   const { user } = useAuth();
@@ -96,6 +111,34 @@ const NewTender = () => {
         const mammoth = await import('mammoth/mammoth.browser');
         const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
         return result.value || null;
+      }
+      
+      // Handle XLSX files
+      if (fileType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
+          fileName.endsWith('.xlsx')) {
+        const XLSX = await import('xlsx');
+        const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        
+        let allText = '';
+        workbook.SheetNames.forEach((sheetName) => {
+          const sheet = workbook.Sheets[sheetName];
+          if (sheet) {
+            // Add sheet name as header
+            allText += `\n=== ${sheetName} ===\n`;
+            
+            // Convert sheet to JSON to preserve table structure
+            const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+            
+            // Format as table with preserved structure
+            jsonData.forEach((row: any[]) => {
+              if (row.some(cell => cell !== '')) {
+                allText += row.join(' | ') + '\n';
+              }
+            });
+          }
+        });
+        
+        return allText.trim() || null;
       }
       
       // Handle plain text files
@@ -614,21 +657,50 @@ const NewTender = () => {
 
   const fetchTenderResponses = async (tenderId: string) => {
     try {
-      const { data: responsesData, error } = await supabase
-        .from('tender_responses')
-        .select('*')
-        .eq('tender_id', tenderId)
-        .order('question_index', { ascending: true });
+      // Fetch both responses and tender details with segmented content
+      const [responsesResult, tenderResult] = await Promise.all([
+        supabase
+          .from('tender_responses')
+          .select('*')
+          .eq('tender_id', tenderId)
+          .order('question_index', { ascending: true }),
+        supabase
+          .from('tenders')
+          .select('total_questions, content_segments_count, extracted_questions, extracted_context, extracted_instructions, extracted_other')
+          .eq('id', tenderId)
+          .single()
+      ]);
 
-      if (error) throw error;
+      if (responsesResult.error) throw responsesResult.error;
+      if (tenderResult.error) throw tenderResult.error;
       
-      setQuestions(responsesData || []);
+      const responsesData = responsesResult.data || [];
+      const tenderData = tenderResult.data;
+      
+      setQuestions(responsesData);
+      
+      // Set content preview if segmented content is available
+      if (tenderData) {
+        const sampleQuestions = responsesData.slice(0, 3).map(r => r.question);
+        
+        setContentPreview({
+          totalQuestions: tenderData.total_questions || responsesData.length,
+          sampleQuestions,
+          segmentCounts: {
+            context: Array.isArray(tenderData.extracted_context) ? tenderData.extracted_context.length : 0,
+            instructions: Array.isArray(tenderData.extracted_instructions) ? tenderData.extracted_instructions.length : 0,
+            questions: Array.isArray(tenderData.extracted_questions) ? tenderData.extracted_questions.length : 0,
+            other: Array.isArray(tenderData.extracted_other) ? tenderData.extracted_other.length : 0
+          }
+        });
+      }
+      
       setCurrentStep('review');
       setProcessing(false);
       
       toast({
         title: "Document processed",
-        description: `Generated ${responsesData?.length || 0} AI responses. Please review and edit as needed.`,
+        description: `Generated ${responsesData.length} AI responses. Context and instructions extracted to improve response quality.`,
       });
     } catch (error) {
       console.error('Response fetch error:', error);
@@ -1038,6 +1110,55 @@ const NewTender = () => {
               </Card>
             ) : (
               <div className="space-y-6">
+                {/* Content Preview Summary */}
+                {contentPreview && (
+                  <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20">
+                    <CardHeader>
+                      <CardTitle className="flex items-center">
+                        <FileText className="h-5 w-5 mr-2" />
+                        Document Analysis Summary
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-primary">{contentPreview.totalQuestions}</div>
+                          <div className="text-sm text-muted-foreground">Questions Detected</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-blue-600">{contentPreview.segmentCounts.context}</div>
+                          <div className="text-sm text-muted-foreground">Context Items</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-green-600">{contentPreview.segmentCounts.instructions}</div>
+                          <div className="text-sm text-muted-foreground">Instructions</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-orange-600">{contentPreview.segmentCounts.other}</div>
+                          <div className="text-sm text-muted-foreground">Other Content</div>
+                        </div>
+                      </div>
+                      
+                      {contentPreview.sampleQuestions.length > 0 && (
+                        <div>
+                          <h4 className="font-semibold mb-2">Sample Questions:</h4>
+                          <ul className="space-y-1">
+                            {contentPreview.sampleQuestions.map((q, i) => (
+                              <li key={i} className="text-sm text-muted-foreground">
+                                {i + 1}. {q.length > 100 ? `${q.substring(0, 100)}...` : q}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      <div className="mt-3 text-xs text-muted-foreground">
+                        ✨ Context and instructions extracted to improve AI-generated response quality
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+                
                 {questions.length > 0 && (
                   <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
                     <div className="flex items-center space-x-4">
