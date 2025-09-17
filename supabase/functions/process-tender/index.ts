@@ -396,11 +396,6 @@ IMPORTANT: You must return valid JSON. Do not include any text before or after t
     };
   }
 }
-      questions: [],
-      other: []
-    };
-  }
-}
 
 // Enhanced function to extract vendor-specific questions
 async function extractVendorQuestions(categorizedContent: any, openAIApiKey: string): Promise<string[]> {
