@@ -44,9 +44,14 @@ const AdminDashboard = () => {
           .from('tenders')
           .select('*', { count: 'exact', head: true });
 
-        // Get demo submissions count
-        const { data: demoStats } = await supabase
+        // Get demo submissions count (secured function)
+        const { data: demoStats, error: demoStatsError } = await supabase
           .rpc('get_demo_usage_stats');
+        
+        if (demoStatsError) {
+          console.error('Error fetching demo stats:', demoStatsError);
+          // Continue without demo stats if access denied
+        }
 
         // Get recent companies (active ones)
         const { count: activeCompaniesCount } = await supabase

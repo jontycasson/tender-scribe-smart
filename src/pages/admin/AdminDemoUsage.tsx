@@ -57,19 +57,35 @@ const AdminDemoUsage = () => {
 
   const fetchDemoData = async () => {
     try {
-      // Fetch demo submissions
+      // Fetch demo submissions (protected by RLS)
       const { data: submissionsData, error: submissionsError } = await supabase
         .from('demo_uses')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (submissionsError) throw submissionsError;
+      if (submissionsError) {
+        console.error('Error fetching demo submissions:', submissionsError);
+        toast({
+          title: "Access Error",
+          description: "Failed to load demo submissions. Admin access required.",
+          variant: "destructive",
+        });
+        return;
+      }
 
-      // Fetch demo statistics
+      // Fetch demo statistics (secured function)
       const { data: statsData, error: statsError } = await supabase
         .rpc('get_demo_usage_stats');
 
-      if (statsError) throw statsError;
+      if (statsError) {
+        console.error('Error fetching demo stats:', statsError);
+        toast({
+          title: "Access Error", 
+          description: "Failed to load demo statistics. Admin access required.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       setSubmissions(submissionsData || []);
       const stats = Array.isArray(statsData) ? statsData[0] : statsData;

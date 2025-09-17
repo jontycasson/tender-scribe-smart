@@ -484,15 +484,7 @@ export type Database = {
       }
     }
     Views: {
-      demo_stats_secure: {
-        Row: {
-          submissions_last_24h: number | null
-          submissions_last_week: number | null
-          total_submissions: number | null
-          unique_companies: number | null
-        }
-        Relationships: []
-      }
+      [_ in never]: never
     }
     Functions: {
       auto_cleanup_demo_uses: {
