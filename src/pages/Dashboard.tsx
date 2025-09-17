@@ -734,7 +734,6 @@ export default function Dashboard() {
             <ProjectsView
               tenders={state.tenders}
               onRefresh={handleRefresh}
-              getProjectProgress={getProjectProgress}
             />
           </TabsContent>
 

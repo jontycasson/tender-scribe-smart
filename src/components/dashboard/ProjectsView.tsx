@@ -25,10 +25,9 @@ interface Project {
 interface ProjectsViewProps {
   tenders: any[];
   onRefresh: () => Promise<void>;
-  getProjectProgress: (projectTenders: any[]) => { completed: number; total: number; percentage: number; };
 }
 
-export const ProjectsView = ({ tenders, onRefresh, getProjectProgress }: ProjectsViewProps) => {
+export const ProjectsView = ({ tenders, onRefresh }: ProjectsViewProps) => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [unassignedTenders, setUnassignedTenders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
