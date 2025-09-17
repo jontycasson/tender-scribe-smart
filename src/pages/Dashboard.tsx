@@ -182,8 +182,18 @@ export default function Dashboard() {
   const fetchProjects = async () => {
     if (!user?.id) return;
     
-    // Temporarily disable to fix type issue
-    dispatch({ type: 'SET_PROJECTS', payload: [] });
+    try {
+      const { data, error } = await supabase
+        .from('projects')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      dispatch({ type: 'SET_PROJECTS', payload: data || [] });
+    } catch (error) {
+      console.error('Error fetching projects:', error);
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to load projects' });
+    }
   };
 
   const fetchCompanyProfile = async () => {
@@ -636,7 +646,7 @@ export default function Dashboard() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-3 mb-2">
                               <Link
-                                to={`/tenders/${tender.id}`}
+                                to={`/tender/${tender.id}`}
                                 className="text-lg font-medium hover:text-primary truncate"
                               >
                                 {tender.title}
@@ -687,6 +697,13 @@ export default function Dashboard() {
                               </SelectContent>
                             </Select>
 
+                            <Link to={`/tender/${tender.id}`}>
+                              <Button variant="outline" size="sm">
+                                <FileText className="h-4 w-4 mr-2" />
+                                View Details
+                              </Button>
+                            </Link>
+
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="sm">
@@ -694,12 +711,6 @@ export default function Dashboard() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent>
-                                <DropdownMenuItem asChild>
-                                  <Link to={`/tenders/${tender.id}`}>
-                                    <FileText className="h-4 w-4 mr-2" />
-                                    View Details
-                                  </Link>
-                                </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={() => handleDelete(tender.id)}
                                   className="text-destructive"
