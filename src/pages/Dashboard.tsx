@@ -28,7 +28,7 @@ interface Tender {
   id: string;
   title: string;
   status: string;
-  value?: string;
+  value?: number;  // Changed from string to number to match DB
   deadline?: string;
   created_at: string;
   project_id?: string;
