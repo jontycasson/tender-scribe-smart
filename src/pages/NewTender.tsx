@@ -535,8 +535,9 @@ const NewTender = () => {
             setProcessingProgress(tender.progress);
           }
           
-          if (tender.status === 'completed') {
+          if (tender.status === 'completed' || tender.processing_stage === 'completed') {
             // Processing complete, set progress to 100% and fetch responses
+            console.log('Tender processing completed, updating UI');
             setProcessingProgress(100);
             setProcessing(false);
             setUploading(false);

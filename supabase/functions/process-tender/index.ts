@@ -317,7 +317,7 @@ IMPORTANT: You must return valid JSON. Do not include any text before or after t
           },
           {
             role: 'user', 
-            content: `Please categorize the following tender document text:\n\n${text.substring(0, 15000)}`
+            content: `Please categorize the following tender document text:\n\n${text.substring(0, 25000)}`
           }
         ],
         temperature: 0.1,
@@ -467,7 +467,7 @@ Do not include any explanatory text, just return the questions one per line.`
     const extractedQuestions = content.split('\n')
       .map((line: string) => line.trim())
       .filter((line: string) => line.length > 10)
-      .slice(0, 50); // Limit to 50 questions max
+      .slice(0, 100); // Limit to 100 questions max
     
     console.log(`Successfully extracted ${extractedQuestions.length} questions from OpenAI`);
     return extractedQuestions;
@@ -913,7 +913,17 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
       const question = questionsForThisBatch[i];
       const questionIndex = batchStart + i;
       
-      console.log(`Processing question ${questionIndex + 1}/${questionsToProcess.length}: ${question.substring(0, 100)}...`);
+          console.log(`Processing question ${questionIndex + 1}/${questionsToProcess.length}: ${question.substring(0, 100)}...`);
+          
+          // Update progress more frequently for each question
+          const questionProgress = Math.min(95, Math.round(((batchStart + i + 0.5) / questionsToProcess.length) * 100));
+          await supabaseClient
+            .from('tenders')
+            .update({
+              progress: questionProgress,
+              last_activity_at: new Date().toISOString()
+            })
+            .eq('id', tenderId);
 
       try {
         // Classify the question
@@ -978,7 +988,7 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
         console.log(`Successfully processed question ${questionIndex + 1}`);
 
       } catch (error) {
-        console.error(`Failed to process question ${questionIndex + 1}`);
+        console.error(`Failed to process question ${questionIndex + 1}:`, error);
         
         // Insert error response
         await supabaseClient
@@ -996,17 +1006,26 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
             processing_time_ms: 0,
             is_approved: false
           });
+          
+        // Still count this as processed for progress calculation
+        processedQuestions.push({
+          question,
+          answer: 'Error processing this question. Please edit manually.',
+          questionIndex
+        });
       }
     }
 
-    // Update progress
-    const totalProcessedSoFar = batchStart + processedQuestions.length;
-    const progress = Math.round((totalProcessedSoFar / questionsToProcess.length) * 100);
+    // Update progress - count all attempted questions (successful + failed)
+    const totalAttemptedSoFar = batchStart + questionsForThisBatch.length;
+    const progress = Math.min(95, Math.round((totalAttemptedSoFar / questionsToProcess.length) * 100));
+    
+    console.log(`Progress update: ${totalAttemptedSoFar}/${questionsToProcess.length} questions attempted (${progress}%)`);
     
     await supabaseClient
       .from('tenders')
       .update({
-        processed_questions: totalProcessedSoFar,
+        processed_questions: totalAttemptedSoFar,
         progress: progress,
         last_activity_at: new Date().toISOString()
       })
