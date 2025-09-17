@@ -282,7 +282,6 @@ async function createJWT(serviceAccountKey: any): Promise<string> {
 
 // ============= CONTENT SEGMENTATION FUNCTIONS =============
 
-// Function to categorize content into segments using AI
 async function categorizeContent(text: string, openAIApiKey: string): Promise<{
   context: string[];
   instructions: string[];
@@ -290,6 +289,8 @@ async function categorizeContent(text: string, openAIApiKey: string): Promise<{
   other: string[];
 }> {
   try {
+    console.log(`Starting content categorization for ${text.length} characters of text`);
+    
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -310,7 +311,9 @@ async function categorizeContent(text: string, openAIApiKey: string): Promise<{
 
 Return your response as a JSON object with four arrays: "context", "instructions", "questions", and "other". Each array should contain the relevant text segments.
 
-Focus on identifying vendor response items for the "questions" category - these are specific requirements that need answers from bidders.`
+Focus on identifying vendor response items for the "questions" category - these are specific requirements that need answers from bidders.
+
+IMPORTANT: You must return valid JSON. Do not include any text before or after the JSON object.`
           },
           {
             role: 'user', 
@@ -323,31 +326,76 @@ Focus on identifying vendor response items for the "questions" category - these 
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`OpenAI API error: ${response.status} - ${errorText}`);
       throw new Error(`OpenAI API error: ${response.status}`);
     }
 
     const data = await response.json();
     const content = data.choices[0].message.content;
     
+    console.log(`Raw OpenAI categorization response: ${content.substring(0, 500)}...`);
+    
     // Try to parse JSON response
     try {
-      return JSON.parse(content);
-    } catch {
-      // Fallback if JSON parsing fails
-      console.warn('Failed to parse categorization JSON, using fallback');
+      const parsed = JSON.parse(content);
+      console.log(`Successfully parsed categorization: ${parsed.questions?.length || 0} questions found`);
+      
+      // Ensure all required fields exist
+      const result = {
+        context: parsed.context || [],
+        instructions: parsed.instructions || [],
+        questions: parsed.questions || [],
+        other: parsed.other || []
+      };
+      
+      return result;
+    } catch (parseError) {
+      console.error('Failed to parse categorization JSON:', parseError);
+      console.log('Attempting to extract questions manually from response...');
+      
+      // Try to extract questions manually from the response
+      const lines = content.split('\n').filter(line => line.trim().length > 0);
+      const questions = [];
+      
+      for (const line of lines) {
+        // Look for question patterns in the response
+        if (line.match(/^\d+[\.\)]\s/) || 
+            line.toLowerCase().includes('describe') ||
+            line.toLowerCase().includes('provide') ||
+            line.toLowerCase().includes('explain') ||
+            line.toLowerCase().includes('what') ||
+            line.toLowerCase().includes('how') ||
+            line.includes('?')) {
+          questions.push(line.trim());
+        }
+      }
+      
+      console.log(`Manual extraction found ${questions.length} potential questions`);
+      
       return {
         context: [text.substring(0, 1000)],
         instructions: [],
-        questions: [],
+        questions: questions,
         other: []
       };
     }
   } catch (error) {
     console.error('Error in content categorization:', error);
-    // Fallback categorization
+    
+    // Enhanced fallback - try to extract questions directly from text
+    console.log('Using enhanced fallback question extraction...');
+    const fallbackQuestions = extractQuestionsFromText(text);
+    console.log(`Fallback extraction found ${fallbackQuestions.length} questions`);
+    
     return {
       context: [text.substring(0, 1000)],
       instructions: [],
+      questions: fallbackQuestions,
+      other: []
+    };
+  }
+}
       questions: [],
       other: []
     };
@@ -356,6 +404,10 @@ Focus on identifying vendor response items for the "questions" category - these 
 
 // Enhanced function to extract vendor-specific questions
 async function extractVendorQuestions(categorizedContent: any, openAIApiKey: string): Promise<string[]> {
+  console.log(`Starting vendor question extraction from categorized content`);
+  console.log(`Available questions: ${categorizedContent.questions?.length || 0}`);
+  console.log(`Available instructions: ${categorizedContent.instructions?.length || 0}`);
+  
   const allQuestionText = [
     ...categorizedContent.questions,
     ...categorizedContent.instructions.filter((item: string) => 
@@ -365,11 +417,16 @@ async function extractVendorQuestions(categorizedContent: any, openAIApiKey: str
     )
   ].join('\n');
 
+  console.log(`Combined question text length: ${allQuestionText.length} characters`);
+
   if (!allQuestionText.trim()) {
+    console.log('No question text available, returning empty array');
     return [];
   }
 
   try {
+    console.log('Calling OpenAI for vendor question extraction...');
+    
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -387,7 +444,9 @@ async function extractVendorQuestions(categorizedContent: any, openAIApiKey: str
 - Specific deliverables or information requests
 - Evaluation criteria that require vendor input
 
-Return each question as a separate line. Preserve original numbering where possible. Focus only on items requiring vendor responses, not general information.`
+Return each question as a separate line. Preserve original numbering where possible. Focus only on items requiring vendor responses, not general information.
+
+Do not include any explanatory text, just return the questions one per line.`
           },
           {
             role: 'user',
@@ -400,24 +459,49 @@ Return each question as a separate line. Preserve original numbering where possi
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`OpenAI API error in question extraction: ${response.status} - ${errorText}`);
       throw new Error(`OpenAI API error: ${response.status}`);
     }
 
     const data = await response.json();
     const content = data.choices[0].message.content;
     
-    return content.split('\n')
+    console.log(`Raw OpenAI question extraction response: ${content.substring(0, 300)}...`);
+    
+    const extractedQuestions = content.split('\n')
       .map((line: string) => line.trim())
       .filter((line: string) => line.length > 10)
       .slice(0, 50); // Limit to 50 questions max
+    
+    console.log(`Successfully extracted ${extractedQuestions.length} questions from OpenAI`);
+    return extractedQuestions;
       
   } catch (error) {
     console.error('Error extracting vendor questions:', error);
-    // Fallback to simple extraction
-    return allQuestionText.split('\n')
-      .filter((line: string) => line.trim().length > 10)
+    console.log('Using fallback question extraction method...');
+    
+    // Enhanced fallback to simple extraction
+    const fallbackQuestions = allQuestionText.split('\n')
+      .filter((line: string) => {
+        const trimmed = line.trim();
+        // Better filtering for fallback
+        return trimmed.length > 10 && (
+          trimmed.match(/^\d+[\.\)]\s/) ||
+          trimmed.toLowerCase().includes('describe') ||
+          trimmed.toLowerCase().includes('provide') ||
+          trimmed.toLowerCase().includes('explain') ||
+          trimmed.toLowerCase().includes('what') ||
+          trimmed.toLowerCase().includes('how') ||
+          trimmed.includes('?')
+        );
+      })
       .slice(0, 20);
+    
+    console.log(`Fallback extraction found ${fallbackQuestions.length} questions`);
+    return fallbackQuestions;
   }
+}
 }
 
 // Function to detect file type from filename and content
@@ -747,15 +831,22 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
       }
       
       if (questionsToProcess.length === 0) {
-        console.log('No questions found in document');
+        console.log('No questions found in document - this indicates a problem with question extraction');
+        console.log(`Text length processed: ${textToProcess?.length || 0} characters`);
+        console.log(`Segmented content available: ${segmentedContent ? 'yes' : 'no'}`);
+        if (segmentedContent) {
+          console.log(`Segmented content breakdown: context=${segmentedContent.context?.length}, instructions=${segmentedContent.instructions?.length}, questions=${segmentedContent.questions?.length}, other=${segmentedContent.other?.length}`);
+        }
+        
         await supabaseClient
           .from('tenders')
           .update({
-            status: 'completed',
+            status: 'error',
             processing_stage: 'completed',
+            error_message: 'No questions found in document - document may not contain extractable vendor requirements',
             total_questions: 0,
             processed_questions: 0,
-            progress: 100,
+            progress: 50, // Stop at 50% to indicate incomplete processing
             file_type_detected: fileType,
             content_segments_count: segmentedContent ? Object.values(segmentedContent).flat().length : 0,
             last_activity_at: new Date().toISOString()

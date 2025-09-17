@@ -570,7 +570,7 @@ export default function Dashboard() {
                       Grouped
                     </Button>
                   </div>
-                  <Link to="/upload">
+                  <Link to="/new-tender">
                     <Button>
                       <Plus className="h-4 w-4 mr-2" />
                       New Tender
