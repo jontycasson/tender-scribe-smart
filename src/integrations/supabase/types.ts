@@ -484,7 +484,15 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      demo_stats_secure: {
+        Row: {
+          submissions_last_24h: number | null
+          submissions_last_week: number | null
+          total_submissions: number | null
+          unique_companies: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       auto_cleanup_demo_uses: {
@@ -634,6 +642,10 @@ export type Database = {
       l2_normalize: {
         Args: { "": string } | { "": unknown } | { "": unknown }
         Returns: unknown
+      }
+      log_demo_access_attempt: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
       }
       log_security_event: {
         Args: { details?: Json; event_type: string }
