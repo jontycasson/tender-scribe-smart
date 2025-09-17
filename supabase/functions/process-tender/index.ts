@@ -457,6 +457,18 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
       throw new Error('Invalid tender ID format');
     }
 
+    // Get the tender details early to access metadata needed for processing
+    const { data: tenderData, error: tenderError } = await supabaseClient
+      .from('tenders')
+      .select('*, company_profiles(*)')
+      .eq('id', tenderId)
+      .single();
+
+    if (tenderError || !tenderData) {
+      console.error('Failed to fetch tender data');
+      throw new Error('Failed to fetch tender data');
+    }
+
     // Distinguish between initial batch (needs text/file) and subsequent batches (need questions array)
     const isInitialBatch = batchStart === 0;
     const isSubsequentBatch = !isInitialBatch && questions && questions.length > 0;
@@ -701,7 +713,7 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
 
     if (isInitialBatch && textToProcess) {
       // Get file type for processing logic
-      const fileType = detectFileType(tenderData?.original_filename || '', textToProcess);
+      const fileType = detectFileType(tenderData.original_filename || '', textToProcess);
       
       console.log(`Detected file type: ${fileType}`);
       
@@ -786,18 +798,6 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
     }
 
     console.log(`Processing batch ${batchStart / BATCH_SIZE + 1}: ${questionsForThisBatch.length} questions`);
-
-    // Get the tender details to access company profile
-    const { data: tenderData, error: tenderError } = await supabaseClient
-      .from('tenders')
-      .select('*, company_profiles(*)')
-      .eq('id', tenderId)
-      .single();
-
-    if (tenderError || !tenderData) {
-      console.error('Failed to fetch tender data');
-      throw new Error('Failed to fetch tender data');
-    }
 
     const companyProfile = tenderData.company_profiles;
     if (!companyProfile) {
