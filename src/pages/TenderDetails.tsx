@@ -355,17 +355,19 @@ const TenderDetails = () => {
             <ProcessingProgress
               stages={[
                 { id: 'extracting', label: 'Extracting Questions', description: 'Analysing document content' },
-                { id: 'identifying', label: 'Processing Structure', description: 'Identifying question patterns' },
-                { id: 'generating', label: 'Generating Responses', description: 'Creating AI-powered answers' },
-                { id: 'complete', label: 'Complete', description: 'Ready for review' }
+                { id: 'segmenting', label: 'Segmenting Content', description: 'Categorizing document sections' },
+                { id: 'identifying', label: 'Identifying Questions', description: 'Finding vendor response items' },
+                { id: 'generating', label: 'Generating Responses', description: 'Creating AI-powered answers' }
               ]}
               currentStageIndex={
                 tender.processing_stage === 'extracting' ? 0 :
-                tender.processing_stage === 'identifying' ? 1 :
-                tender.processing_stage === 'generating' ? 2 : 3
+                tender.processing_stage === 'segmenting' ? 1 :
+                tender.processing_stage === 'identifying' ? 2 :
+                tender.processing_stage === 'generating' ? 3 : 
+                tender.processing_stage === 'completed' ? 3 : 0
               }
               progress={tender.progress || 0}
-              isComplete={tender.processing_stage === 'complete'}
+              isComplete={tender.processing_stage === 'completed'}
               error={undefined}
             />
           </CardContent>

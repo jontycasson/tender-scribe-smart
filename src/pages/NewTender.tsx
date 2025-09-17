@@ -535,9 +535,12 @@ const NewTender = () => {
             setProcessingProgress(tender.progress);
           }
           
-          if (tender.status === 'draft') {
+          if (tender.status === 'completed') {
             // Processing complete, set progress to 100% and fetch responses
             setProcessingProgress(100);
+            setProcessing(false);
+            setUploading(false);
+            setCurrentStep('review');
             fetchTenderResponses(tenderId);
             // Unsubscribe now that we've reached terminal state
             if (!channelUnsubscribed) {
@@ -547,7 +550,8 @@ const NewTender = () => {
           } else if (tender.status === 'error') {
             setProcessingError(tender.error_message || 'Processing failed');
             setProcessing(false);
-            setCurrentStep('upload');
+            setUploading(false);
+            // Don't reset to upload step - keep the processing UI with error
             // Unsubscribe on error as well
             if (!channelUnsubscribed) {
               supabase.removeChannel(channel);

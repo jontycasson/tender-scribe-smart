@@ -460,13 +460,25 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
     // Get the tender details early to access metadata needed for processing
     const { data: tenderRow, error: tenderError } = await supabaseClient
       .from('tenders')
-      .select('*, company_profiles(*)')
+      .select('*')
       .eq('id', tenderId)
       .single();
 
     if (tenderError || !tenderRow) {
-      console.error('Failed to fetch tender data');
+      console.error('Failed to fetch tender data:', tenderError);
       throw new Error('Failed to fetch tender data');
+    }
+
+    // Fetch company profile separately to avoid join issues
+    const { data: companyProfile, error: companyError } = await supabaseClient
+      .from('company_profiles')
+      .select('*')
+      .eq('id', tenderRow.company_profile_id)
+      .single();
+
+    if (companyError || !companyProfile) {
+      console.error('Failed to fetch company profile:', companyError);
+      throw new Error('Failed to fetch company profile');
     }
 
     // Distinguish between initial batch (needs text/file) and subsequent batches (need questions array)
@@ -755,7 +767,8 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
       // Update tender with segmented content and questions count
       const updateData: any = {
         total_questions: questionsToProcess.length,
-        processing_stage: 'processing_questions',
+        processing_stage: 'generating',
+        status: 'processing',
         file_type_detected: fileType,
         content_segments_count: segmentedContent ? Object.values(segmentedContent).flat().length : 0,
         last_activity_at: new Date().toISOString()
@@ -798,12 +811,6 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
     }
 
     console.log(`Processing batch ${batchStart / BATCH_SIZE + 1}: ${questionsForThisBatch.length} questions`);
-
-    const companyProfile = tenderRow.company_profiles;
-    if (!companyProfile) {
-      console.error('No company profile found for tender');
-      throw new Error('No company profile found for tender');
-    }
 
     // Process each question with AI
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');

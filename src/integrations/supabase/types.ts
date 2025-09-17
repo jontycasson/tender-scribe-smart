@@ -436,6 +436,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "fk_tenders_company_profile_id"
+            columns: ["company_profile_id"]
+            isOneToOne: false
+            referencedRelation: "company_profiles"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "tenders_company_profile_id_fkey"
             columns: ["company_profile_id"]
             isOneToOne: false

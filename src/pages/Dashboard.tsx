@@ -319,10 +319,18 @@ const Dashboard = () => {
   const handleReprocessTender = async (tender: any) => {
     setReprocessingTender(tender.id);
     try {
-      // Update tender status to processing
+      // Clear error states and reset counters
       const { error: updateError } = await supabase
         .from('tenders')
-        .update({ status: 'processing', parsed_data: null })
+        .update({ 
+          status: 'processing', 
+          processing_stage: 'extracting',
+          error_message: null,
+          progress: 0,
+          processed_questions: 0,
+          total_questions: 0,
+          last_activity_at: new Date().toISOString()
+        })
         .eq('id', tender.id)
         .eq('user_id', user?.id);
 
@@ -346,7 +354,14 @@ const Dashboard = () => {
       // Update local state
       setTenders(prev => prev.map(t => 
         t.id === tender.id 
-          ? { ...t, status: 'processing', parsed_data: null }
+          ? { 
+              ...t, 
+              status: 'processing', 
+              processing_stage: 'extracting',
+              error_message: null,
+              progress: 0,
+              processed_questions: 0
+            }
           : t
       ));
 
