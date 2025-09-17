@@ -24,10 +24,11 @@ interface Project {
 
 interface ProjectsViewProps {
   tenders: any[];
-  onTenderDeleted: (tenderId: string) => void;
+  onRefresh: () => Promise<void>;
+  getProjectProgress: (projectTenders: any[]) => { completed: number; total: number; percentage: number; };
 }
 
-export const ProjectsView = ({ tenders, onTenderDeleted }: ProjectsViewProps) => {
+export const ProjectsView = ({ tenders, onRefresh, getProjectProgress }: ProjectsViewProps) => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [unassignedTenders, setUnassignedTenders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

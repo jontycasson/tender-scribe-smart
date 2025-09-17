@@ -732,7 +732,6 @@ export default function Dashboard() {
 
           <TabsContent value="projects" className="mt-6">
             <ProjectsView
-              projects={state.projects}
               tenders={state.tenders}
               onRefresh={handleRefresh}
               getProjectProgress={getProjectProgress}
