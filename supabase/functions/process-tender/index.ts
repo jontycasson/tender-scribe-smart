@@ -497,7 +497,6 @@ Do not include any explanatory text, just return the questions one per line.`
     return fallbackQuestions;
   }
 }
-}
 
 // Function to detect file type from filename and content
 function detectFileType(fileName: string, extractedText?: string): string {
