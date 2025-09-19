@@ -853,8 +853,6 @@ For optimal results, please:
         }
       }
     }
-      }
-    }
 
     // If no text available yet and filePath is provided, try text extraction methods
     if (!textToProcess && filePath) {
