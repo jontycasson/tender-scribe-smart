@@ -868,38 +868,35 @@ This is a placeholder response. Please edit the questions and answers manually t
       }
       
       if (questionsToProcess.length === 0) {
-        console.log('No questions extracted - creating sample questions for manual editing');
+        console.log('No questions detected in the uploaded document');
         console.log(`Text length processed: ${textToProcess?.length || 0} characters`);
         
-        // Create sample questions that users can edit manually
-        const sampleQuestions = [
-          "1. Please describe your company's experience and qualifications relevant to this tender.",
-          "2. What is your approach to delivering the services/products outlined in this tender?",
-          "3. Please provide details of your team structure and key personnel for this project.",
-          "4. What is your proposed timeline for completing this work?",
-          "5. Please describe your quality assurance and risk management procedures.",
-          "6. What are your health and safety policies and procedures?",
-          "7. Please provide details of relevant certifications, accreditations, and insurance coverage.",
-          "8. What is your pricing structure and payment terms?",
-          "9. Please provide at least 3 references from similar projects completed in the last 2 years.",
-          "10. How will you ensure compliance with all relevant regulations and standards?"
-        ];
-        
-        questionsToProcess = sampleQuestions;
-        console.log(`Created ${sampleQuestions.length} sample questions for manual editing`);
-        
-        // Update tender with sample questions info
+        // Update tender with no questions found status
         await supabaseClient
           .from('tenders')
           .update({
-            total_questions: sampleQuestions.length,
-            processing_stage: 'generating_responses',
-            progress: 35,
+            total_questions: 0,
+            processing_stage: 'failed',
+            progress: 100,
+            status: 'failed',
+            error_message: 'No questions were detected in the uploaded document. Please ensure the document contains tender questions or upload a different document.',
             file_type_detected: fileType,
             content_segments_count: segmentedContent ? Object.values(segmentedContent).flat().length : 0,
             last_activity_at: new Date().toISOString()
           })
           .eq('id', tenderId);
+          
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: 'No questions were detected in the uploaded document. Please ensure the document contains tender questions or upload a different document.',
+            tenderId 
+          }),
+          { 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400
+          }
+        );
       } else {
 
         // Stage 4: Start response generation (35% progress)  
