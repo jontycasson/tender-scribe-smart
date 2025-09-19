@@ -102,8 +102,8 @@ function extractQuestionsFromText(text: string): string[] {
       }
     }
     
-    // Very low threshold to capture everything, especially sub-questions
-    if (bestConfidence > 0.1 && bestMatch) {
+  // Very low threshold to capture everything, especially sub-questions
+    if (bestConfidence > 0.05 && bestMatch) {
       // Check for duplicates but be very lenient
       const isDuplicate = questions.some(q => {
         const similarity = calculateSimilarity(q.toLowerCase(), bestMatch.toLowerCase());
@@ -133,28 +133,33 @@ function extractQuestionsFromText(text: string): string[] {
 }
 
 function calculateQuestionConfidence(text: string): number {
-  let confidence = 0.15; // Even lower base confidence
+  let confidence = 0.1; // Lower base confidence to catch more potential questions
   
   // Strong boost confidence based on question indicators
   if (text.includes('?')) confidence += 0.4;
   if (/\b(what|how|when|where|why|which|who)\b/i.test(text)) confidence += 0.25;
   if (/\b(do|does|can|will|are|is|have|has)\s+you\b/i.test(text)) confidence += 0.3;
-  if (/\b(describe|explain|provide|outline|detail|demonstrate|list|tell|confirm)\b/i.test(text)) confidence += 0.25;
+  if (/\b(describe|explain|provide|outline|detail|demonstrate|list|tell|confirm|submit|include|specify)\b/i.test(text)) confidence += 0.25;
   if (/\b(company|organisation|organization|business|service|policy|procedure|process|approach|experience|capability|compliant|certified|accredited)\b/i.test(text)) confidence += 0.2;
   
-  // Very strong boosts for tender-specific terms
-  if (/\b(DPO|CEO|name|tenure|continuity|challenges)\b/i.test(text)) confidence += 0.35;
-  if (/\b(confirm|y\/n|yes\/no|\(y\/n\)|\(yes\/no\))\b/i.test(text)) confidence += 0.4;
+  // Enhanced tender-specific terms
+  if (/\b(DPO|CEO|name|tenure|continuity|challenges|compliance|certification|qualification|requirement)\b/i.test(text)) confidence += 0.35;
+  if (/\b(confirm|y\/n|yes\/no|\(y\/n\)|\(yes\/no\)|mandatory|required|must|shall)\b/i.test(text)) confidence += 0.4;
   if (/\btime\s+you\s+experienced\b/i.test(text)) confidence += 0.3;
-  if (/\bbusiness\s+continuity\b/i.test(text)) confidence += 0.3;
+  if (/\b(business\s+continuity|risk\s+management|data\s+protection|security\s+measures)\b/i.test(text)) confidence += 0.3;
+  
+  // New patterns for common tender questions
+  if (/\b(years?\s+(of\s+)?experience|established\s+in|founded\s+in|turnover|revenue|staff|employees)\b/i.test(text)) confidence += 0.25;
+  if (/\b(ISO\s+\d+|accreditation|certification|standard|framework|methodology)\b/i.test(text)) confidence += 0.25;
+  if (/\b(implementation\s+plan|project\s+plan|timeline|schedule|delivery|milestone)\b/i.test(text)) confidence += 0.2;
   
   // Minimal penalty for short texts since some questions are brief
-  if (text.length < 10) confidence -= 0.05;
-  if (text.length > 500) confidence -= 0.1;
+  if (text.length < 8) confidence -= 0.02; // Reduced penalty
+  if (text.length > 500) confidence -= 0.05; // Reduced penalty
   
-  // Penalize common non-question phrases
-  if (/\b(section|chapter|part|page|document|file|attachment)\b/i.test(text)) confidence -= 0.2;
-  if (/\b(note|important|please|thank|regards|sincerely)\b/i.test(text)) confidence -= 0.15;
+  // Penalize common non-question phrases but less aggressively
+  if (/\b(section|chapter|part|page|document|file|attachment)\b/i.test(text)) confidence -= 0.1;
+  if (/\b(note|important|please|thank|regards|sincerely)\b/i.test(text)) confidence -= 0.1;
   
   return Math.max(0, Math.min(1, confidence));
 }
@@ -298,7 +303,7 @@ async function categorizeContent(text: string, openAIApiKey: string): Promise<{
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-mini-2025-08-07',
         messages: [
           {
             role: 'system',
@@ -306,12 +311,26 @@ async function categorizeContent(text: string, openAIApiKey: string): Promise<{
 
 1. CONTEXT: Background information, company details, project scope, objectives, requirements overview
 2. INSTRUCTIONS: Submission rules, format requirements, evaluation criteria, timelines, compliance requirements  
-3. QUESTIONS: Specific items requiring vendor responses (numbered requirements, "Describe...", "Provide...", "What...", "How...", etc.)
+3. QUESTIONS: Specific items requiring vendor responses. This includes:
+   - Numbered requirements (1., 2., 3., etc.)
+   - Questions starting with "Describe...", "Provide...", "What...", "How...", "When...", "Where...", "Why..."
+   - Confirmation requests ("Confirm...", "Y/N", "Yes/No")
+   - Requirements with "must", "should", "required"
+   - Technical specifications that need vendor responses
+   - Experience and capability questions
+   - Any item that expects a written response from bidders
 4. OTHER: Terms and conditions, legal text, appendices, contact information
+
+Examples of questions to identify:
+- "1. Describe your company's experience with similar projects"
+- "Provide details of your technical approach"
+- "What is your proposed timeline?"
+- "Confirm you have the required certifications (Y/N)"
+- "Detail your business continuity procedures"
 
 Return your response as a JSON object with four arrays: "context", "instructions", "questions", and "other". Each array should contain the relevant text segments.
 
-Focus on identifying vendor response items for the "questions" category - these are specific requirements that need answers from bidders.
+BE LIBERAL in identifying questions - if there's any doubt, categorize as a question rather than other categories.
 
 IMPORTANT: You must return valid JSON. Do not include any text before or after the JSON object.`
           },
@@ -320,8 +339,7 @@ IMPORTANT: You must return valid JSON. Do not include any text before or after t
             content: `Please categorize the following tender document text:\n\n${text.substring(0, 25000)}`
           }
         ],
-        temperature: 0.1,
-        max_tokens: 4000
+        max_completion_tokens: 4000
       }),
     });
 
@@ -332,14 +350,24 @@ IMPORTANT: You must return valid JSON. Do not include any text before or after t
     }
 
     const data = await response.json();
-    const content = data.choices[0].message.content;
+    const content = data.choices[0]?.message?.content;
+    
+    if (!content) {
+      console.error('Empty response from OpenAI');
+      throw new Error('Empty response from OpenAI API');
+    }
     
     console.log(`Raw OpenAI categorization response: ${content.substring(0, 500)}...`);
+    console.log(`Full response length: ${content.length} characters`);
     
     // Try to parse JSON response
     try {
       const parsed = JSON.parse(content);
-      console.log(`Successfully parsed categorization: ${parsed.questions?.length || 0} questions found`);
+      console.log(`Successfully parsed categorization:`);
+      console.log(`- Context items: ${parsed.context?.length || 0}`);
+      console.log(`- Instruction items: ${parsed.instructions?.length || 0}`);
+      console.log(`- Question items: ${parsed.questions?.length || 0}`);
+      console.log(`- Other items: ${parsed.other?.length || 0}`);
       
       // Ensure all required fields exist
       const result = {
@@ -352,6 +380,7 @@ IMPORTANT: You must return valid JSON. Do not include any text before or after t
       return result;
     } catch (parseError) {
       console.error('Failed to parse categorization JSON:', parseError);
+      console.error('Raw content that failed to parse:', content);
       console.log('Attempting to extract questions manually from response...');
       
       // Try to extract questions manually from the response
@@ -421,28 +450,41 @@ async function extractVendorQuestions(categorizedContent: any, openAIApiKey: str
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'gpt-5-mini-2025-08-07',
           messages: [
             {
               role: 'system',
               content: `Extract numbered questions that require vendor responses from this tender document text. Each question should be a specific requirement that needs an answer from bidders.
               
-              Return only a numbered list of questions, one per line, without explanations or additional text. Focus on:
+              BE VERY LIBERAL in identifying questions - include anything that might need a vendor response, such as:
               - Technical specifications and capabilities
               - Experience and qualifications 
-              - Compliance and certifications
+              - Compliance and certifications (Y/N questions)
               - Implementation approach
               - Pricing and commercial terms
+              - Company information requests
+              - Process and procedure descriptions
+              - Risk management approaches
+              - Staff qualifications
+              - Confirmation requests
               
-              Format: Just return the questions numbered 1., 2., 3., etc.`
+              Examples to include:
+              - "Describe your experience..."
+              - "Provide details of..."
+              - "What is your approach to..."
+              - "Confirm you have..." (Y/N)
+              - "Detail your procedures for..."
+              - "How many years experience..."
+              - "List your certifications..."
+              
+              Format: Just return the questions numbered 1., 2., 3., etc. Preserve original wording exactly.`
             },
             {
               role: 'user',
               content: combinedQuestionText.substring(0, 25000)
             }
           ],
-          temperature: 0.1,
-          max_tokens: 3000
+          max_completion_tokens: 3000
         }),
       });
 
@@ -513,6 +555,15 @@ async function categorizeContentEnhanced(text: string, openAIApiKey: string): Pr
 }> {
   console.log('Starting enhanced content categorization...');
   
+  console.log(`Text preview: "${text.substring(0, 200)}..."`);
+  console.log(`Total text length: ${text.length} characters`);
+  
+  // Validate text content
+  if (!text || text.trim().length < 50) {
+    console.error('Text content too short or empty');
+    throw new Error('Document text is too short or empty to analyze');
+  }
+  
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -520,7 +571,7 @@ async function categorizeContentEnhanced(text: string, openAIApiKey: string): Pr
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-mini-2025-08-07',
       messages: [
         {
           role: 'system',
@@ -528,12 +579,31 @@ async function categorizeContentEnhanced(text: string, openAIApiKey: string): Pr
 
 [CONTEXT] - Background information, objectives, scope, company info, project description
 [INSTRUCTIONS] - Evaluation criteria, compliance requirements, timelines, submission rules, terms and conditions  
-[QUESTIONS] - Only the specific questions vendors must answer. Preserve EXACT wording and numbering as written
-[OTHER] - Any content that doesn't fit the above categories
+[QUESTIONS] - CRITICAL: Be very liberal here. Include ANY item that might require a vendor response:
+  - Numbered requirements (1., 2., 3., a., b., c.)
+  - Questions with "Describe...", "Provide...", "What...", "How...", "When...", "Where...", "Why..."
+  - Confirmation requests ("Confirm...", "Y/N", "Yes/No")
+  - Experience requests ("years of experience", "established in", "founded")
+  - Capability questions ("Do you have...", "Can you provide...")
+  - Technical specifications that need responses
+  - Compliance requirements that need confirmation
+  - Company information requests
+  - Process descriptions needed
+  - ANY text that expects a written response from bidders
+[OTHER] - Only content that clearly doesn't need vendor responses
 
-CRITICAL: For questions, preserve the exact wording, numbering, and formatting from the original document. Do not rephrase or modify question text in any way.
+PRESERVE EXACT wording, numbering, and formatting from the original document. Do not rephrase or modify question text.
 
-Return the response in this exact JSON format:
+Examples of what to categorize as QUESTIONS:
+- "1. Describe your company's experience"
+- "Provide your company turnover"
+- "How many years established?"
+- "Confirm you have ISO certification (Y/N)"
+- "Detail your approach to..."
+- "What is your methodology for..."
+- "Years of experience in similar projects?"
+
+Return valid JSON in this exact format:
 {
   "context": ["item1", "item2"],
   "instructions": ["item1", "item2"], 
@@ -546,8 +616,7 @@ Return the response in this exact JSON format:
           content: text.substring(0, 30000) // Limit text size
         }
       ],
-      temperature: 0.1,
-      max_tokens: 4000
+      max_completion_tokens: 4000
     }),
   });
 
@@ -556,27 +625,63 @@ Return the response in this exact JSON format:
   }
 
   const data = await response.json();
-  let categorized;
+  const content = data.choices[0]?.message?.content;
   
-  try {
-    categorized = JSON.parse(data.choices[0]?.message?.content || '{}');
-  } catch (parseError) {
-    console.error('Failed to parse categorization response, using fallback');
+  console.log(`Enhanced categorization response: ${content?.substring(0, 500)}...`);
+  
+  if (!content) {
+    console.error('Empty response from OpenAI enhanced categorization');
+    console.log('Using fallback extraction method');
+    const fallbackQuestions = extractQuestionsFromText(text);
+    console.log(`Fallback found ${fallbackQuestions.length} questions`);
     return {
       context: [text.substring(0, 1000) + '...'],
       instructions: ['Please review document for specific instructions'],
-      questions: extractQuestionsFromText(text),
+      questions: fallbackQuestions,
+      other: []
+    };
+  }
+  
+  let categorized;
+  
+  try {
+    categorized = JSON.parse(content);
+    console.log(`Enhanced categorization successful:`);
+    console.log(`- Context: ${categorized.context?.length || 0} items`);
+    console.log(`- Instructions: ${categorized.instructions?.length || 0} items`);
+    console.log(`- Questions: ${categorized.questions?.length || 0} items`);
+    console.log(`- Other: ${categorized.other?.length || 0} items`);
+  } catch (parseError) {
+    console.error('Failed to parse enhanced categorization response:', parseError);
+    console.error('Raw response:', content);
+    console.log('Using fallback extraction method');
+    const fallbackQuestions = extractQuestionsFromText(text);
+    console.log(`Fallback found ${fallbackQuestions.length} questions`);
+    return {
+      context: [text.substring(0, 1000) + '...'],
+      instructions: ['Please review document for specific instructions'],
+      questions: fallbackQuestions,
       other: []
     };
   }
 
-  // Ensure all required fields exist
-  return {
+  // Ensure all required fields exist and add fallback questions if none found
+  const result = {
     context: categorized.context || [],
     instructions: categorized.instructions || [],
     questions: categorized.questions || [],
     other: categorized.other || []
   };
+  
+  // If no questions found, try fallback extraction
+  if (result.questions.length === 0) {
+    console.log('No questions found in categorization, trying fallback extraction');
+    const fallbackQuestions = extractQuestionsFromText(text);
+    console.log(`Fallback extraction found ${fallbackQuestions.length} questions`);
+    result.questions = fallbackQuestions;
+  }
+  
+  return result;
 }
 
 // OCR Processing function for non-readable files
