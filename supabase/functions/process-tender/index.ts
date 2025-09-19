@@ -484,35 +484,6 @@ async function extractVendorQuestions(categorizedContent: any, openAIApiKey: str
   console.log(`Successfully extracted ${finalQuestions.length} questions for processing (${extractedQuestions.length} from AI + ${fallbackQuestions.length} fallback, deduplicated to ${finalQuestions.length})`);
   return finalQuestions;
 }
-    
-    console.log(`Successfully extracted ${extractedQuestions.length} questions from OpenAI`);
-    return extractedQuestions;
-      
-  } catch (error) {
-    console.error('Error extracting vendor questions:', error);
-    console.log('Using fallback question extraction method...');
-    
-    // Enhanced fallback to simple extraction
-    const fallbackQuestions = allQuestionText.split('\n')
-      .filter((line: string) => {
-        const trimmed = line.trim();
-        // Better filtering for fallback
-        return trimmed.length > 10 && (
-          trimmed.match(/^\d+[\.\)]\s/) ||
-          trimmed.toLowerCase().includes('describe') ||
-          trimmed.toLowerCase().includes('provide') ||
-          trimmed.toLowerCase().includes('explain') ||
-          trimmed.toLowerCase().includes('what') ||
-          trimmed.toLowerCase().includes('how') ||
-          trimmed.includes('?')
-        );
-      })
-      .slice(0, 20);
-    
-    console.log(`Fallback extraction found ${fallbackQuestions.length} questions`);
-    return fallbackQuestions;
-  }
-}
 
 // Function to detect file type from filename and content
 function detectFileType(fileName: string, extractedText?: string): string {
