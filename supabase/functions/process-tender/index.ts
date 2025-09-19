@@ -1229,33 +1229,55 @@ This is a placeholder response. Please edit the questions and answers manually t
       if (questionsToProcess.length === 0) {
         console.log('No questions detected in the uploaded document');
         console.log(`Text length processed: ${textToProcess?.length || 0} characters`);
-        
-        // Update tender with no questions found status
-        await supabaseClient
-          .from('tenders')
-          .update({
-            total_questions: 0,
-            processing_stage: 'failed',
-            progress: 100,
-            status: 'failed',
-            error_message: 'No questions were detected in the uploaded document. Please ensure the document contains tender questions or upload a different document.',
-            file_type_detected: fileType,
-            content_segments_count: segmentedContent ? Object.values(segmentedContent).flat().length : 0,
-            last_activity_at: new Date().toISOString()
-          })
-          .eq('id', tenderId);
-          
-        return new Response(
-          JSON.stringify({ 
-            success: false, 
-            error: 'No questions were detected in the uploaded document. Please ensure the document contains tender questions or upload a different document.',
-            tenderId 
-          }),
-          { 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 400
+
+        // Attempt a rescue pass using the alternate categorizer
+        let rescueQuestions: string[] = [];
+        const openAIApiKey2 = Deno.env.get('OPENAI_API_KEY');
+        if (openAIApiKey2) {
+          try {
+            const altSegmentation = await categorizeContent(textToProcess, openAIApiKey2);
+            if (altSegmentation?.questions?.length) {
+              rescueQuestions = altSegmentation.questions.filter((q: string) => q.trim().length > 10);
+              console.log(`Rescue extraction recovered ${rescueQuestions.length} questions`);
+            }
+          } catch (rescueErr) {
+            console.log('Rescue categorizeContent failed');
           }
-        );
+        }
+
+        if (rescueQuestions.length > 0) {
+          // Use rescued questions
+          questionsToProcess = rescueQuestions;
+          await supabaseClient
+            .from('tenders')
+            .update({
+              total_questions: questionsToProcess.length,
+              processing_stage: 'generating_responses',
+              progress: 35,
+              file_type_detected: fileType,
+              content_segments_count: segmentedContent ? Object.values(segmentedContent).flat().length : 0,
+              last_activity_at: new Date().toISOString()
+            })
+            .eq('id', tenderId);
+        } else {
+          // Graceful degradation: complete without failing so users can add questions manually
+          await supabaseClient
+            .from('tenders')
+            .update({
+              total_questions: 0,
+              processing_stage: 'completed',
+              progress: 100,
+              status: 'completed',
+              error_message: 'No questions were detected in the uploaded document. You can add questions manually.',
+              file_type_detected: fileType,
+              content_segments_count: segmentedContent ? Object.values(segmentedContent).flat().length : 0,
+              last_activity_at: new Date().toISOString()
+            })
+            .eq('id', tenderId);
+
+          console.log('Completed tender with 0 questions (no failure).');
+          return;
+        }
       } else {
 
         // Stage 4: Start response generation (35% progress)  
