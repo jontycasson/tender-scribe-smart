@@ -531,7 +531,8 @@ const NewTender = () => {
             }
           }
           
-          if (tender.progress) {
+          // Ensure progress only moves forward to prevent UI regression
+          if (tender.progress && tender.progress > processingProgress) {
             setProcessingProgress(tender.progress);
           }
           

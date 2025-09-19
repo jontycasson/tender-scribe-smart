@@ -403,71 +403,87 @@ async function extractVendorQuestions(categorizedContent: any, openAIApiKey: str
   console.log(`Available questions: ${categorizedContent.questions?.length || 0}`);
   console.log(`Available instructions: ${categorizedContent.instructions?.length || 0}`);
   
-  const allQuestionText = [
-    ...categorizedContent.questions,
-    ...categorizedContent.instructions.filter((item: string) => 
-      item.toLowerCase().includes('describe') || 
-      item.toLowerCase().includes('provide') ||
-      item.toLowerCase().includes('explain')
-    )
-  ].join('\n');
-
-  console.log(`Combined question text length: ${allQuestionText.length} characters`);
-
-  if (!allQuestionText.trim()) {
-    console.log('No question text available, returning empty array');
-    return [];
-  }
-
+  // Combine questions and instructions for extraction
+  const combinedQuestionText = [...categorizedContent.questions, ...categorizedContent.instructions].join('\n');
+  console.log(`Combined question text length: ${combinedQuestionText.length} characters`);
+  
+  console.log('Calling OpenAI for vendor question extraction...');
+  
+  // Try to extract structured questions using OpenAI
+  let extractedQuestions: string[] = [];
+  
   try {
-    console.log('Calling OpenAI for vendor question extraction...');
-    
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: `Extract individual vendor response requirements from tender text. Look for:
-- Numbered requirements or questions
-- Items starting with "Describe", "Provide", "Explain", "What", "How"  
-- Specific deliverables or information requests
-- Evaluation criteria that require vendor input
+    if (combinedQuestionText.trim()) {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAIApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: `Extract numbered questions that require vendor responses from this tender document text. Each question should be a specific requirement that needs an answer from bidders.
+              
+              Return only a numbered list of questions, one per line, without explanations or additional text. Focus on:
+              - Technical specifications and capabilities
+              - Experience and qualifications 
+              - Compliance and certifications
+              - Implementation approach
+              - Pricing and commercial terms
+              
+              Format: Just return the questions numbered 1., 2., 3., etc.`
+            },
+            {
+              role: 'user',
+              content: combinedQuestionText.substring(0, 25000)
+            }
+          ],
+          temperature: 0.1,
+          max_tokens: 3000
+        }),
+      });
 
-Return each question as a separate line. Preserve original numbering where possible. Focus only on items requiring vendor responses, not general information.
-
-Do not include any explanatory text, just return the questions one per line.`
-          },
-          {
-            role: 'user',
-            content: allQuestionText.substring(0, 10000)
-          }
-        ],
-        temperature: 0.1,
-        max_tokens: 2000
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`OpenAI API error in question extraction: ${response.status} - ${errorText}`);
-      throw new Error(`OpenAI API error: ${response.status}`);
+      if (response.ok) {
+        const data = await response.json();
+        const content = data.choices[0]?.message?.content || '';
+        
+        console.log(`Raw OpenAI question extraction response: ${content.substring(0, 500)}...`);
+        
+        extractedQuestions = content.split('\n')
+          .map((line: string) => line.trim())
+          .filter((line: string) => line.length > 10)
+          .slice(0, 100); // Limit to 100 questions max
+        
+        console.log(`Successfully extracted ${extractedQuestions.length} questions from OpenAI`);
+      }
     }
-
-    const data = await response.json();
-    const content = data.choices[0].message.content;
-    
-    console.log(`Raw OpenAI question extraction response: ${content.substring(0, 300)}...`);
-    
-    const extractedQuestions = content.split('\n')
-      .map((line: string) => line.trim())
-      .filter((line: string) => line.length > 10)
-      .slice(0, 100); // Limit to 100 questions max
+  } catch (error) {
+    console.error('Error in AI question extraction:', error);
+  }
+  
+  // Always merge with fallback questions to get better coverage
+  const fallbackQuestions = categorizedContent.questions
+    .filter((q: string) => q.length > 15) // Slightly less strict
+    .slice(0, 50); // Allow more fallback questions
+  
+  console.log(`Fallback extraction found ${fallbackQuestions.length} questions`);
+  
+  // Combine and deduplicate questions
+  const allQuestions = [...extractedQuestions, ...fallbackQuestions];
+  const uniqueQuestions = [...new Set(allQuestions)];
+  const finalQuestions = uniqueQuestions.slice(0, 100); // Keep up to 100 questions
+  
+  if (finalQuestions.length === 0) {
+    console.log('No questions found even after fallback merge');
+    throw new Error('No questions could be extracted from the document');
+  }
+  
+  console.log(`Successfully extracted ${finalQuestions.length} questions for processing (${extractedQuestions.length} from AI + ${fallbackQuestions.length} fallback, deduplicated to ${finalQuestions.length})`);
+  return finalQuestions;
+}
     
     console.log(`Successfully extracted ${extractedQuestions.length} questions from OpenAI`);
     return extractedQuestions;
@@ -809,12 +825,38 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
       
       // Segment content using AI categorization
       console.log('Starting content segmentation...');
+      
+      // Stage 1: Initial content analysis (10-20% progress)
+      await supabaseClient
+        .from('tenders')
+        .update({ 
+          processing_stage: 'content_analysis',
+          progress: 10,
+          last_activity_at: new Date().toISOString()
+        })
+        .eq('id', tenderId);
+
       const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
       
       if (openAIApiKey) {
         segmentedContent = await categorizeContent(textToProcess, openAIApiKey);
         
         console.log(`Content segmented: ${segmentedContent.context.length} context items, ${segmentedContent.instructions.length} instruction items, ${segmentedContent.questions.length} question items, ${segmentedContent.other.length} other items`);
+        
+        // Stage 2: Content segmentation complete (20-30% progress)
+        await supabaseClient
+          .from('tenders')
+          .update({
+            extracted_context: segmentedContent.context,
+            extracted_instructions: segmentedContent.instructions,
+            extracted_questions: segmentedContent.questions,
+            extracted_other: segmentedContent.other,
+            content_segments_count: segmentedContent.context.length + segmentedContent.instructions.length + segmentedContent.questions.length + segmentedContent.other.length,
+            processing_stage: 'question_extraction',
+            progress: 25,
+            last_activity_at: new Date().toISOString()
+          })
+          .eq('id', tenderId);
         
         // Extract vendor-specific questions from segmented content
         questionsToProcess = await extractVendorQuestions(segmentedContent, openAIApiKey);
@@ -849,26 +891,17 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
         return;
       }
 
-      // Update tender with segmented content and questions count
-      const updateData: any = {
-        total_questions: questionsToProcess.length,
-        processing_stage: 'generating',
-        status: 'processing',
-        file_type_detected: fileType,
-        content_segments_count: segmentedContent ? Object.values(segmentedContent).flat().length : 0,
-        last_activity_at: new Date().toISOString()
-      };
-      
-      if (segmentedContent) {
-        updateData.extracted_context = segmentedContent.context;
-        updateData.extracted_instructions = segmentedContent.instructions; 
-        updateData.extracted_questions = segmentedContent.questions;
-        updateData.extracted_other = segmentedContent.other;
-      }
-      
+      // Stage 4: Start response generation (35% progress)  
       await supabaseClient
         .from('tenders')
-        .update(updateData)
+        .update({
+          total_questions: questionsToProcess.length,
+          processing_stage: 'generating_responses',
+          progress: 35,
+          file_type_detected: fileType,
+          content_segments_count: segmentedContent ? Object.values(segmentedContent).flat().length : 0,
+          last_activity_at: new Date().toISOString()
+        })
         .eq('id', tenderId);
 
     } else if (isSubsequentBatch && questions) {
@@ -1062,17 +1095,21 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
         }
       }, 1000); // 1 second delay between batches
     } else {
-      // All questions processed
-      console.log('All questions processed successfully');
+      // Stage 5: Final completion (100% progress)
+      console.log(`Finalizing tender processing. Total attempted: ${processedQuestions.length}/${questionsToProcess.length}`);
+      
       await supabaseClient
         .from('tenders')
         .update({
           status: 'completed',
           processing_stage: 'completed',
           progress: 100,
+          processed_questions: processedQuestions.length,
           last_activity_at: new Date().toISOString()
         })
         .eq('id', tenderId);
+
+      console.log(`Successfully processed tender with ${processedQuestions.length} questions`);
     }
 
   } catch (error) {
