@@ -587,18 +587,18 @@ const NewTender = () => {
         .eq('id', tenderId)
         .single();
       
-      if (!fetchError && finalTender) {
-        console.log('Final tender status:', finalTender);
-        
-        if (finalTender.status === 'draft' && !channelUnsubscribed) {
-          // If processing is complete but we haven't navigated yet
-          setProcessingProgress(100);
-          await fetchTenderResponses(tenderId);
-        } else if (finalTender.status === 'error' && !channelUnsubscribed) {
-          setProcessingError(finalTender.error_message || 'Processing failed');
-          setProcessing(false);
-          setCurrentStep('upload');
-        }
+        if (!fetchError && finalTender) {
+          console.log('Final tender status:', finalTender);
+          
+          if (finalTender.status === 'completed' && !channelUnsubscribed) {
+            // If processing is complete but we haven't navigated yet
+            setProcessingProgress(100);
+            await fetchTenderResponses(tenderId);
+          } else if (finalTender.status === 'error' && !channelUnsubscribed) {
+            setProcessingError(finalTender.error_message || 'Processing failed');
+            setProcessing(false);
+            setCurrentStep('upload');
+          }
       }
 
     } catch (error) {

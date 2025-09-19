@@ -1039,32 +1039,29 @@ async function processTenderInBackground(tenderId: string, extractedText?: strin
     const remainingQuestions = questionsToProcess.length - (batchStart + BATCH_SIZE);
     
     if (remainingQuestions > 0) {
-      // Schedule next batch processing
+      // Schedule next batch by invoking this edge function again (new instance)
       console.log(`Scheduling next batch: ${remainingQuestions} questions remaining`);
-      
-      // Call the function recursively for the next batch
-      setTimeout(async () => {
-        try {
-          await processTenderInBackground(
-            tenderId, 
-            undefined, // No need to pass text again
-            undefined, 
-            undefined, 
-            batchStart + BATCH_SIZE, 
-            questionsToProcess // Pass all questions
-          );
-        } catch (error) {
-          console.error('Error processing next batch');
-          await supabaseClient
-            .from('tenders')
-            .update({
-              status: 'error',
-              error_message: 'Error processing questions batch',
-              last_activity_at: new Date().toISOString()
-            })
-            .eq('id', tenderId);
-        }
-      }, 1000); // 1 second delay between batches
+      try {
+        // Fire-and-forget style invocation using service role client
+        await supabaseClient.functions.invoke('process-tender', {
+          body: {
+            tenderId,
+            batchStart: batchStart + BATCH_SIZE,
+            questions: questionsToProcess
+          }
+        });
+      } catch (e) {
+        console.error('Error scheduling next batch');
+        await supabaseClient
+          .from('tenders')
+          .update({
+            status: 'error',
+            error_message: 'Error scheduling next batch',
+            last_activity_at: new Date().toISOString()
+          })
+          .eq('id', tenderId);
+      }
+      return;
     } else {
       // Stage 5: Final completion (100% progress)
       console.log(`Finalizing tender processing. Total attempted: ${processedQuestions.length}/${questionsToProcess.length}`);
@@ -1430,21 +1427,20 @@ serve(async (req) => {
       });
     }
 
-    // Extract user ID from JWT (simplified - in production use proper JWT validation)
+    // Extract user info from JWT (basic decode, no verification)
     const token = authHeader.replace('Bearer ', '');
     let userId = 'anonymous';
-    
+    let isServiceRole = false;
     try {
-      // Decode JWT payload (Note: This is basic decoding, not verification)
       const payload = JSON.parse(atob(token.split('.')[1]));
       userId = payload.sub || 'anonymous';
+      isServiceRole = payload.role === 'service_role';
     } catch {
-      // If JWT decode fails, use anonymous but still allow processing
       userId = 'anonymous';
     }
 
-    // Check rate limit
-    if (!checkRateLimit(userId)) {
+    // Apply rate limiting only for non-service calls
+    if (!isServiceRole && !checkRateLimit(userId)) {
       return new Response(JSON.stringify({ 
         error: 'Rate limit exceeded. Maximum 10 requests per hour.' 
       }), {
