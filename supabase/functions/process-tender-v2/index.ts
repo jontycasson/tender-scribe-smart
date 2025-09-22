@@ -23,6 +23,12 @@ interface ProcessTenderResponse {
   status: string;
   message: string;
   error?: string;
+  enrichment?: {
+    companyProfile: any;
+    retrievedSnippets: any[];
+    documentContext: any[];
+    instructions: any[];
+  };
 }
 
 interface ProcessTenderRequest {
@@ -417,6 +423,157 @@ function regexOnlySegmentation(text: string): {
   return { questions, context, instructions };
 }
 
+// Fetch company profile with fallback values
+async function fetchCompanyProfile(companyProfileId: string, supabaseClient: any): Promise<any> {
+  console.log(`Fetching company profile: ${companyProfileId}`);
+  
+  try {
+    const { data: profile, error } = await supabaseClient
+      .from('company_profiles')
+      .select('*')
+      .eq('id', companyProfileId)
+      .single();
+
+    if (error || !profile) {
+      console.log('Company profile not found, using N/A placeholders');
+      return {
+        company_name: 'N/A',
+        industry: 'N/A',
+        team_size: 'N/A',
+        services_offered: ['N/A'],
+        specializations: 'N/A',
+        mission: 'N/A',
+        values: 'N/A',
+        policies: 'N/A',
+        past_projects: 'N/A',
+        accreditations: 'N/A',
+        years_in_business: 'N/A'
+      };
+    }
+
+    // Ensure all expected fields exist with fallbacks
+    return {
+      company_name: profile.company_name || 'N/A',
+      industry: profile.industry || 'N/A',
+      team_size: profile.team_size || 'N/A',
+      services_offered: profile.services_offered && profile.services_offered.length > 0 ? profile.services_offered : ['N/A'],
+      specializations: profile.specializations || 'N/A',
+      mission: profile.mission || 'N/A',
+      values: profile.values || 'N/A',
+      policies: profile.policies || 'N/A',
+      past_projects: profile.past_projects || 'N/A',
+      accreditations: profile.accreditations || 'N/A',
+      years_in_business: profile.years_in_business || 'N/A',
+      id: profile.id
+    };
+
+  } catch (error) {
+    console.error('Error fetching company profile:', error);
+    return {
+      company_name: 'N/A',
+      industry: 'N/A',
+      team_size: 'N/A',
+      services_offered: ['N/A'],
+      specializations: 'N/A',
+      mission: 'N/A',
+      values: 'N/A',
+      policies: 'N/A',
+      past_projects: 'N/A',
+      accreditations: 'N/A',
+      years_in_business: 'N/A'
+    };
+  }
+}
+
+// Perform vector search for questions using qa_memory
+async function performVectorSearch(questions: any[], companyProfileId: string, supabaseClient: any): Promise<any[]> {
+  const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!openAIApiKey) {
+    console.log('OpenAI API key not available for vector search');
+    return [];
+  }
+
+  const allSnippets = [];
+  
+  for (const question of questions.slice(0, 10)) { // Limit to first 10 questions for performance
+    try {
+      console.log(`Performing vector search for question ${question.question_number}`);
+      
+      // Generate embedding for the question
+      const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAIApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'text-embedding-3-small',
+          input: question.question_text
+        }),
+      });
+
+      if (!embeddingResponse.ok) {
+        console.error(`Embedding generation failed for question ${question.question_number}`);
+        continue;
+      }
+
+      const embeddingData = await embeddingResponse.json();
+      const questionEmbedding = embeddingData.data[0].embedding;
+
+      // Search for similar questions in qa_memory
+      const { data: matches, error: searchError } = await supabaseClient
+        .rpc('match_qa_memory', {
+          query_embedding: questionEmbedding,
+          company_id: companyProfileId,
+          match_threshold: 0.7,
+          match_count: 5
+        });
+
+      if (searchError) {
+        console.error(`Vector search error for question ${question.question_number}:`, searchError);
+        continue;
+      }
+
+      if (matches && matches.length > 0) {
+        console.log(`Found ${matches.length} similar snippets for question ${question.question_number}`);
+        
+        const questionSnippets = matches.map((match: any) => ({
+          question_number: question.question_number,
+          original_question: question.question_text,
+          similar_question: match.question,
+          answer: match.answer,
+          similarity: match.similarity,
+          confidence_score: match.confidence_score,
+          usage_count: match.usage_count
+        }));
+        
+        allSnippets.push(...questionSnippets);
+      }
+
+    } catch (error) {
+      console.error(`Error in vector search for question ${question.question_number}:`, error);
+      continue;
+    }
+  }
+
+  console.log(`Vector search completed. Found ${allSnippets.length} total snippets`);
+  return allSnippets;
+}
+
+// Build enrichment context bundle
+function buildEnrichmentBundle(
+  companyProfile: any,
+  retrievedSnippets: any[],
+  segments: { questions: any[]; context: any[]; instructions: any[]; }
+): any {
+  return {
+    companyProfile,
+    retrievedSnippets,
+    documentContext: segments.context,
+    instructions: segments.instructions
+  };
+}
+
 // Main processing function
 async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTenderResponse> {
   const supabaseClient = createClient(
@@ -491,15 +648,43 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
     console.log('Starting text segmentation...');
     const segments = await segmentContent(rawText);
     
-    // Update response with segmentation results
+    // Perform enrichment with company profile and vector search
+    console.log('Starting enrichment phase...');
+    let enrichment = null;
+    
+    try {
+      // Fetch company profile
+      const companyProfile = await fetchCompanyProfile(tender.company_profile_id, supabaseClient);
+      console.log(`Company profile fetched: ${companyProfile.company_name}`);
+      
+      // Perform vector search for questions (only if we have questions)
+      let retrievedSnippets = [];
+      if (segments.questions.length > 0) {
+        console.log(`Performing vector search for ${segments.questions.length} questions...`);
+        retrievedSnippets = await performVectorSearch(segments.questions, tender.company_profile_id, supabaseClient);
+      }
+      
+      // Build enrichment bundle
+      enrichment = buildEnrichmentBundle(companyProfile, retrievedSnippets, segments);
+      console.log(`Enrichment completed: ${retrievedSnippets.length} retrieved snippets`);
+      
+    } catch (enrichmentError) {
+      console.error('Enrichment failed, continuing without enrichment:', enrichmentError);
+      // Continue processing without enrichment rather than failing completely
+    }
+    
+    // Update response with segmentation and enrichment results
     response.success = true;
     response.rawText = rawText;
     response.segments = segments;
     response.questionsFound = segments.questions.length;
     response.contextFound = segments.context.length;
     response.instructionsFound = segments.instructions.length;
-    response.status = 'segmented';
-    response.message = `Successfully processed ${rawText.length} characters: ${segments.questions.length} questions, ${segments.context.length} context items, ${segments.instructions.length} instructions`;
+    response.enrichment = enrichment;
+    response.status = enrichment ? 'enriched' : 'segmented';
+    response.message = enrichment 
+      ? `Successfully processed ${rawText.length} characters: ${segments.questions.length} questions, ${segments.context.length} context items, ${segments.instructions.length} instructions, ${enrichment.retrievedSnippets.length} retrieved snippets`
+      : `Successfully processed ${rawText.length} characters: ${segments.questions.length} questions, ${segments.context.length} context items, ${segments.instructions.length} instructions`;
 
     console.log(`Successfully processed tender ${request.tenderId}: ${segments.questions.length} questions found`);
     
