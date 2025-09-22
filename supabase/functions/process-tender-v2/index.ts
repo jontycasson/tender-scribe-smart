@@ -560,6 +560,244 @@ async function performVectorSearch(questions: any[], companyProfileId: string, s
   return allSnippets;
 }
 
+// Generate answers for questions using OpenAI
+async function generateAnswersForBatch(
+  questionBatch: any[],
+  enrichment: any,
+  openAIApiKey: string
+): Promise<any[]> {
+  const systemPrompt = `You are an expert tender response writer specializing in UK government and corporate procurement. Generate professional, compliant responses in UK English.
+
+RESPONSE REQUIREMENTS:
+- Use UK English spelling and terminology throughout
+- Be concise: short answers for closed questions, 1-2 paragraphs for open questions
+- No padding or filler content
+- Professional, formal tone appropriate for UK procurement
+- Be specific and factual based on provided company information
+
+COMPLIANCE RULES:
+- Follow all MANDATORY COMPLIANCE requirements exactly
+- Address evaluation criteria mentioned in instructions
+- Use company-specific information where available
+- If information is unavailable, state this clearly rather than making assumptions
+
+Return JSON format:
+{
+  "answers": [
+    {
+      "question": "exact question text from input",
+      "answer": "professional UK English response"
+    }
+  ]
+}`;
+
+  const questions = questionBatch.map(q => `Q${q.question_number}: ${q.question_text}`).join('\n\n');
+  
+  let userPrompt = `COMPANY PROFILE:
+Company Name: ${enrichment.companyProfile.company_name}
+Industry: ${enrichment.companyProfile.industry}
+Team Size: ${enrichment.companyProfile.team_size}
+Services Offered: ${Array.isArray(enrichment.companyProfile.services_offered) ? enrichment.companyProfile.services_offered.join(', ') : enrichment.companyProfile.services_offered}
+Specialisations: ${enrichment.companyProfile.specializations}
+Mission: ${enrichment.companyProfile.mission}
+Values: ${enrichment.companyProfile.values}
+Past Projects: ${enrichment.companyProfile.past_projects}
+Years in Business: ${enrichment.companyProfile.years_in_business}`;
+
+  if (enrichment.companyProfile.accreditations && enrichment.companyProfile.accreditations !== 'N/A') {
+    userPrompt += `\nAccreditations: ${enrichment.companyProfile.accreditations}`;
+  }
+  if (enrichment.companyProfile.policies && enrichment.companyProfile.policies !== 'N/A') {
+    userPrompt += `\nPolicies: ${enrichment.companyProfile.policies}`;
+  }
+
+  // Add retrieved snippets if available
+  if (enrichment.retrievedSnippets && enrichment.retrievedSnippets.length > 0) {
+    userPrompt += `\n\nRELEVANT EXPERIENCE (from previous tenders):`;
+    enrichment.retrievedSnippets.forEach((snippet: any, index: number) => {
+      userPrompt += `\n${index + 1}. Q: ${snippet.similar_question}\n   A: ${snippet.answer}`;
+    });
+  }
+
+  // Add document context if available
+  if (enrichment.documentContext && enrichment.documentContext.length > 0) {
+    userPrompt += `\n\nTENDER CONTEXT:`;
+    enrichment.documentContext.forEach((context: any) => {
+      userPrompt += `\n- ${context.text || context}`;
+    });
+  }
+
+  // Add mandatory compliance instructions
+  if (enrichment.instructions && enrichment.instructions.length > 0) {
+    userPrompt += `\n\nMANDATORY COMPLIANCE REQUIREMENTS:`;
+    enrichment.instructions.forEach((instruction: any) => {
+      userPrompt += `\n- ${instruction.text || instruction}`;
+    });
+  }
+
+  userPrompt += `\n\nQUESTIONS TO ANSWER:\n${questions}
+
+Please provide professional responses to each question based on the company profile and requirements above.`;
+
+  // Try generating answers with retry logic
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      console.log(`Generating answers for batch (attempt ${attempt})`);
+      
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAIApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-5-mini-2025-08-07',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          max_completion_tokens: 2000,
+          response_format: { type: "json_object" }
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices[0]?.message?.content;
+      
+      if (!content) {
+        throw new Error('No content returned from OpenAI');
+      }
+
+      const result = JSON.parse(content);
+      
+      if (!result.answers || !Array.isArray(result.answers)) {
+        throw new Error('Invalid response format: missing answers array');
+      }
+
+      console.log(`Successfully generated ${result.answers.length} answers`);
+      return result.answers;
+
+    } catch (error) {
+      console.error(`Answer generation attempt ${attempt} failed:`, error);
+      
+      if (attempt === 2) {
+        // Final attempt failed, return fallback answers
+        console.log('Using fallback answers for failed batch');
+        return questionBatch.map(q => ({
+          question: q.question_text,
+          answer: 'We are unable to provide a detailed response to this question at this time. Please contact us directly to discuss your specific requirements and how our services can meet your needs.'
+        }));
+      }
+    }
+  }
+
+  return [];
+}
+
+// Progressive save to tender_responses table
+async function saveAnswerBatch(
+  answers: any[],
+  questionBatch: any[],
+  tenderId: string,
+  companyProfileId: string,
+  supabaseClient: any
+): Promise<void> {
+  console.log(`Saving ${answers.length} answers to database`);
+  
+  for (let i = 0; i < answers.length && i < questionBatch.length; i++) {
+    const answer = answers[i];
+    const question = questionBatch[i];
+    
+    try {
+      const { error } = await supabaseClient
+        .from('tender_responses')
+        .upsert({
+          tender_id: tenderId,
+          company_profile_id: companyProfileId,
+          question: question.question_text,
+          question_index: question.question_number,
+          ai_generated_answer: answer.answer,
+          is_approved: false,
+          model_used: 'gpt-5-mini-2025-08-07',
+          question_type: 'standard',
+          response_length: answer.answer.length,
+          processing_time_ms: 0 // Will be updated by the frontend if needed
+        }, {
+          onConflict: 'tender_id,question_index'
+        });
+
+      if (error) {
+        console.error(`Error saving answer for question ${question.question_number}:`, error);
+      }
+    } catch (saveError) {
+      console.error(`Failed to save answer for question ${question.question_number}:`, saveError);
+    }
+  }
+}
+
+// Generate all answers with progressive saving
+async function generateAllAnswers(
+  segments: { questions: any[] },
+  enrichment: any,
+  tenderId: string,
+  companyProfileId: string,
+  supabaseClient: any
+): Promise<{ totalAnswers: number; batchesProcessed: number }> {
+  const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+  
+  if (!openAIApiKey) {
+    console.log('OpenAI API key not available for answer generation');
+    return { totalAnswers: 0, batchesProcessed: 0 };
+  }
+
+  if (!segments.questions || segments.questions.length === 0) {
+    console.log('No questions to process');
+    return { totalAnswers: 0, batchesProcessed: 0 };
+  }
+
+  const batchSize = 5; // Process 5 questions at a time for optimal performance
+  const batches = [];
+  
+  // Split questions into batches
+  for (let i = 0; i < segments.questions.length; i += batchSize) {
+    batches.push(segments.questions.slice(i, i + batchSize));
+  }
+
+  console.log(`Processing ${segments.questions.length} questions in ${batches.length} batches`);
+  
+  let totalAnswers = 0;
+  let batchesProcessed = 0;
+
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    const batch = batches[batchIndex];
+    console.log(`Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} questions)`);
+    
+    try {
+      // Generate answers for this batch
+      const answers = await generateAnswersForBatch(batch, enrichment, openAIApiKey);
+      
+      // Save answers to database
+      await saveAnswerBatch(answers, batch, tenderId, companyProfileId, supabaseClient);
+      
+      totalAnswers += answers.length;
+      batchesProcessed++;
+      
+      console.log(`Batch ${batchIndex + 1} completed: ${answers.length} answers saved`);
+      
+    } catch (batchError) {
+      console.error(`Error processing batch ${batchIndex + 1}:`, batchError);
+      // Continue with next batch rather than failing completely
+    }
+  }
+
+  console.log(`Answer generation complete: ${totalAnswers} answers generated in ${batchesProcessed} batches`);
+  return { totalAnswers, batchesProcessed };
+}
+
 // Build enrichment context bundle
 function buildEnrichmentBundle(
   companyProfile: any,
@@ -673,7 +911,41 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       // Continue processing without enrichment rather than failing completely
     }
     
-    // Update response with segmentation and enrichment results
+    // Generate answers if we have enrichment and questions
+    let answerStats = { totalAnswers: 0, batchesProcessed: 0 };
+    if (enrichment && segments.questions.length > 0) {
+      try {
+        console.log('Starting answer generation phase...');
+        answerStats = await generateAllAnswers(
+          segments, 
+          enrichment, 
+          request.tenderId, 
+          tender.company_profile_id, 
+          supabaseClient
+        );
+        
+        // Update tender status to draft if answers were generated
+        if (answerStats.totalAnswers > 0) {
+          await supabaseClient
+            .from('tenders')
+            .update({ 
+              status: 'draft',
+              processed_questions: answerStats.totalAnswers,
+              total_questions: segments.questions.length,
+              progress: 100
+            })
+            .eq('id', request.tenderId);
+          
+          console.log(`Tender ${request.tenderId} status updated to 'draft'`);
+        }
+        
+      } catch (answerError) {
+        console.error('Answer generation failed:', answerError);
+        // Continue without failing the entire process
+      }
+    }
+    
+    // Update response with final results
     response.success = true;
     response.rawText = rawText;
     response.segments = segments;
@@ -681,12 +953,24 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
     response.contextFound = segments.context.length;
     response.instructionsFound = segments.instructions.length;
     response.enrichment = enrichment;
-    response.status = enrichment ? 'enriched' : 'segmented';
-    response.message = enrichment 
-      ? `Successfully processed ${rawText.length} characters: ${segments.questions.length} questions, ${segments.context.length} context items, ${segments.instructions.length} instructions, ${enrichment.retrievedSnippets.length} retrieved snippets`
-      : `Successfully processed ${rawText.length} characters: ${segments.questions.length} questions, ${segments.context.length} context items, ${segments.instructions.length} instructions`;
+    
+    // Determine final status
+    let finalStatus = 'segmented';
+    if (enrichment) finalStatus = 'enriched';
+    if (answerStats.totalAnswers > 0) finalStatus = 'draft';
+    response.status = finalStatus;
+    
+    // Build comprehensive message
+    let message = `Successfully processed ${rawText.length} characters: ${segments.questions.length} questions, ${segments.context.length} context items, ${segments.instructions.length} instructions`;
+    if (enrichment) {
+      message += `, ${enrichment.retrievedSnippets.length} retrieved snippets`;
+    }
+    if (answerStats.totalAnswers > 0) {
+      message += `, ${answerStats.totalAnswers} answers generated`;
+    }
+    response.message = message;
 
-    console.log(`Successfully processed tender ${request.tenderId}: ${segments.questions.length} questions found`);
+    console.log(`Successfully processed tender ${request.tenderId}: ${finalStatus} status`);
     
     return response;
 
