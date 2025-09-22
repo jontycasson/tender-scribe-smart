@@ -132,19 +132,53 @@ function detectQuestions(text: string): QuestionItem[] {
 
   for (const line of lines) {
     // Skip very short lines
-    if (line.length < 10) continue;
+    if (line.length < 5) continue;
     
-    // Clean the line
+    // Clean the line but preserve original for context
     const cleanLine = line.replace(/^[\d\.\)\-\*\•\s]+/, '').trim();
     
-    // Question patterns
-    const isDirectQuestion = cleanLine.endsWith('?');
-    const isImperative = /^(describe|provide|explain|tell|list|outline|detail|specify|identify|confirm|do you|can you|will you|have you|are you|state|indicate|demonstrate|show)/i.test(cleanLine);
-    const isNumberedItem = /^\d+[\.\)]/.test(line) && cleanLine.length > 20;
-    const isBulletedItem = /^[\*\•\-]/.test(line) && cleanLine.length > 20;
-    const isRequestPhrase = /please|kindly|we require|we need|you should|you must|required to/i.test(cleanLine);
+    if (cleanLine.length < 5) continue;
     
-    if (isDirectQuestion || isImperative || isNumberedItem || isBulletedItem || isRequestPhrase) {
+    // Enhanced question patterns
+    const isDirectQuestion = cleanLine.endsWith('?');
+    const isImperative = /^(describe|provide|explain|tell|list|outline|detail|specify|identify|confirm|do you|can you|will you|have you|are you|state|indicate|demonstrate|show|what|when|where|why|how|which)/i.test(cleanLine);
+    const isNumberedItem = /^\d+[\.\)]/.test(line) && cleanLine.length > 10;
+    const isBulletedItem = /^[\*\•\-]/.test(line) && cleanLine.length > 10;
+    const isRequestPhrase = /please|kindly|we require|we need|you should|you must|required to|include|submit|attach|upload/i.test(cleanLine);
+    const isQuestion = /^(what|when|where|why|how|which|who)/i.test(cleanLine);
+    
+    if (isDirectQuestion || isImperative || isNumberedItem || isBulletedItem || isRequestPhrase || isQuestion) {
+      questions.push({
+        question_number: questionNumber++,
+        question_text: cleanLine
+      });
+    }
+  }
+
+  return questions;
+}
+
+// More aggressive question detection for when standard patterns fail
+function detectQuestionsAggressive(text: string): QuestionItem[] {
+  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+  const questions: QuestionItem[] = [];
+  let questionNumber = 1;
+
+  for (const line of lines) {
+    // Skip very short lines
+    if (line.length < 3) continue;
+    
+    const cleanLine = line.replace(/^[\d\.\)\-\*\•\s]+/, '').trim();
+    
+    if (cleanLine.length < 3) continue;
+    
+    // Very aggressive - assume most content lines are questions in question-only documents
+    // Skip obvious headers, footers, or navigation
+    const isHeader = /^(page|section|chapter|\d+\s*$|table of contents|appendix)/i.test(cleanLine);
+    const isFooter = /^(page \d+|copyright|©|\d{4}|confidential)/i.test(cleanLine);
+    const isNavigation = /^(next|previous|back|forward|home|menu)/i.test(cleanLine);
+    
+    if (!isHeader && !isFooter && !isNavigation) {
       questions.push({
         question_number: questionNumber++,
         question_text: cleanLine
@@ -158,18 +192,27 @@ function detectQuestions(text: string): QuestionItem[] {
 // ============= CONTENT SEGMENTATION =============
 
 async function segmentContent(text: string, openAIApiKey: string): Promise<SegmentedContent> {
-  const systemPrompt = `You are a document analysis expert. Categorize tender document content into three categories:
+  const systemPrompt = `You are a document analysis expert specializing in question detection. Your primary job is to identify ALL items that require vendor responses.
 
-1. CONTEXT: Background information, objectives, scope, buyer narrative, company information
-2. INSTRUCTIONS: Compliance rules, evaluation criteria, submission requirements, formatting guidelines  
-3. QUESTIONS: Items requiring vendor responses (questions, requirements, requests for information)
+QUESTION DETECTION (PRIORITY #1):
+Identify ANY content that asks for information, including:
+- Direct questions ending with "?"
+- Imperatives: "Describe...", "Provide...", "Explain...", "List...", "Outline...", "Detail...", "Tell us..."
+- Requirements: "You must...", "Please include...", "Required to..."
+- Numbered/bulleted lists asking for information
+- Requests: "We need...", "We require...", "State your..."
+- YES/NO questions: "Do you have...", "Can you...", "Will you...", "Are you..."
 
-FLEXIBLE HANDLING:
-- For full RFP documents: Extract all three categories
-- For simple question lists: Context/Instructions may be empty - focus on Questions
-- Questions can be direct questions (?), imperatives (Describe..., Provide...), or numbered requirements
-- Extract questions EXACTLY as written - no paraphrasing
-- ALWAYS return all three arrays, even if some are empty
+SECONDARY CATEGORIZATION:
+- CONTEXT: Background, objectives, scope, company info (only if clearly informational)
+- INSTRUCTIONS: Formatting rules, submission requirements, evaluation criteria (only if clearly procedural)
+
+CRITICAL RULES:
+- Be AGGRESSIVE in detecting questions - when in doubt, classify as a question
+- Extract questions EXACTLY as written (no paraphrasing)
+- For simple question lists, focus entirely on questions - context/instructions will be empty
+- ALWAYS return all three arrays, even if empty
+- Every numbered or bulleted item that asks for information is a question
 
 Return JSON format:
 {
@@ -178,11 +221,13 @@ Return JSON format:
   "questions": [{"question_number": 1, "question_text": "exact question text"}]
 }`;
 
-  const userPrompt = `Categorize this document content:
+  const userPrompt = `Analyze this document and extract ALL questions/requests for vendor information:
 
 ${text}`;
 
   try {
+    console.log('Starting content segmentation with text length:', text.length);
+    
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -201,12 +246,20 @@ ${text}`;
     });
 
     if (!response.ok) {
-      console.error('OpenAI segmentation failed:', response.status, await response.text());
-      throw new Error('Segmentation failed');
+      const errorText = await response.text();
+      console.error('OpenAI segmentation failed:', response.status, errorText);
+      throw new Error(`OpenAI API error: ${response.status}`);
     }
 
     const data = await response.json();
-    const result = JSON.parse(data.choices[0]?.message?.content || '{}');
+    const content = data.choices[0]?.message?.content;
+    
+    if (!content) {
+      throw new Error('No content returned from OpenAI');
+    }
+    
+    console.log('OpenAI segmentation response:', content);
+    const result = JSON.parse(content);
     
     // Ensure structured questions format
     let questions: QuestionItem[] = [];
@@ -217,9 +270,19 @@ ${text}`;
         }
         return {
           question_number: q.question_number || index + 1,
-          question_text: q.question_text || q
+          question_text: q.question_text || String(q)
         };
       });
+    }
+
+    console.log(`OpenAI detected ${questions.length} questions`);
+    
+    // If OpenAI found no questions, fall back to pattern detection
+    if (questions.length === 0) {
+      console.log('OpenAI found no questions, trying pattern detection fallback');
+      const patternQuestions = detectQuestions(text);
+      questions = patternQuestions;
+      console.log(`Pattern detection found ${questions.length} questions`);
     }
 
     return {
@@ -229,14 +292,31 @@ ${text}`;
     };
 
   } catch (error) {
-    console.error('Content segmentation failed, using fallback detection:', error);
-    // Fallback: Use pattern-based question detection
+    console.error('OpenAI segmentation failed, using pattern detection fallback:', error);
+    
+    // Enhanced fallback: Use pattern-based question detection
     const detectedQuestions = detectQuestions(text);
+    console.log(`Fallback pattern detection found ${detectedQuestions.length} questions`);
+    
+    // If still no questions found, try more aggressive pattern matching
+    if (detectedQuestions.length === 0) {
+      const aggressiveQuestions = detectQuestionsAggressive(text);
+      console.log(`Aggressive pattern detection found ${aggressiveQuestions.length} questions`);
+      
+      return {
+        context: [],
+        instructions: [],
+        questions: aggressiveQuestions.length > 0 ? aggressiveQuestions : [{ 
+          question_number: 1, 
+          question_text: "Please describe your company's capabilities and experience relevant to this opportunity." 
+        }]
+      };
+    }
     
     return {
       context: [],
       instructions: [],
-      questions: detectedQuestions.length > 0 ? detectedQuestions : [{ question_number: 1, question_text: "Please describe your company's capabilities and experience relevant to this opportunity." }]
+      questions: detectedQuestions
     };
   }
 }
