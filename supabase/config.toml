@@ -30,6 +30,9 @@ port = 54322
 [functions.process-tender]
 verify_jwt = true
 
+[functions.process-tender-v2]
+verify_jwt = true
+
 [functions.export-tender]  
 verify_jwt = true
 
