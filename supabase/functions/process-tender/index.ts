@@ -27,7 +27,12 @@ interface ProcessTenderRequest {
 interface SegmentedContent {
   context: string[];
   instructions: string[];
-  questions: string[];
+  questions: { question_number: number; question_text: string }[];
+}
+
+interface QuestionItem {
+  question_number: number;
+  question_text: string;
 }
 
 // ============= FILE HANDLING =============
@@ -118,30 +123,62 @@ async function extractTextWithOCR(filePath: string, supabaseClient: any): Promis
   }
 }
 
+// ============= QUESTION DETECTION =============
+
+function detectQuestions(text: string): QuestionItem[] {
+  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+  const questions: QuestionItem[] = [];
+  let questionNumber = 1;
+
+  for (const line of lines) {
+    // Skip very short lines
+    if (line.length < 10) continue;
+    
+    // Clean the line
+    const cleanLine = line.replace(/^[\d\.\)\-\*\•\s]+/, '').trim();
+    
+    // Question patterns
+    const isDirectQuestion = cleanLine.endsWith('?');
+    const isImperative = /^(describe|provide|explain|tell|list|outline|detail|specify|identify|confirm|do you|can you|will you|have you|are you|state|indicate|demonstrate|show)/i.test(cleanLine);
+    const isNumberedItem = /^\d+[\.\)]/.test(line) && cleanLine.length > 20;
+    const isBulletedItem = /^[\*\•\-]/.test(line) && cleanLine.length > 20;
+    const isRequestPhrase = /please|kindly|we require|we need|you should|you must|required to/i.test(cleanLine);
+    
+    if (isDirectQuestion || isImperative || isNumberedItem || isBulletedItem || isRequestPhrase) {
+      questions.push({
+        question_number: questionNumber++,
+        question_text: cleanLine
+      });
+    }
+  }
+
+  return questions;
+}
+
 // ============= CONTENT SEGMENTATION =============
 
 async function segmentContent(text: string, openAIApiKey: string): Promise<SegmentedContent> {
-  const systemPrompt = `You are a document analysis expert. Your task is to categorize content from tender documents into exactly three categories:
+  const systemPrompt = `You are a document analysis expert. Categorize tender document content into three categories:
 
 1. CONTEXT: Background information, objectives, scope, buyer narrative, company information
-2. INSTRUCTIONS: Compliance rules, evaluation criteria, submission requirements, formatting guidelines
-3. QUESTIONS: Exact vendor questions that require answers from bidders
+2. INSTRUCTIONS: Compliance rules, evaluation criteria, submission requirements, formatting guidelines  
+3. QUESTIONS: Items requiring vendor responses (questions, requirements, requests for information)
 
-CRITICAL REQUIREMENTS:
-- Extract questions EXACTLY as worded - do not paraphrase or modify
-- A question is anything that asks the vendor to provide information, describe something, or confirm something
-- Include sub-questions and numbered items that require vendor responses
-- Context and instructions may be empty arrays - that's perfectly fine
+FLEXIBLE HANDLING:
+- For full RFP documents: Extract all three categories
+- For simple question lists: Context/Instructions may be empty - focus on Questions
+- Questions can be direct questions (?), imperatives (Describe..., Provide...), or numbered requirements
+- Extract questions EXACTLY as written - no paraphrasing
 - ALWAYS return all three arrays, even if some are empty
 
-Respond with a JSON object in this exact format:
+Return JSON format:
 {
   "context": ["item1", "item2"],
   "instructions": ["instruction1", "instruction2"], 
-  "questions": ["question1", "question2"]
+  "questions": [{"question_number": 1, "question_text": "exact question text"}]
 }`;
 
-  const userPrompt = `Please categorize this tender document content:
+  const userPrompt = `Categorize this document content:
 
 ${text}`;
 
@@ -164,28 +201,42 @@ ${text}`;
     });
 
     if (!response.ok) {
-      console.error('OpenAI segmentation failed:', response.status);
+      console.error('OpenAI segmentation failed:', response.status, await response.text());
       throw new Error('Segmentation failed');
     }
 
     const data = await response.json();
     const result = JSON.parse(data.choices[0]?.message?.content || '{}');
     
-    // Ensure all required arrays exist
+    // Ensure structured questions format
+    let questions: QuestionItem[] = [];
+    if (Array.isArray(result.questions)) {
+      questions = result.questions.map((q: any, index: number) => {
+        if (typeof q === 'string') {
+          return { question_number: index + 1, question_text: q };
+        }
+        return {
+          question_number: q.question_number || index + 1,
+          question_text: q.question_text || q
+        };
+      });
+    }
+
     return {
       context: Array.isArray(result.context) ? result.context : [],
       instructions: Array.isArray(result.instructions) ? result.instructions : [],
-      questions: Array.isArray(result.questions) ? result.questions : []
+      questions
     };
 
   } catch (error) {
-    console.error('Content segmentation failed:', error);
-    // Fallback: treat entire text as questions
-    const lines = text.split('\n').filter(line => line.trim().length > 10);
+    console.error('Content segmentation failed, using fallback detection:', error);
+    // Fallback: Use pattern-based question detection
+    const detectedQuestions = detectQuestions(text);
+    
     return {
       context: [],
       instructions: [],
-      questions: lines
+      questions: detectedQuestions.length > 0 ? detectedQuestions : [{ question_number: 1, question_text: "Please describe your company's capabilities and experience relevant to this opportunity." }]
     };
   }
 }
@@ -193,7 +244,7 @@ ${text}`;
 // ============= RESPONSE GENERATION =============
 
 async function generateResponse(
-  question: string, 
+  question: QuestionItem, 
   companyProfile: any, 
   context: string[], 
   instructions: string[], 
@@ -235,7 +286,7 @@ Years in Business: ${companyProfile.years_in_business}`;
     userPrompt += `\n\nSubmission Instructions:\n${instructions.join('\n')}`;
   }
 
-  userPrompt += `\n\nQuestion: ${question}
+  userPrompt += `\n\nQuestion ${question.question_number}: ${question.question_text}
 
 Please provide a comprehensive response to this question based on the company profile and any relevant context provided.`;
 
@@ -353,13 +404,15 @@ async function processTender(tenderId: string): Promise<any> {
     console.log(`Segmented content: ${segmentedContent.context.length} context, ${segmentedContent.instructions.length} instructions, ${segmentedContent.questions.length} questions`);
 
     // STEP 3: Store questions in database
+    const questionsForStorage = segmentedContent.questions.map(q => q.question_text);
+    
     await supabaseClient
       .from('tenders')
       .update({
-        parsed_data: { questions: segmentedContent.questions },
+        parsed_data: { questions: questionsForStorage },
         extracted_context: segmentedContent.context,
         extracted_instructions: segmentedContent.instructions,
-        extracted_questions: segmentedContent.questions,
+        extracted_questions: questionsForStorage,
         total_questions: segmentedContent.questions.length,
         processing_stage: 'generating_responses',
         progress: 50,
@@ -393,7 +446,7 @@ async function processTender(tenderId: string): Promise<any> {
     // STEP 4: Generate responses for each question
     for (let i = 0; i < segmentedContent.questions.length; i++) {
       const question = segmentedContent.questions[i];
-      console.log(`Generating response for question ${i + 1}/${segmentedContent.questions.length}`);
+      console.log(`Generating response for question ${question.question_number}/${segmentedContent.questions.length}: ${question.question_text.substring(0, 50)}...`);
 
       const response = await generateResponse(
         question, 
@@ -409,8 +462,8 @@ async function processTender(tenderId: string): Promise<any> {
         .insert({
           tender_id: tenderId,
           company_profile_id: companyProfile.id,
-          question: question,
-          question_index: i,
+          question: question.question_text,
+          question_index: question.question_number - 1,
           ai_generated_answer: response,
           model_used: 'gpt-5-mini-2025-08-07',
           response_length: response.length,
@@ -441,15 +494,19 @@ async function processTender(tenderId: string): Promise<any> {
       .eq('id', tenderId);
 
     // Return summary
-    const questionPreviews = segmentedContent.questions.slice(0, 3);
+    const questionPreviews = segmentedContent.questions.slice(0, 3).map(q => q.question_text);
+    const hasContext = segmentedContent.context.length > 0;
+    const hasInstructions = segmentedContent.instructions.length > 0;
     
     return {
       success: true,
       tenderId,
       questionsFound: segmentedContent.questions.length,
       questionPreviews: questionPreviews,
+      hasContext,
+      hasInstructions,
       status: 'draft',
-      message: `Successfully processed ${segmentedContent.questions.length} questions`
+      message: `Successfully processed ${segmentedContent.questions.length} questions${hasContext ? ' with context' : ''}${hasInstructions ? ' and instructions' : ''}`
     };
 
   } catch (error) {
