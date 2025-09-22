@@ -66,8 +66,11 @@ const processingStages = [
 
 const MAX_INLINE_TEXT_BYTES = 400 * 1024; // 400KB threshold for inline text
 
+// Feature flag for new processor
+const USE_V2_PROCESSOR = true;
+
 const NewTender = () => {
-  console.log('NewTender component mounting');
+  console.log('NewTender component mounting, USE_V2_PROCESSOR:', USE_V2_PROCESSOR);
   
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -566,10 +569,13 @@ const NewTender = () => {
     
     try {
       // Call edge function to process document
-      console.log('Calling process-tender edge function...');
+      const processorName = USE_V2_PROCESSOR ? 'process-tender-v2' : 'process-tender';
+      console.log(`Calling ${processorName} edge function...`);
       
-      const { data, error } = await supabase.functions.invoke('process-tender', {
-        body: { tenderId, filePath, extractedText, extractedTextPath }
+      const { data, error } = await supabase.functions.invoke(processorName, {
+        body: USE_V2_PROCESSOR 
+          ? { tenderId, filePath, extractedText }
+          : { tenderId, filePath, extractedText, extractedTextPath }
       });
 
       if (error) {
@@ -577,28 +583,67 @@ const NewTender = () => {
         throw error;
       }
 
-      // Fallback: Check tender status after edge function completes
-      // This handles cases where the real-time update might be missed
-      console.log('Edge function completed, checking final status...');
-      
-      const { data: finalTender, error: fetchError } = await supabase
-        .from('tenders')
-        .select('status, progress, error_message')
-        .eq('id', tenderId)
-        .single();
-      
-        if (!fetchError && finalTender) {
-          console.log('Final tender status:', finalTender);
+      // Handle v2 processor response format
+      if (USE_V2_PROCESSOR && data) {
+        console.log('V2 processor response:', data);
+        
+        // Update content preview with v2 segmentation data
+        if (data.segments) {
+          setContentPreview({
+            totalQuestions: data.questionsFound || 0,
+            sampleQuestions: data.segments.questions?.slice(0, 3).map((q: any) => q.question_text || q) || [],
+            segmentCounts: {
+              questions: data.questionsFound || 0,
+              context: data.contextFound || 0,
+              instructions: data.instructionsFound || 0,
+              other: 0
+            }
+          });
+        }
+        
+        // If v2 processing is complete (status: 'draft'), navigate to review
+        if (data.status === 'draft') {
+          console.log('V2 processing completed with draft status');
+          setProcessingProgress(100);
+          setProcessing(false);
+          setUploading(false);
+          setCurrentStep('review');
+          await fetchTenderResponses(tenderId);
           
-          if (finalTender.status === 'completed' && !channelUnsubscribed) {
-            // If processing is complete but we haven't navigated yet
-            setProcessingProgress(100);
-            await fetchTenderResponses(tenderId);
-          } else if (finalTender.status === 'error' && !channelUnsubscribed) {
-            setProcessingError(finalTender.error_message || 'Processing failed');
-            setProcessing(false);
-            setCurrentStep('upload');
+          // Unsubscribe from real-time updates
+          if (!channelUnsubscribed) {
+            supabase.removeChannel(channel);
+            channelUnsubscribed = true;
           }
+          return; // Exit early for v2 processor
+        }
+      }
+
+      // Original processor fallback logic (only for v1)
+      if (!USE_V2_PROCESSOR) {
+        // Fallback: Check tender status after edge function completes
+        // This handles cases where the real-time update might be missed
+        console.log('Edge function completed, checking final status...');
+        
+        const { data: finalTender, error: fetchError } = await supabase
+          .from('tenders')
+          .select('status, progress, error_message')
+          .eq('id', tenderId)
+          .single();
+        
+          if (!fetchError && finalTender) {
+            console.log('Final tender status:', finalTender);
+            
+            if (finalTender.status === 'completed' && !channelUnsubscribed) {
+              // If processing is complete but we haven't navigated yet
+              setProcessingProgress(100);
+              await fetchTenderResponses(tenderId);
+            } else if (finalTender.status === 'error' && !channelUnsubscribed) {
+              setProcessingError(finalTender.error_message || 'Processing failed');
+              setProcessing(false);
+              setCurrentStep('upload');
+            }
+        }
       }
 
     } catch (error) {
@@ -1048,6 +1093,13 @@ const NewTender = () => {
                   </Button>
                 ) : (
                   <div className="space-y-6">
+                    {USE_V2_PROCESSOR && (
+                      <div className="flex items-center justify-center">
+                        <Badge variant="outline" className="text-xs">
+                          Using V2 Enhanced Processor
+                        </Badge>
+                      </div>
+                    )}
                     <ProcessingProgress
                       stages={processingStages}
                       currentStageIndex={currentProcessingStage}
@@ -1120,9 +1172,16 @@ const NewTender = () => {
                 {contentPreview && (
                   <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20">
                     <CardHeader>
-                      <CardTitle className="flex items-center">
-                        <FileText className="h-5 w-5 mr-2" />
-                        Document Analysis Summary
+                      <CardTitle className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <FileText className="h-5 w-5 mr-2" />
+                          Document Analysis Summary
+                        </div>
+                        {USE_V2_PROCESSOR && (
+                          <Badge variant="secondary" className="text-xs">
+                            V2 Processor
+                          </Badge>
+                        )}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
