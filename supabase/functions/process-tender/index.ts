@@ -40,8 +40,10 @@ interface QuestionItem {
 function detectFileType(filename: string): { type: string, needsOCR: boolean } {
   const extension = filename.toLowerCase().split('.').pop() || '';
   
-  const textFileTypes = ['docx', 'xlsx', 'txt', 'csv'];
-  const ocrFileTypes = ['pdf', 'jpg', 'jpeg', 'png', 'tiff', 'tif'];
+  // Only TXT files can be read directly as text
+  const textFileTypes = ['txt'];
+  // Everything else needs OCR, including DOCX and XLSX
+  const ocrFileTypes = ['pdf', 'jpg', 'jpeg', 'png', 'tiff', 'tif', 'docx', 'xlsx', 'doc', 'xls'];
   
   if (textFileTypes.includes(extension)) {
     return { type: extension, needsOCR: false };
@@ -54,6 +56,8 @@ function detectFileType(filename: string): { type: string, needsOCR: boolean } {
 
 async function extractTextFromFile(filePath: string, supabaseClient: any): Promise<string> {
   try {
+    console.log('Extracting text from file:', filePath);
+    
     // Download the file from storage
     const { data: fileData, error: fileError } = await supabaseClient.storage
       .from('tender-documents')
@@ -63,15 +67,51 @@ async function extractTextFromFile(filePath: string, supabaseClient: any): Promi
       throw new Error('Failed to download file');
     }
 
-    // Simple text extraction for supported formats
-    if (filePath.toLowerCase().endsWith('.txt')) {
-      return await fileData.text();
+    const fileName = filePath.toLowerCase();
+    
+    // Handle different file types properly
+    if (fileName.endsWith('.txt')) {
+      const text = await fileData.text();
+      console.log('Extracted text from TXT file, length:', text.length);
+      return sanitizeText(text);
     }
     
-    // For other text-based files, attempt to extract plain text
-    // This is a simplified implementation - in production you'd use proper parsers
-    const text = await fileData.text();
-    return sanitizeText(text);
+    if (fileName.endsWith('.docx')) {
+      // For DOCX files, we need to use a proper parser
+      // Since mammoth isn't available in Deno edge functions, we'll need to handle this differently
+      // For now, let's try a different approach for DOCX files
+      try {
+        const arrayBuffer = await fileData.arrayBuffer();
+        console.log('DOCX file size:', arrayBuffer.byteLength);
+        
+        // DOCX files are ZIP archives - we can't parse them as plain text
+        // We should either:
+        // 1. Use OCR on them (treat as non-readable)
+        // 2. Return an error and ask user to convert to TXT
+        console.log('DOCX file detected - this should be processed with OCR instead');
+        throw new Error('DOCX files require OCR processing - marking as non-readable');
+        
+      } catch (docxError) {
+        console.error('DOCX parsing failed:', docxError);
+        throw new Error('DOCX files require OCR processing');
+      }
+    }
+    
+    if (fileName.endsWith('.xlsx')) {
+      // Excel files also need special handling
+      console.log('XLSX file detected - this should be processed with OCR instead');
+      throw new Error('XLSX files require OCR processing');
+    }
+    
+    // For other text-based files, try reading as text
+    try {
+      const text = await fileData.text();
+      console.log('Extracted text from generic file, length:', text.length);
+      return sanitizeText(text);
+    } catch (textError) {
+      console.error('Failed to read as text:', textError);
+      throw new Error('File format not supported for direct text extraction');
+    }
     
   } catch (error) {
     console.error('Error extracting text from file:', error);
