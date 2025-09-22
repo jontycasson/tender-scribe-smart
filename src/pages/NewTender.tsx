@@ -565,17 +565,32 @@ const NewTender = () => {
       .subscribe();
     
     try {
-      // Call edge function to process document
-      console.log('Calling process-tender edge function...');
+      // Call n8n workflow to process document
+      console.log('Calling n8n workflow for tender processing...');
       
-      const { data, error } = await supabase.functions.invoke('process-tender', {
-        body: { tenderId, filePath, extractedText, extractedTextPath }
+      const n8nWebhookUrl = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://your-n8n-instance.com/webhook/process-tender';
+      
+      const response = await fetch(n8nWebhookUrl, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(import.meta.env.VITE_N8N_API_KEY && { 'Authorization': `Bearer ${import.meta.env.VITE_N8N_API_KEY}` })
+        },
+        body: JSON.stringify({ 
+          tenderId, 
+          filePath, 
+          extractedText, 
+          extractedTextPath 
+        })
       });
 
-      if (error) {
-        console.error('Edge function error:', error);
-        throw error;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Processing failed' }));
+        console.error('n8n workflow error:', errorData);
+        throw new Error(errorData.message || 'Processing failed');
       }
+
+      const data = await response.json();
 
       // Fallback: Check tender status after edge function completes
       // This handles cases where the real-time update might be missed
