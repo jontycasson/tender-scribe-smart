@@ -183,6 +183,240 @@ async function extractPdfText(fileData: Blob): Promise<string> {
   throw new Error('PDF processing requires OCR - feature coming soon');
 }
 
+// Text segmentation function
+async function segmentContent(rawText: string): Promise<{
+  questions: any[];
+  context: any[];
+  instructions: any[];
+}> {
+  const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+  
+  if (!openAIApiKey) {
+    console.log('OpenAI API key not configured, using regex-only segmentation');
+    return regexOnlySegmentation(rawText);
+  }
+
+  try {
+    // Step 1: Extract obvious questions using regex patterns
+    const obviousQuestions = extractObviousQuestions(rawText);
+    console.log(`Found ${obviousQuestions.length} obvious questions via regex`);
+
+    // Step 2: Split text into overlapping chunks for AI processing
+    const chunks = splitTextIntoChunks(rawText, 2000, 200);
+    console.log(`Split text into ${chunks.length} chunks for AI processing`);
+
+    // Step 3: Process each chunk with OpenAI
+    const allSegments = {
+      questions: [...obviousQuestions],
+      context: [],
+      instructions: []
+    };
+
+    for (let i = 0; i < chunks.length; i++) {
+      console.log(`Processing chunk ${i + 1}/${chunks.length}`);
+      
+      try {
+        const chunkSegments = await classifyChunkWithAI(chunks[i], openAIApiKey);
+        
+        // Merge results
+        allSegments.questions.push(...chunkSegments.questions);
+        allSegments.context.push(...chunkSegments.context);
+        allSegments.instructions.push(...chunkSegments.instructions);
+        
+      } catch (chunkError) {
+        console.error(`Error processing chunk ${i + 1}:`, chunkError);
+        // Continue with other chunks
+      }
+    }
+
+    // Step 4: Deduplicate questions
+    allSegments.questions = deduplicateQuestions(allSegments.questions);
+    
+    console.log(`Final segmentation: ${allSegments.questions.length} questions, ${allSegments.context.length} context items, ${allSegments.instructions.length} instructions`);
+    
+    return allSegments;
+
+  } catch (error) {
+    console.error('AI segmentation failed, falling back to regex-only:', error);
+    return regexOnlySegmentation(rawText);
+  }
+}
+
+// Extract obvious questions using regex patterns
+function extractObviousQuestions(text: string): any[] {
+  const questions = [];
+  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+  let questionNumber = 1;
+
+  for (const line of lines) {
+    if (line.length < 10) continue; // Skip very short lines
+    
+    const cleanLine = line.replace(/^[\d\.\)\-\*\•\s]+/, '').trim();
+    if (cleanLine.length < 10) continue;
+    
+    // Regex patterns for obvious questions
+    const isDirectQuestion = cleanLine.endsWith('?');
+    const isNumberedQuestion = /^(question\s*\d+|q\d+|q\.\d+)/i.test(line);
+    const isImperative = /^(describe|provide|explain|tell|list|outline|detail|specify|identify|confirm|state|indicate|demonstrate|show|what|when|where|why|how|which|do you|can you|will you|have you|are you)/i.test(cleanLine);
+    const isBulletQuestion = /^[\*\•\-]\s*(what|when|where|why|how|which|describe|provide|explain|tell|list|do you|can you)/i.test(line);
+    
+    if (isDirectQuestion || isNumberedQuestion || isImperative || isBulletQuestion) {
+      questions.push({
+        question_number: questionNumber++,
+        question_text: cleanLine,
+        source: 'regex',
+        confidence: isDirectQuestion ? 0.9 : 0.7
+      });
+    }
+  }
+
+  return questions;
+}
+
+// Split text into overlapping chunks
+function splitTextIntoChunks(text: string, chunkSize: number, overlap: number): string[] {
+  const chunks = [];
+  let start = 0;
+  
+  while (start < text.length) {
+    const end = Math.min(start + chunkSize, text.length);
+    const chunk = text.slice(start, end);
+    chunks.push(chunk);
+    
+    if (end >= text.length) break;
+    start = end - overlap; // Overlap for context continuity
+  }
+  
+  return chunks;
+}
+
+// Classify a text chunk using OpenAI JSON mode
+async function classifyChunkWithAI(chunk: string, apiKey: string): Promise<{
+  questions: any[];
+  context: any[];
+  instructions: any[];
+}> {
+  const systemPrompt = `You are a document analyzer that classifies text paragraphs into categories.
+
+CLASSIFICATION RULES:
+- QUESTION: Any text that asks for information, requests data, or requires a vendor response
+- CONTEXT: Background information, company details, project scope, objectives
+- INSTRUCTION: Formatting rules, submission requirements, evaluation criteria, compliance rules
+- OTHER: Headers, footers, navigation, irrelevant content (ignore these)
+
+CRITICAL REQUIREMENTS:
+- Extract text EXACTLY as written - no paraphrasing
+- If no items exist for a category, return empty array
+- Be conservative - only classify clear matches
+- Focus on substance, not format
+
+Return JSON format:
+{
+  "questions": [{"text": "exact question text", "confidence": 0.8}],
+  "context": [{"text": "exact context text", "confidence": 0.8}],
+  "instructions": [{"text": "exact instruction text", "confidence": 0.8}]
+}`;
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-5-mini-2025-08-07',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Classify this text:\n\n${chunk}` }
+      ],
+      max_completion_tokens: 1500,
+      response_format: { type: "json_object" }
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenAI API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices[0]?.message?.content;
+  
+  if (!content) {
+    throw new Error('No content returned from OpenAI');
+  }
+
+  const result = JSON.parse(content);
+  
+  // Normalize and add question numbers
+  const questions = (result.questions || []).map((q: any, index: number) => ({
+    question_number: index + 1,
+    question_text: typeof q === 'string' ? q : q.text,
+    source: 'ai',
+    confidence: typeof q === 'object' ? q.confidence : 0.8
+  }));
+
+  return {
+    questions,
+    context: result.context || [],
+    instructions: result.instructions || []
+  };
+}
+
+// Deduplicate questions based on similarity
+function deduplicateQuestions(questions: any[]): any[] {
+  const deduplicated = [];
+  const seen = new Set();
+  
+  for (const question of questions) {
+    const text = question.question_text.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+    const key = text.substring(0, 50); // Use first 50 chars as similarity key
+    
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduplicated.push(question);
+    }
+  }
+  
+  // Renumber questions
+  return deduplicated.map((q, index) => ({
+    ...q,
+    question_number: index + 1
+  }));
+}
+
+// Fallback regex-only segmentation
+function regexOnlySegmentation(text: string): {
+  questions: any[];
+  context: any[];
+  instructions: any[];
+} {
+  const questions = extractObviousQuestions(text);
+  
+  // Basic heuristics for context and instructions
+  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 20);
+  const context = [];
+  const instructions = [];
+  
+  for (const line of lines) {
+    const lowerLine = line.toLowerCase();
+    
+    // Instruction patterns
+    if (lowerLine.includes('submit') || lowerLine.includes('format') || 
+        lowerLine.includes('requirement') || lowerLine.includes('must') ||
+        lowerLine.includes('should') || lowerLine.includes('criteria')) {
+      instructions.push({ text: line, source: 'regex' });
+    }
+    // Context patterns (but not questions)
+    else if (!line.endsWith('?') && 
+             (lowerLine.includes('background') || lowerLine.includes('objective') ||
+              lowerLine.includes('scope') || lowerLine.includes('about'))) {
+      context.push({ text: line, source: 'regex' });
+    }
+  }
+  
+  return { questions, context, instructions };
+}
+
 // Main processing function
 async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTenderResponse> {
   const supabaseClient = createClient(
@@ -253,13 +487,21 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       return response;
     }
 
-    // Update response with success
+    // Segment the extracted text
+    console.log('Starting text segmentation...');
+    const segments = await segmentContent(rawText);
+    
+    // Update response with segmentation results
     response.success = true;
     response.rawText = rawText;
-    response.status = 'extracted';
-    response.message = `Successfully extracted ${rawText.length} characters of text`;
+    response.segments = segments;
+    response.questionsFound = segments.questions.length;
+    response.contextFound = segments.context.length;
+    response.instructionsFound = segments.instructions.length;
+    response.status = 'segmented';
+    response.message = `Successfully processed ${rawText.length} characters: ${segments.questions.length} questions, ${segments.context.length} context items, ${segments.instructions.length} instructions`;
 
-    console.log(`Successfully extracted ${rawText.length} characters from tender ${request.tenderId}`);
+    console.log(`Successfully processed tender ${request.tenderId}: ${segments.questions.length} questions found`);
     
     return response;
 
