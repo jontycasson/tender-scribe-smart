@@ -603,7 +603,15 @@ const NewTender = () => {
         
         // If v2 processing is complete (status: 'draft'), navigate to review
         if (data.status === 'draft') {
-          console.log('V2 processing completed with draft status');
+          console.log('V2 processing completed with draft status', data);
+          
+          // Store v2 processing results for display
+          if (data.answers && data.answers.length > 0) {
+            console.log(`V2 generated ${data.answers.length} answers`);
+            // Store answers in localStorage for immediate display
+            localStorage.setItem(`v2-answers-${tenderId}`, JSON.stringify(data.answers));
+          }
+          
           setProcessingProgress(100);
           setProcessing(false);
           setUploading(false);

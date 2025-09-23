@@ -753,38 +753,40 @@ async function saveAnswerBatch(
   tenderId: string,
   companyProfileId: string,
   supabaseClient: any
-): Promise<void> {
-  console.log(`Saving ${answers.length} answers to database`);
+): Promise<any> {
+  const batchAnswers = [];
   
   for (let i = 0; i < answers.length && i < questionBatch.length; i++) {
     const answer = answers[i];
     const question = questionBatch[i];
     
-    try {
-      const { error } = await supabaseClient
-        .from('tender_responses')
-        .upsert({
-          tender_id: tenderId,
-          company_profile_id: companyProfileId,
-          question: question.question_text,
-          question_index: question.question_number,
-          ai_generated_answer: answer.answer,
-          is_approved: false,
-          model_used: 'gpt-5-mini-2025-08-07',
-          question_type: 'standard',
-          response_length: answer.answer.length,
-          processing_time_ms: 0 // Will be updated by the frontend if needed
-        }, {
-          onConflict: 'tender_id,question_index'
-        });
-
-      if (error) {
-        console.error(`Error saving answer for question ${question.question_number}:`, error);
-      }
-    } catch (saveError) {
-      console.error(`Failed to save answer for question ${question.question_number}:`, saveError);
-    }
+    batchAnswers.push({
+      tender_id: tenderId,
+      company_profile_id: companyProfileId,
+      question: question.question_text,
+      question_index: question.question_number,
+      ai_generated_answer: answer.answer,
+      is_approved: false,
+      model_used: 'gpt-5-mini-2025-08-07',
+      question_type: 'standard',
+      response_length: answer.answer.length,
+      processing_time_ms: 0
+    });
   }
+  
+  const { data, error } = await supabaseClient
+    .from("tender_responses")
+    .upsert(batchAnswers, {
+      onConflict: "tender_id,question_index"
+    });
+
+  if (error) {
+    console.error("❌ Error saving answers batch:", error, batchAnswers);
+    return { error, unsaved: batchAnswers };
+  }
+
+  console.log(`✅ Saved ${data?.length ?? 0} answers for tender ${tenderId}`);
+  return data;
 }
 
 // Generate all answers with progressive saving
@@ -794,17 +796,17 @@ async function generateAllAnswers(
   tenderId: string,
   companyProfileId: string,
   supabaseClient: any
-): Promise<{ totalAnswers: number; batchesProcessed: number }> {
+): Promise<{ totalAnswers: number; batchesProcessed: number; allAnswers: any[] }> {
   const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
   
   if (!openAIApiKey) {
     console.log('OpenAI API key not available for answer generation');
-    return { totalAnswers: 0, batchesProcessed: 0 };
+    return { totalAnswers: 0, batchesProcessed: 0, allAnswers: [] };
   }
 
   if (!segments.questions || segments.questions.length === 0) {
     console.log('No questions to process');
-    return { totalAnswers: 0, batchesProcessed: 0 };
+    return { totalAnswers: 0, batchesProcessed: 0, allAnswers: [] };
   }
 
   const batchSize = 5; // Process 5 questions at a time for optimal performance
@@ -819,6 +821,7 @@ async function generateAllAnswers(
   
   let totalAnswers = 0;
   let batchesProcessed = 0;
+  let allAnswers: any[] = [];
 
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
     const batch = batches[batchIndex];
@@ -829,12 +832,24 @@ async function generateAllAnswers(
       const answers = await generateAnswersForBatch(batch, enrichment, openAIApiKey);
       
       // Save answers to database
-      await saveAnswerBatch(answers, batch, tenderId, companyProfileId, supabaseClient);
+      const saveResult = await saveAnswerBatch(answers, batch, tenderId, companyProfileId, supabaseClient);
       
-      totalAnswers += answers.length;
-      batchesProcessed++;
-      
-      console.log(`Batch ${batchIndex + 1} completed: ${answers.length} answers saved`);
+      if (!saveResult.error) {
+        // Collect answers for response envelope
+        for (let i = 0; i < answers.length && i < batch.length; i++) {
+          allAnswers.push({
+            question: batch[i].question_text,
+            question_number: batch[i].question_number,
+            answer: answers[i].answer
+          });
+        }
+        
+        totalAnswers += answers.length;
+        batchesProcessed++;
+        console.log(`Batch ${batchIndex + 1} completed: ${answers.length} answers saved`);
+      } else {
+        console.error(`Batch ${batchIndex + 1} save failed:`, saveResult.error);
+      }
       
     } catch (batchError) {
       console.error(`Error processing batch ${batchIndex + 1}:`, batchError);
@@ -843,7 +858,7 @@ async function generateAllAnswers(
   }
 
   console.log(`Answer generation complete: ${totalAnswers} answers generated in ${batchesProcessed} batches`);
-  return { totalAnswers, batchesProcessed };
+  return { totalAnswers, batchesProcessed, allAnswers };
 }
 
 // Build enrichment context bundle
@@ -1008,7 +1023,7 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
     }
 
     // Step 5: Generate answers if we have enrichment and questions
-    let answerStats = { totalAnswers: 0, batchesProcessed: 0 };
+    let answerStats = { totalAnswers: 0, batchesProcessed: 0, allAnswers: [] };
     if (enrichment && segments.questions.length > 0) {
       try {
         console.log(`[DIAGNOSTIC] Starting answer generation for ${segments.questions.length} questions...`);
@@ -1025,7 +1040,7 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
         // Update tender status to draft if answers were generated
         if (answerStats.totalAnswers > 0) {
           try {
-            await supabaseClient
+            const { error: statusError } = await supabaseClient
               .from('tenders')
               .update({ 
                 status: 'draft',
@@ -1035,7 +1050,12 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
               })
               .eq('id', request.tenderId);
             
-            console.log(`[DIAGNOSTIC] Tender status updated to 'draft'`);
+            if (statusError) {
+              console.error("❌ Failed to update tender status:", statusError);
+            } else {
+              console.log(`✅ Tender ${request.tenderId} marked as draft`);
+            }
+            
             response.status = 'draft';
           } catch (updateError) {
             console.error(`[DIAGNOSTIC] Failed to update tender status:`, updateError);
@@ -1048,6 +1068,9 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
         // Continue without failing the entire process
       }
     }
+
+    // Add answers to JSON response for visibility in Review UI
+    response.answers = answerStats.allAnswers;
 
     // Step 6: Finalize successful response
     response.success = true;
