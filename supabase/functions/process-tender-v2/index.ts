@@ -23,6 +23,7 @@ interface ProcessTenderResponse {
   status: string;
   message: string;
   error?: string;
+  answers?: any[]; // Add answers array for frontend debugging
   enrichment?: {
     companyProfile: any;
     retrievedSnippets: any[];
@@ -416,26 +417,41 @@ Return JSON format:
   };
 }
 
-// Deduplicate questions based on similarity
+// Normalize and deduplicate questions based on similarity
 function deduplicateQuestions(questions: any[]): any[] {
   const deduplicated = [];
   const seen = new Set();
   
   for (const question of questions) {
-    const text = question.question_text.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
-    const key = text.substring(0, 50); // Use first 50 chars as similarity key
+    // Normalize question text: trim whitespace, collapse multiple spaces
+    const normalizedText = question.question_text
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, '');
     
-    if (!seen.has(key)) {
-      seen.add(key);
-      deduplicated.push(question);
+    // Skip empty or very short questions
+    if (normalizedText.length < 10) continue;
+    
+    // Use normalized text as deduplication key
+    if (!seen.has(normalizedText)) {
+      seen.add(normalizedText);
+      // Keep original text but store normalized version for deduplication
+      deduplicated.push({
+        ...question,
+        question_text: question.question_text.trim().replace(/\s+/g, ' ')
+      });
     }
   }
   
-  // Renumber questions
-  return deduplicated.map((q, index) => ({
+  // Reindex questions sequentially starting at 1
+  const reindexed = deduplicated.map((q, index) => ({
     ...q,
     question_number: index + 1
   }));
+  
+  console.log(`✅ Question normalization complete: ${questions.length} → ${reindexed.length} unique questions`);
+  return reindexed;
 }
 
 // Fallback regex-only segmentation
@@ -614,7 +630,9 @@ async function generateAnswersForBatch(
   enrichment: any,
   openAIApiKey: string
 ): Promise<any[]> {
-  const systemPrompt = `You are an expert tender response writer specializing in UK government and corporate procurement. Generate professional, compliant responses in UK English.
+  const systemPrompt = `Use the following company profile context when answering. Personalise each response to reflect this company. If profile fields are missing, use "N/A" but do not hallucinate.
+
+You are an expert tender response writer specializing in UK government and corporate procurement. Generate professional, compliant responses in UK English.
 
 RESPONSE REQUIREMENTS:
 - Use UK English spelling and terminology throughout
@@ -622,6 +640,7 @@ RESPONSE REQUIREMENTS:
 - No padding or filler content
 - Professional, formal tone appropriate for UK procurement
 - Be specific and factual based on provided company information
+- Always reference company-specific details where relevant (services, industry, experience, etc.)
 
 COMPLIANCE RULES:
 - Follow all MANDATORY COMPLIANCE requirements exactly
@@ -897,16 +916,18 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
     rawText: '',
     status: 'failed',
     message: 'Processing not started',
-    error: undefined
+    error: undefined,
+    answers: [] // Add answers array for debugging
   };
 
+  // Top-level try/catch to ensure function always returns JSON
   try {
     console.log(`[DIAGNOSTIC] Starting tender processing: ${request.tenderId}`);
 
     // Step 1: Validate tender exists
     let tender = null;
     try {
-      console.log(`[DIAGNOSTIC] Validating tender exists...`);
+      console.log(`[DIAGNOSTIC] ✅ Starting Step 1: Validating tender exists...`);
       const { data: tenderData, error: tenderError } = await supabaseClient
         .from('tenders')
         .select('*')
@@ -916,23 +937,24 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       if (tenderError || !tenderData) {
         response.error = 'Tender not found in database';
         response.message = 'The specified tender ID does not exist';
-        console.error(`[DIAGNOSTIC] Tender validation failed: ${tenderError?.message || 'No data'}`);
+        console.error(`[DIAGNOSTIC] ❌ Tender validation failed: ${tenderError?.message || 'No data'}`);
         return response;
       }
       
       tender = tenderData;
-      console.log(`[DIAGNOSTIC] Tender validated - Company: ${tender.company_profile_id}`);
+      console.log(`[DIAGNOSTIC] ✅ Tender validated - Company: ${tender.company_profile_id}`);
       
     } catch (error) {
       response.error = 'Database connection failed';
       response.message = 'Unable to connect to database to validate tender';
-      console.error(`[DIAGNOSTIC] Database error during tender validation:`, error);
+      console.error(`[DIAGNOSTIC] ❌ Database error during tender validation:`, error);
       return response;
     }
 
     // Step 2: Extract text from file or use provided text
     let rawText = '';
     try {
+      console.log(`[DIAGNOSTIC] ✅ Starting Step 2: Text extraction...`);
       if (request.extractedText && request.extractedText.trim().length >= 50) {
         console.log(`[DIAGNOSTIC] Using provided extracted text - ${request.extractedText.length} characters`);
         rawText = request.extractedText.trim();
@@ -946,7 +968,7 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       } else {
         response.error = 'No text source provided';
         response.message = 'Either extractedText or filePath must be provided';
-        console.error(`[DIAGNOSTIC] No text source in request`);
+        console.error(`[DIAGNOSTIC] ❌ No text source in request`);
         return response;
       }
 
@@ -954,26 +976,26 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       if (rawText.length < 50) {
         response.error = 'Insufficient text content';
         response.message = `Document contains only ${rawText.length} characters - minimum 50 required`;
-        console.error(`[DIAGNOSTIC] Text too short: ${rawText.length} characters`);
+        console.error(`[DIAGNOSTIC] ❌ Text too short: ${rawText.length} characters`);
         return response;
       }
       
-      console.log(`[DIAGNOSTIC] Text extraction phase complete - ${rawText.length} characters available`);
+      console.log(`[DIAGNOSTIC] ✅ File parsed - ${rawText.length} characters available`);
       
     } catch (extractError) {
       response.error = 'Text extraction failed';
       response.message = `Unable to extract text: ${extractError.message}`;
-      console.error(`[DIAGNOSTIC] Text extraction error:`, extractError);
+      console.error(`[DIAGNOSTIC] ❌ Text extraction error:`, extractError);
       return response;
     }
 
     // Step 3: Segment the extracted text
     let segments = { questions: [], context: [], instructions: [] };
     try {
-      console.log(`[DIAGNOSTIC] Starting text segmentation...`);
+      console.log(`[DIAGNOSTIC] ✅ Starting Step 3: Text segmentation...`);
       segments = await segmentContent(rawText);
       
-      console.log(`[DIAGNOSTIC] Segmentation complete - Questions: ${segments.questions.length}, Context: ${segments.context.length}, Instructions: ${segments.instructions.length}`);
+      console.log(`[DIAGNOSTIC] ✅ Segmentation complete - Questions: ${segments.questions.length}, Context: ${segments.context.length}, Instructions: ${segments.instructions.length}`);
       
       // Update response with segmentation progress
       response.segments = segments;
@@ -986,7 +1008,7 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
     } catch (segmentError) {
       response.error = 'Text segmentation failed';
       response.message = `Unable to analyze document structure: ${segmentError.message}`;
-      console.error(`[DIAGNOSTIC] Segmentation error:`, segmentError);
+      console.error(`[DIAGNOSTIC] ❌ Segmentation error:`, segmentError);
       // Keep the raw text and partial success
       response.rawText = rawText;
       return response;
@@ -995,7 +1017,7 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
     // Step 4: Perform enrichment (company profile + vector search)
     let enrichment = null;
     try {
-      console.log(`[DIAGNOSTIC] Starting enrichment phase...`);
+      console.log(`[DIAGNOSTIC] ✅ Starting Step 4: Enrichment phase...`);
       
       // Fetch company profile
       const companyProfile = await fetchCompanyProfile(tender.company_profile_id, supabaseClient);
@@ -1011,13 +1033,13 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       
       // Build enrichment bundle
       enrichment = buildEnrichmentBundle(companyProfile, retrievedSnippets, segments);
-      console.log(`[DIAGNOSTIC] Enrichment bundle created`);
+      console.log(`[DIAGNOSTIC] ✅ Enrichment complete`);
       
       response.enrichment = enrichment;
       response.status = 'enriched';
       
     } catch (enrichmentError) {
-      console.error(`[DIAGNOSTIC] Enrichment failed (continuing):`, enrichmentError);
+      console.error(`[DIAGNOSTIC] ❌ Enrichment failed (continuing):`, enrichmentError);
       // Continue processing without enrichment rather than failing completely
       response.status = 'segmented';
     }
@@ -1026,7 +1048,7 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
     let answerStats = { totalAnswers: 0, batchesProcessed: 0, allAnswers: [] };
     if (enrichment && segments.questions.length > 0) {
       try {
-        console.log(`[DIAGNOSTIC] Starting answer generation for ${segments.questions.length} questions...`);
+        console.log(`[DIAGNOSTIC] ✅ Starting Step 5: Answer generation for ${segments.questions.length} questions...`);
         answerStats = await generateAllAnswers(
           segments, 
           enrichment, 
@@ -1035,71 +1057,87 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
           supabaseClient
         );
         
-        console.log(`[DIAGNOSTIC] Answer generation complete - ${answerStats.totalAnswers} answers in ${answerStats.batchesProcessed} batches`);
-        
-        // Update tender status to draft if answers were generated
-        if (answerStats.totalAnswers > 0) {
-          try {
-            const { error: statusError } = await supabaseClient
-              .from('tenders')
-              .update({ 
-                status: 'draft',
-                processed_questions: answerStats.totalAnswers,
-                total_questions: segments.questions.length,
-                progress: 100
-              })
-              .eq('id', request.tenderId);
-            
-            if (statusError) {
-              console.error("❌ Failed to update tender status:", statusError);
-            } else {
-              console.log(`✅ Tender ${request.tenderId} marked as draft`);
-            }
-            
-            response.status = 'draft';
-          } catch (updateError) {
-            console.error(`[DIAGNOSTIC] Failed to update tender status:`, updateError);
-            // Don't fail the entire process for this
-          }
-        }
+        console.log(`[DIAGNOSTIC] ✅ Answers generated - ${answerStats.totalAnswers} answers in ${answerStats.batchesProcessed} batches`);
         
       } catch (answerError) {
-        console.error(`[DIAGNOSTIC] Answer generation failed (continuing):`, answerError);
+        console.error(`[DIAGNOSTIC] ❌ Answer generation failed (continuing):`, answerError);
         // Continue without failing the entire process
       }
+    }
+
+    // Step 6: Always update tender status to draft and finalize
+    try {
+      console.log(`[DIAGNOSTIC] ✅ Starting Step 6: Finalizing tender status...`);
+      
+      const { error: statusError } = await supabaseClient
+        .from('tenders')
+        .update({ 
+          status: 'draft',
+          processed_questions: answerStats.totalAnswers,
+          total_questions: segments.questions.length,
+          progress: 100
+        })
+        .eq('id', request.tenderId);
+      
+      if (statusError) {
+        console.error("❌ Failed to update tender status:", statusError);
+      } else {
+        console.log(`✅ DB save complete - Tender ${request.tenderId} marked as draft`);
+      }
+      
+      response.status = 'draft';
+    } catch (updateError) {
+      console.error(`[DIAGNOSTIC] ❌ Failed to update tender status:`, updateError);
+      // Don't fail the entire process for this
     }
 
     // Add answers to JSON response for visibility in Review UI
     response.answers = answerStats.allAnswers;
 
-    // Step 6: Finalize successful response
+    // Final response success state
     response.success = true;
     
-    // Determine final status if not already set
-    if (response.status === 'enriched' && answerStats.totalAnswers === 0) {
-      response.status = 'enriched';
-    }
+    // Build comprehensive message with unique question count
+    console.log(`[DIAGNOSTIC] ✅ Processing complete - ${segments.questions.length} unique questions detected and saved`);
     
-    // Build comprehensive message
-    let message = `Successfully processed ${rawText.length} characters: ${segments.questions.length} questions, ${segments.context.length} context items, ${segments.instructions.length} instructions`;
+    let message = `Successfully processed ${rawText.length} characters: ${segments.questions.length} unique questions, ${segments.context.length} context items, ${segments.instructions.length} instructions`;
     if (enrichment) {
       message += `, ${enrichment.retrievedSnippets.length} retrieved snippets`;
     }
     if (answerStats.totalAnswers > 0) {
-      message += `, ${answerStats.totalAnswers} answers generated`;
+      message += `, ${answerStats.totalAnswers} personalized answers generated`;
     }
     response.message = message;
 
-    console.log(`[DIAGNOSTIC] Processing complete - Status: ${response.status}, Success: ${response.success}`);
+    console.log(`[DIAGNOSTIC] ✅ Final Status: ${response.status}, Success: ${response.success}`);
     return response;
 
   } catch (fatalError) {
-    // Catch any unexpected errors and return safe response
+    // Top-level catch ensures function always returns JSON, even on unexpected failures
+    console.error(`[DIAGNOSTIC] ❌ Fatal error in processTenderV2:`, fatalError);
+    
+    // Always set status to failed and update database
+    try {
+      const supabaseClient = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      );
+      
+      await supabaseClient
+        .from('tenders')
+        .update({ status: 'failed' })
+        .eq('id', request.tenderId);
+        
+      console.log(`[DIAGNOSTIC] Tender ${request.tenderId} marked as failed due to fatal error`);
+    } catch (dbError) {
+      console.error(`[DIAGNOSTIC] Failed to update tender status to failed:`, dbError);
+    }
+    
     response.success = false;
     response.status = 'failed';
     response.error = 'Unexpected processing error';
-    response.message = `An unexpected error occurred: ${fatalError.message}`;
-    console.error(`[DIAGNOSTIC] Fatal error in processTenderV2:`, fatalError);
+    response.message = `Processing failed due to unexpected error: ${fatalError.message}`;
+    
     return response;
   }
 }
