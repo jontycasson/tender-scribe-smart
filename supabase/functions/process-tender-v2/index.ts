@@ -422,35 +422,75 @@ function deduplicateQuestions(questions: any[]): any[] {
   const deduplicated = [];
   const seen = new Set();
   
+  console.log(`Starting deduplication with ${questions.length} raw questions`);
+  
   for (const question of questions) {
-    // Normalize question text: trim whitespace, collapse multiple spaces
-    const normalizedText = question.question_text
+    let questionText = question.question_text || '';
+    
+    // Step 1: Clean and normalize the text
+    let cleanText = questionText
       .trim()
-      .replace(/\s+/g, ' ')
+      .replace(/\s+/g, ' '); // Collapse multiple spaces
+    
+    // Step 2: Strip leading numeric or bullet labels 
+    // Remove patterns like "1.", "Q2:", "##", "2)", "Question 1:", "(a)", "a)", etc.
+    cleanText = cleanText
+      .replace(/^(\d+[\.\)\-]?\s*)/i, '') // "1.", "2)", "3-", etc.
+      .replace(/^(q\d*[\.\:\)\-]?\s*)/i, '') // "Q1:", "Q.", "Q2)", etc.
+      .replace(/^(question\s*\d*[\.\:\)\-]?\s*)/i, '') // "Question 1:", "Question:", etc.
+      .replace(/^([\#\*\•\-\+\>\◦]\s*)/g, '') // Bullets: "#", "*", "•", "-", "+", ">", "◦"
+      .replace(/^(\([a-zA-Z0-9]+\)\s*)/i, '') // "(a)", "(1)", "(i)", etc.
+      .replace(/^([a-zA-Z]\)?\s*)/i, '') // "a)", "b)", "A)", etc.
+      .trim();
+    
+    // Skip if text becomes too short after cleaning
+    if (cleanText.length < 10) {
+      console.log(`Skipping short question after cleanup: "${questionText}" -> "${cleanText}"`);
+      continue;
+    }
+    
+    // Step 3: Create deduplication key (lowercase, no punctuation)
+    const dedupeKey = cleanText
       .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, '');
+      .replace(/[^a-z0-9\s]/g, ' ') // Remove all punctuation
+      .replace(/\s+/g, ' ') // Normalize spaces again
+      .trim();
     
-    // Skip empty or very short questions
-    if (normalizedText.length < 10) continue;
+    // Skip if deduplication key is too short
+    if (dedupeKey.length < 10) {
+      console.log(`Skipping question with short deduplication key: "${cleanText}"`);
+      continue;
+    }
     
-    // Use normalized text as deduplication key
-    if (!seen.has(normalizedText)) {
-      seen.add(normalizedText);
-      // Keep original text but store normalized version for deduplication
+    // Step 4: Check for duplicates using the key
+    if (!seen.has(dedupeKey)) {
+      seen.add(dedupeKey);
+      
+      // Store the cleaned version as the question text
       deduplicated.push({
         ...question,
-        question_text: question.question_text.trim().replace(/\s+/g, ' ')
+        question_text: cleanText,
+        original_text: questionText, // Preserve original for debugging
+        dedupe_key: dedupeKey // For debugging
       });
+    } else {
+      console.log(`Duplicate detected: "${cleanText}" (key: "${dedupeKey}")`);
     }
   }
   
-  // Reindex questions sequentially starting at 1
+  // Step 5: Re-index questions sequentially starting at 1
   const reindexed = deduplicated.map((q, index) => ({
     ...q,
     question_number: index + 1
   }));
   
-  console.log(`✅ Question normalization complete: ${questions.length} → ${reindexed.length} unique questions`);
+  console.log(`✅ Unique questions detected: ${reindexed.length} after deduplication (from original ${questions.length})`);
+  
+  // Log the final question list for debugging
+  reindexed.forEach((q, idx) => {
+    console.log(`Q${idx + 1}: "${q.question_text}"`);
+  });
+  
   return reindexed;
 }
 
