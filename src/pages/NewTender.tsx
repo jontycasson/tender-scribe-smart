@@ -39,7 +39,7 @@ interface Question {
 const processingStages = [
   {
     id: "uploading",
-    label: "Uploading file",
+    label: "Uploading document",
     description: "Securely uploading your tender document to our servers"
   },
   {
@@ -48,19 +48,14 @@ const processingStages = [
     description: "Using advanced OCR to extract text from your document"
   },
   {
-    id: "segmenting",
-    label: "Segmenting content",
-    description: "Categorizing content into context, instructions, and questions"
+    id: "processing",
+    label: "Processing & generating answers",
+    description: "Analyzing questions and creating AI-powered responses using your company profile"
   },
   {
-    id: "identifying",
-    label: "Identifying questions",
-    description: "Analyzing document structure to find vendor response items"
-  },
-  {
-    id: "generating",
-    label: "Generating responses",
-    description: "Creating AI-powered responses using your company profile and document context"
+    id: "complete",
+    label: "Complete",
+    description: "Processing finished successfully"
   }
 ];
 
@@ -388,6 +383,7 @@ const NewTender = () => {
       const fileName = `${companyProfile.id}/${timestamp}-${sanitizedName || file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
       
       console.log('Uploading file with secure path:', fileName);
+      setCurrentProcessingStage(0); // Uploading
       setProcessingProgress(25);
 
       // Log upload attempt for security monitoring
@@ -418,7 +414,8 @@ const NewTender = () => {
         .from('file_upload_logs')
         .insert({ ...uploadLog, upload_success: true });
         
-      setProcessingProgress(40);
+      setCurrentProcessingStage(1); // Extracting
+      setProcessingProgress(50);
 
       // Handle large extracted text by uploading to storage
       let extractedTextPath: string | undefined;
@@ -485,7 +482,8 @@ const NewTender = () => {
 
       console.log('Tender created successfully:', tenderData);
       setTenderId(tenderData.id);
-      setProcessingProgress(50);
+      setCurrentProcessingStage(2); // Processing & generating answers
+      setProcessingProgress(75);
       // Don't navigate to review step yet - wait for processing to complete
       
       // Process document with AI and generate responses
@@ -534,14 +532,19 @@ const NewTender = () => {
             }
           }
           
-          // Ensure progress only moves forward to prevent UI regression
-          if (tender.progress && tender.progress > processingProgress) {
-            setProcessingProgress(tender.progress);
+          // Update progress based on tender status - but keep our 4-stage model
+          if (tender.status === 'completed') {
+            setCurrentProcessingStage(3); // Complete
+            setProcessingProgress(100);
+          } else if (tender.status === 'processing') {
+            setCurrentProcessingStage(2); // Processing
+            setProcessingProgress(75);
           }
           
           if (tender.status === 'completed' || tender.processing_stage === 'completed') {
             // Processing complete, set progress to 100% and fetch responses
             console.log('Tender processing completed, updating UI');
+            setCurrentProcessingStage(3); // Complete
             setProcessingProgress(100);
             setProcessing(false);
             setUploading(false);
@@ -612,6 +615,7 @@ const NewTender = () => {
             localStorage.setItem(`v2-answers-${tenderId}`, JSON.stringify(data.answers));
           }
           
+          setCurrentProcessingStage(3); // Complete
           setProcessingProgress(100);
           setProcessing(false);
           setUploading(false);
@@ -644,6 +648,7 @@ const NewTender = () => {
             
             if (finalTender.status === 'completed' && !channelUnsubscribed) {
               // If processing is complete but we haven't navigated yet
+              setCurrentProcessingStage(3); // Complete
               setProcessingProgress(100);
               await fetchTenderResponses(tenderId);
             } else if (finalTender.status === 'error' && !channelUnsubscribed) {
@@ -706,6 +711,7 @@ const NewTender = () => {
       const displayError = errorDetails ? `${errorMessage} (${errorDetails})` : errorMessage;
       setProcessingError(displayError);
       setCurrentStep('upload');
+      // Note: Progress bar will show red color automatically via error prop in ProcessingProgress component
     } finally {
       // Only unsubscribe if we haven't already
       if (!channelUnsubscribed) {

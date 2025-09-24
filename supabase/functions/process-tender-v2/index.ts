@@ -435,12 +435,12 @@ function deduplicateQuestions(questions: any[]): any[] {
     // Step 2: Strip leading numeric or bullet labels 
     // Remove patterns like "1.", "Q2:", "##", "2)", "Question 1:", "(a)", "a)", etc.
     cleanText = cleanText
-      .replace(/^(\d+[\.\)\-]?\s*)/i, '') // "1.", "2)", "3-", etc.
-      .replace(/^(q\d*[\.\:\)\-]?\s*)/i, '') // "Q1:", "Q.", "Q2)", etc.
-      .replace(/^(question\s*\d*[\.\:\)\-]?\s*)/i, '') // "Question 1:", "Question:", etc.
-      .replace(/^([\#\*\•\-\+\>\◦]\s*)/g, '') // Bullets: "#", "*", "•", "-", "+", ">", "◦"
+      .replace(/^(\d+[\.\)\-]?\s+)/i, '') // "1.", "2)", "3-", etc. (require space after)
+      .replace(/^(q\d*[\.\:\)\-]?\s+)/i, '') // "Q1:", "Q.", "Q2)", etc. (require space after)
+      .replace(/^(question\s*\d*[\.\:\)\-]?\s+)/i, '') // "Question 1:", "Question:", etc. (require space after)
+      .replace(/^([\#\*\•\-\+\>\◦]\s+)/g, '') // Bullets: "#", "*", "•", "-", "+", ">", "◦" (require space after)
       .replace(/^(\([a-zA-Z0-9]+\)\s*)/i, '') // "(a)", "(1)", "(i)", etc.
-      .replace(/^([a-zA-Z]\)?\s*)/i, '') // "a)", "b)", "A)", etc.
+      .replace(/^([a-zA-Z][\.\)]\s+)/i, '') // "a.", "b)", "A.", etc. (only with punctuation + space)
       .trim();
     
     // Skip if text becomes too short after cleaning
