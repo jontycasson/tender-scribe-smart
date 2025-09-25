@@ -905,7 +905,7 @@ async function performVectorSearch(questions: any[], companyProfileId: string, s
   return allSnippets;
 }
 
-// Generate answers for questions using OpenAI with improved context handling
+// Generate answers for questions using OpenAI with payload size protection
 async function generateAnswersForBatch(
   questionBatch: any[],
   enrichment: any,
@@ -967,13 +967,23 @@ Years in Business: ${enrichment.companyProfile.years_in_business}`;
     });
   }
 
-  // Add document context if available - TRUNCATE TO ~1000 WORDS TO AVOID TOKEN OVERFLOW
+  // Calculate payload summary for debugging
+  const payloadSummary = {
+    questionsCount: questionBatch.length,
+    companyProfileChars: JSON.stringify(enrichment.companyProfile).length,
+    documentContextChars: enrichment.documentContext ? enrichment.documentContext.join(" ").length : 0,
+    instructionsChars: enrichment.instructions ? enrichment.instructions.join(" ").length : 0
+  };
+  console.log("🔎 Payload summary:", payloadSummary);
+
+  // Add document context with size protection - TRUNCATE TO ~800 WORDS IF TOTAL > 10,000 CHARS
   if (enrichment.documentContext && enrichment.documentContext.length > 0) {
     console.log(`Adding document context: ${enrichment.documentContext.length} items`);
     
     let contextText = '';
     let wordCount = 0;
-    const maxWords = 1000;
+    const totalChars = payloadSummary.companyProfileChars + payloadSummary.documentContextChars + payloadSummary.instructionsChars;
+    const maxWords = totalChars > 10000 ? 800 : 1000; // More aggressive truncation for large payloads
     
     for (const contextItem of enrichment.documentContext) {
       const itemText = typeof contextItem === 'string' ? contextItem : (contextItem.text || '');
@@ -986,7 +996,7 @@ Years in Business: ${enrichment.companyProfile.years_in_business}`;
           const partialText = itemText.split(/\s+/).slice(0, remainingWords).join(' ') + '...';
           contextText += `\n- ${partialText}`;
         }
-        console.log(`Context truncated at ${wordCount} words (max ${maxWords})`);
+        console.log(`🔎 Context truncated at ${wordCount} words (max ${maxWords}) due to large payload`);
         break;
       } else {
         contextText += `\n- ${itemText}`;
@@ -999,24 +1009,41 @@ Years in Business: ${enrichment.companyProfile.years_in_business}`;
     }
   }
 
-  // Add mandatory compliance instructions
+  // Add mandatory compliance instructions with truncation protection
   if (enrichment.instructions && enrichment.instructions.length > 0) {
+    const totalChars = payloadSummary.companyProfileChars + payloadSummary.documentContextChars + payloadSummary.instructionsChars;
+    let instructionsText = '';
+    let wordCount = 0;
+    const maxWords = totalChars > 10000 ? 300 : 500; // Limit instructions if payload is large
+    
     userPrompt += `\n\nMANDATORY COMPLIANCE REQUIREMENTS:`;
-    enrichment.instructions.forEach((instruction: any) => {
+    
+    for (const instruction of enrichment.instructions) {
       const instructionText = typeof instruction === 'string' ? instruction : (instruction.text || instruction);
-      userPrompt += `\n- ${instructionText}`;
-    });
+      const itemWords = instructionText.split(/\s+/).length;
+      
+      if (wordCount + itemWords > maxWords) {
+        console.log(`🔎 Instructions truncated at ${wordCount} words (max ${maxWords})`);
+        break;
+      } else {
+        userPrompt += `\n- ${instructionText}`;
+        wordCount += itemWords;
+      }
+    }
   }
 
   userPrompt += `\n\nQUESTIONS TO ANSWER:\n${questions}
 
 Please provide professional responses to each question based on the company profile and requirements above.`;
 
-  // Log payload size for debugging
-  const payloadSize = (systemPrompt + userPrompt).length;
-  console.log(`Generating answers for ${questionBatch.length} questions - payload size: ${payloadSize} chars`);
-  if (payloadSize > 50000) {
-    console.warn(`Large payload detected: ${payloadSize} chars - may cause API issues`);
+  // Calculate final payload metrics
+  const finalPayloadSize = (systemPrompt + userPrompt).length;
+  const tokenEstimate = Math.floor(finalPayloadSize / 4);
+  console.log(`🔎 Generating answers for ${questionBatch.length} questions - payload size: ${finalPayloadSize} chars`);
+  console.log(`🔎 Estimated tokens for batch: ${tokenEstimate}`);
+  
+  if (finalPayloadSize > 50000) {
+    console.warn(`⚠️ Large payload detected: ${finalPayloadSize} chars - may cause API issues`);
   }
 
   // Try generating answers with retry logic
@@ -1059,9 +1086,9 @@ Please provide professional responses to each question based on the company prof
       try {
         result = JSON.parse(content);
       } catch (parseError) {
-        console.error('Failed to parse OpenAI JSON response:', content);
-        const errorMessage = getErrorMessage(parseError);
-        throw new Error(`Invalid JSON response from OpenAI: ${errorMessage}`);
+        console.error("❌ Invalid JSON from OpenAI:", getErrorMessage(parseError), content.slice(0, 200));
+        // Instead of throwing, continue with empty answers
+        result = { answers: [] };
       }
       
       if (!result.answers || !Array.isArray(result.answers)) {
@@ -1132,24 +1159,24 @@ async function saveAnswerBatch(
   return data;
 }
 
-// Generate all answers with progressive saving
+// Generate all answers with progressive saving and graceful error handling
 async function generateAllAnswers(
   segments: { questions: any[] },
   enrichment: any,
   tenderId: string,
   companyProfileId: string,
   supabaseClient: any
-): Promise<{ totalAnswers: number; batchesProcessed: number; allAnswers: any[] }> {
+): Promise<{ totalAnswers: number; batchesProcessed: number; allAnswers: any[]; status: string }> {
   const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
   
   if (!openAIApiKey) {
-    console.log('OpenAI API key not available for answer generation');
-    return { totalAnswers: 0, batchesProcessed: 0, allAnswers: [] };
+    console.log('🔎 OpenAI API key not available for answer generation');
+    return { totalAnswers: 0, batchesProcessed: 0, allAnswers: [], status: 'failed' };
   }
 
   if (!segments.questions || segments.questions.length === 0) {
-    console.log('No questions to process');
-    return { totalAnswers: 0, batchesProcessed: 0, allAnswers: [] };
+    console.log('🔎 No questions to process');
+    return { totalAnswers: 0, batchesProcessed: 0, allAnswers: [], status: 'failed' };
   }
 
   const batchSize = 5; // Process 5 questions at a time for optimal performance
@@ -1160,48 +1187,63 @@ async function generateAllAnswers(
     batches.push(segments.questions.slice(i, i + batchSize));
   }
 
-  console.log(`Processing ${segments.questions.length} questions in ${batches.length} batches`);
+  console.log(`🔎 Processing ${segments.questions.length} questions in ${batches.length} batches`);
   
   let totalAnswers = 0;
   let batchesProcessed = 0;
+  let failedBatches = 0;
   let allAnswers: any[] = [];
 
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
     const batch = batches[batchIndex];
-    console.log(`Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} questions)`);
+    console.log(`🔎 Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} questions)`);
     
     try {
       // Generate answers for this batch
       const answers = await generateAnswersForBatch(batch, enrichment, openAIApiKey);
       
-      // Save answers to database
-      const saveResult = await saveAnswerBatch(answers, batch, tenderId, companyProfileId, supabaseClient);
-      
-      if (!saveResult.error) {
-        // Collect answers for response envelope
-        for (let i = 0; i < answers.length && i < batch.length; i++) {
-          allAnswers.push({
-            question: batch[i].question_text,
-            question_number: batch[i].question_number,
-            answer: answers[i].answer
-          });
-        }
+      // Check if we got valid answers
+      if (answers && answers.length > 0) {
+        // Save answers to database
+        const saveResult = await saveAnswerBatch(answers, batch, tenderId, companyProfileId, supabaseClient);
         
-        totalAnswers += answers.length;
-        batchesProcessed++;
-        console.log(`Batch ${batchIndex + 1} completed: ${answers.length} answers saved`);
+        if (!saveResult.error) {
+          // Collect answers for response envelope
+          for (let i = 0; i < answers.length && i < batch.length; i++) {
+            allAnswers.push({
+              question: batch[i].question_text,
+              question_number: batch[i].question_number,
+              answer: answers[i].answer
+            });
+          }
+          
+          totalAnswers += answers.length;
+          batchesProcessed++;
+          console.log(`✅ Answer batch ${batchIndex + 1} saved (count: ${answers.length})`);
+        } else {
+          console.error(`❌ Batch ${batchIndex + 1} save failed, continuing...`, saveResult.error);
+          failedBatches++;
+        }
       } else {
-        console.error(`Batch ${batchIndex + 1} save failed:`, saveResult.error);
+        console.error(`❌ Batch ${batchIndex + 1} generated no valid answers, continuing...`);
+        failedBatches++;
       }
       
     } catch (batchError) {
-      console.error(`Error processing batch ${batchIndex + 1}:`, batchError);
+      console.error(`❌ Batch ${batchIndex + 1} failed, continuing...`, getErrorMessage(batchError));
+      failedBatches++;
       // Continue with next batch rather than failing completely
     }
   }
 
-  console.log(`Answer generation complete: ${totalAnswers} answers generated in ${batchesProcessed} batches`);
-  return { totalAnswers, batchesProcessed, allAnswers };
+  // Determine final status
+  let finalStatus = 'failed';
+  if (totalAnswers > 0) {
+    finalStatus = batchesProcessed === batches.length ? 'draft' : 'draft'; // Always draft if any answers saved
+  }
+
+  console.log(`✅ Tender processing finished, status: ${finalStatus} (${totalAnswers} answers, ${batchesProcessed} successful batches, ${failedBatches} failed)`);
+  return { totalAnswers, batchesProcessed, allAnswers, status: finalStatus };
 }
 
 // Build enrichment context bundle
@@ -1322,7 +1364,7 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       
       segments = await segmentContent(rawText);
       
-      console.log(`[DIAGNOSTIC] ✅ Segmentation complete - Questions: ${segments.questions.length}, Context: ${segments.context.length}, Instructions: ${segments.instructions.length}`);
+      console.log(`✅ Segmentation complete - Questions: ${segments.questions.length}, Context: ${segments.context.length}, Instructions: ${segments.instructions.length}`);
       console.log(`[DIAGNOSTIC] Context items found: ${segments.context.length}`);
       console.log(`[DIAGNOSTIC] Questions found: ${segments.questions.length}`);
       console.log(`[DIAGNOSTIC] Instructions found: ${segments.instructions.length}`);
@@ -1376,7 +1418,7 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       
       // Build enrichment bundle
       enrichment = buildEnrichmentBundle(companyProfile, retrievedSnippets, segments);
-      console.log(`[DIAGNOSTIC] ✅ Enrichment complete`);
+      console.log(`✅ Enrichment complete`);
       console.log(`[DIAGNOSTIC] Enrichment bundle: profile=${companyProfile.company_name}, snippets=${retrievedSnippets.length}, context=${segments.context.length}, instructions=${segments.instructions.length}`);
       
       response.enrichment = enrichment;
@@ -1399,10 +1441,16 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
     }
 
     // Step 5: Generate answers if we have enrichment and questions
-    let answerStats: { totalAnswers: number; batchesProcessed: number; allAnswers: any[] } = { totalAnswers: 0, batchesProcessed: 0, allAnswers: [] };
+    let answerStats: { totalAnswers: number; batchesProcessed: number; allAnswers: any[]; status: string } = { 
+      totalAnswers: 0, 
+      batchesProcessed: 0, 
+      allAnswers: [], 
+      status: 'failed' 
+    };
+    
     if (enrichment && segments.questions.length > 0) {
       try {
-        console.log(`[DIAGNOSTIC] ✅ Starting Step 5: Answer generation for ${segments.questions.length} questions...`);
+        console.log(`✅ Starting Step 5: Answer generation for ${segments.questions.length} questions...`);
         answerStats = await generateAllAnswers(
           segments, 
           enrichment, 
@@ -1411,22 +1459,25 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
           supabaseClient
         );
         
-        console.log(`[DIAGNOSTIC] ✅ Answers generated - ${answerStats.totalAnswers} answers in ${answerStats.batchesProcessed} batches`);
+        console.log(`✅ Answer generation complete - ${answerStats.totalAnswers} answers in ${answerStats.batchesProcessed} batches`);
         
       } catch (answerError) {
-        console.error(`[DIAGNOSTIC] ❌ Answer generation failed (continuing):`, answerError);
+        console.error(`❌ Answer generation failed (continuing):`, getErrorMessage(answerError));
         // Continue without failing the entire process
       }
     }
 
-    // Step 6: Always update tender status to draft and finalize
+    // Step 6: Update tender status based on results
     try {
-      console.log(`[DIAGNOSTIC] ✅ Starting Step 6: Finalizing tender status...`);
+      console.log(`✅ Starting Step 6: Finalizing tender status...`);
+      
+      // Determine final status based on answer generation results
+      const finalStatus = answerStats.totalAnswers > 0 ? answerStats.status : 'failed';
       
       const { error: statusError } = await supabaseClient
         .from('tenders')
         .update({ 
-          status: 'draft',
+          status: finalStatus,
           processed_questions: answerStats.totalAnswers,
           total_questions: segments.questions.length,
           progress: 100
@@ -1436,13 +1487,14 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       if (statusError) {
         console.error("❌ Failed to update tender status:", statusError);
       } else {
-        console.log(`✅ DB save complete - Tender ${request.tenderId} marked as draft`);
+        console.log(`✅ Tender processing finished, status: ${finalStatus}`);
       }
       
-      response.status = 'draft';
+      response.status = finalStatus;
     } catch (updateError) {
-      console.error(`[DIAGNOSTIC] ❌ Failed to update tender status:`, updateError);
+      console.error(`❌ Failed to update tender status:`, getErrorMessage(updateError));
       // Don't fail the entire process for this
+      response.status = answerStats.totalAnswers > 0 ? 'draft' : 'failed';
     }
 
     // Add answers to JSON response for visibility in Review UI
