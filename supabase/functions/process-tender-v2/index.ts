@@ -238,12 +238,14 @@ async function extractPdfText(fileData: Blob): Promise<string> {
   }
 }
 
-// Text segmentation function
+// Text segmentation function with improved error handling and context capture
 async function segmentContent(rawText: string): Promise<{
   questions: any[];
   context: any[];
   instructions: any[];
 }> {
+  console.log(`[DIAGNOSTIC] Starting segmentation - ${rawText.length} chars to analyze`);
+  
   const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
   
   if (!openAIApiKey) {
@@ -251,21 +253,30 @@ async function segmentContent(rawText: string): Promise<{
     return regexOnlySegmentation(rawText);
   }
 
+  // Initialize results container with proper typing
+  const allSegments: {
+    questions: any[];
+    context: any[];
+    instructions: any[];
+  } = {
+    questions: [],
+    context: [],
+    instructions: []
+  };
+
   try {
     // Step 1: Extract obvious questions using regex patterns
     const obviousQuestions = extractObviousQuestions(rawText);
     console.log(`Found ${obviousQuestions.length} obvious questions via regex`);
+    allSegments.questions.push(...obviousQuestions);
 
-    // Step 2: Split text into overlapping chunks for AI processing
-    const chunks = splitTextIntoChunks(rawText, 2000, 200);
+    // Step 2: Split text into larger overlapping chunks (2500 chars with 500 overlap)
+    const chunks = splitTextIntoChunks(rawText, 2500, 500);
     console.log(`Split text into ${chunks.length} chunks for AI processing`);
 
-    // Step 3: Process each chunk with OpenAI
-    const allSegments = {
-      questions: [...obviousQuestions],
-      context: [],
-      instructions: []
-    };
+    // Step 3: Process each chunk with AI (with resilient error handling)
+    let successfulChunks = 0;
+    let failedChunks = 0;
 
     for (let i = 0; i < chunks.length; i++) {
       console.log(`Processing chunk ${i + 1}/${chunks.length}`);
@@ -273,27 +284,63 @@ async function segmentContent(rawText: string): Promise<{
       try {
         const chunkSegments = await classifyChunkWithAI(chunks[i], openAIApiKey);
         
-        // Merge results
-        allSegments.questions.push(...chunkSegments.questions);
-        allSegments.context.push(...chunkSegments.context);
-        allSegments.instructions.push(...chunkSegments.instructions);
+        // Merge results if classification succeeded
+        if (chunkSegments) {
+          allSegments.questions.push(...(chunkSegments.questions || []));
+          allSegments.context.push(...(chunkSegments.context || []));
+          allSegments.instructions.push(...(chunkSegments.instructions || []));
+          successfulChunks++;
+        }
         
       } catch (chunkError) {
-        console.error(`Error processing chunk ${i + 1}:`, chunkError);
-        // Continue with other chunks
+        const errorMsg = chunkError instanceof Error ? chunkError.message : 'Unknown error';
+        console.error(`Error processing chunk ${i + 1}:`, errorMsg);
+        failedChunks++;
+        // Continue with other chunks - don't fail entire segmentation
       }
     }
 
+    console.log(`Chunk processing complete: ${successfulChunks} successful, ${failedChunks} failed`);
+
     // Step 4: Deduplicate questions
+    const rawQuestionCount = allSegments.questions.length;
     allSegments.questions = deduplicateQuestions(allSegments.questions);
     
-    console.log(`Final segmentation: ${allSegments.questions.length} questions, ${allSegments.context.length} context items, ${allSegments.instructions.length} instructions`);
+    console.log(`Final segmentation: ${allSegments.questions.length} questions (from ${rawQuestionCount} raw), ${allSegments.context.length} context items, ${allSegments.instructions.length} instructions`);
     
     return allSegments;
 
   } catch (error) {
-    console.error('AI segmentation failed, falling back to regex-only:', error);
-    return regexOnlySegmentation(rawText);
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('AI segmentation failed, falling back to regex-only:', errorMsg);
+    
+    // Fallback: use regex-only approach but keep any partial AI results
+    try {
+      const regexResults = regexOnlySegmentation(rawText);
+      
+      // Merge with any partial AI results
+      allSegments.questions.push(...regexResults.questions);
+      allSegments.context.push(...regexResults.context);
+      allSegments.instructions.push(...regexResults.instructions);
+      
+      // Deduplicate merged questions
+      allSegments.questions = deduplicateQuestions(allSegments.questions);
+      
+      console.log(`Fallback segmentation: ${allSegments.questions.length} questions, ${allSegments.context.length} context items, ${allSegments.instructions.length} instructions`);
+      
+      return allSegments;
+      
+    } catch (fallbackError) {
+      const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : 'Unknown error';
+      console.error('Even regex fallback failed:', fallbackMsg);
+      
+      // Final fallback - return whatever we have
+      return {
+        questions: [],
+        context: [{ text: rawText.substring(0, 1000) + '...', source: 'fallback' }],
+        instructions: []
+      };
+    }
   }
 }
 
@@ -328,7 +375,7 @@ function extractObviousQuestions(text: string): any[] {
   return questions;
 }
 
-// Split text into overlapping chunks
+// Split text into overlapping chunks with better size and overlap
 function splitTextIntoChunks(text: string, chunkSize: number, overlap: number): string[] {
   const chunks = [];
   let start = 0;
@@ -342,20 +389,21 @@ function splitTextIntoChunks(text: string, chunkSize: number, overlap: number): 
     start = end - overlap; // Overlap for context continuity
   }
   
+  console.log(`Created ${chunks.length} chunks: avg size ${Math.round(text.length / chunks.length)}, overlap ${overlap}`);
   return chunks;
 }
 
-// Classify a text chunk using OpenAI JSON mode
+// Classify a text chunk using OpenAI JSON mode with improved error handling
 async function classifyChunkWithAI(chunk: string, apiKey: string): Promise<{
   questions: any[];
   context: any[];
   instructions: any[];
-}> {
+} | null> {
   const systemPrompt = `You are a document analyzer that classifies text paragraphs into categories.
 
 CLASSIFICATION RULES:
 - QUESTION: Any text that asks for information, requests data, or requires a vendor response
-- CONTEXT: Background information, company details, project scope, objectives
+- CONTEXT: Background information, company details, project scope, objectives, technical specifications
 - INSTRUCTION: Formatting rules, submission requirements, evaluation criteria, compliance rules
 - OTHER: Headers, footers, navigation, irrelevant content (ignore these)
 
@@ -364,57 +412,72 @@ CRITICAL REQUIREMENTS:
 - If no items exist for a category, return empty array
 - Be conservative - only classify clear matches
 - Focus on substance, not format
+- Context should include project background, technical requirements, scope details
 
 Return JSON format:
 {
   "questions": [{"text": "exact question text", "confidence": 0.8}],
-  "context": [{"text": "exact context text", "confidence": 0.8}],
+  "context": [{"text": "exact context text", "confidence": 0.8}], 
   "instructions": [{"text": "exact instruction text", "confidence": 0.8}]
 }`;
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'gpt-5-mini-2025-08-07',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Classify this text:\n\n${chunk}` }
-      ],
-      max_completion_tokens: 1500,
-      response_format: { type: "json_object" }
-    }),
-  });
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-5-mini-2025-08-07',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Classify this text chunk:\n\n${chunk}` }
+        ],
+        max_completion_tokens: 1500,
+        response_format: { type: "json_object" }
+      }),
+    });
 
-  if (!response.ok) {
-    throw new Error(`OpenAI API error: ${response.status}`);
+    if (!response.ok) {
+      console.error(`OpenAI API error: ${response.status} ${response.statusText}`);
+      return null;
+    }
+
+    const data = await response.json();
+    const content = data.choices[0]?.message?.content;
+    
+    if (!content) {
+      console.error('No content returned from OpenAI');
+      return null;
+    }
+
+    let result;
+    try {
+      result = JSON.parse(content);
+    } catch (parseError) {
+      console.error('Failed to parse OpenAI response as JSON:', parseError);
+      return null;
+    }
+    
+    // Normalize and add question numbers
+    const questions = (result.questions || []).map((q: any, index: number) => ({
+      question_number: index + 1,
+      question_text: typeof q === 'string' ? q : q.text,
+      source: 'ai',
+      confidence: typeof q === 'object' ? q.confidence : 0.8
+    }));
+
+    return {
+      questions,
+      context: result.context || [],
+      instructions: result.instructions || []
+    };
+    
+  } catch (error) {
+    console.error('Error in OpenAI chunk classification:', error);
+    return null;
   }
-
-  const data = await response.json();
-  const content = data.choices[0]?.message?.content;
-  
-  if (!content) {
-    throw new Error('No content returned from OpenAI');
-  }
-
-  const result = JSON.parse(content);
-  
-  // Normalize and add question numbers
-  const questions = (result.questions || []).map((q: any, index: number) => ({
-    question_number: index + 1,
-    question_text: typeof q === 'string' ? q : q.text,
-    source: 'ai',
-    confidence: typeof q === 'object' ? q.confidence : 0.8
-  }));
-
-  return {
-    questions,
-    context: result.context || [],
-    instructions: result.instructions || []
-  };
 }
 
 // Normalize and deduplicate questions based on similarity
@@ -664,7 +727,7 @@ async function performVectorSearch(questions: any[], companyProfileId: string, s
   return allSnippets;
 }
 
-// Generate answers for questions using OpenAI
+// Generate answers for questions using OpenAI with improved context handling
 async function generateAnswersForBatch(
   questionBatch: any[],
   enrichment: any,
@@ -726,25 +789,57 @@ Years in Business: ${enrichment.companyProfile.years_in_business}`;
     });
   }
 
-  // Add document context if available
+  // Add document context if available - TRUNCATE TO ~1000 WORDS TO AVOID TOKEN OVERFLOW
   if (enrichment.documentContext && enrichment.documentContext.length > 0) {
-    userPrompt += `\n\nTENDER CONTEXT:`;
-    enrichment.documentContext.forEach((context: any) => {
-      userPrompt += `\n- ${context.text || context}`;
-    });
+    console.log(`Adding document context: ${enrichment.documentContext.length} items`);
+    
+    let contextText = '';
+    let wordCount = 0;
+    const maxWords = 1000;
+    
+    for (const contextItem of enrichment.documentContext) {
+      const itemText = typeof contextItem === 'string' ? contextItem : (contextItem.text || '');
+      const itemWords = itemText.split(/\s+/).length;
+      
+      if (wordCount + itemWords > maxWords) {
+        const remainingWords = maxWords - wordCount;
+        if (remainingWords > 20) {
+          // Take partial text if we have room for meaningful content
+          const partialText = itemText.split(/\s+/).slice(0, remainingWords).join(' ') + '...';
+          contextText += `\n- ${partialText}`;
+        }
+        console.log(`Context truncated at ${wordCount} words (max ${maxWords})`);
+        break;
+      } else {
+        contextText += `\n- ${itemText}`;
+        wordCount += itemWords;
+      }
+    }
+    
+    if (contextText.trim()) {
+      userPrompt += `\n\nTENDER CONTEXT:${contextText}`;
+    }
   }
 
   // Add mandatory compliance instructions
   if (enrichment.instructions && enrichment.instructions.length > 0) {
     userPrompt += `\n\nMANDATORY COMPLIANCE REQUIREMENTS:`;
     enrichment.instructions.forEach((instruction: any) => {
-      userPrompt += `\n- ${instruction.text || instruction}`;
+      const instructionText = typeof instruction === 'string' ? instruction : (instruction.text || instruction);
+      userPrompt += `\n- ${instructionText}`;
     });
   }
 
   userPrompt += `\n\nQUESTIONS TO ANSWER:\n${questions}
 
 Please provide professional responses to each question based on the company profile and requirements above.`;
+
+  // Log payload size for debugging
+  const payloadSize = (systemPrompt + userPrompt).length;
+  console.log(`Generating answers for ${questionBatch.length} questions - payload size: ${payloadSize} chars`);
+  if (payloadSize > 50000) {
+    console.warn(`Large payload detected: ${payloadSize} chars - may cause API issues`);
+  }
 
   // Try generating answers with retry logic
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -769,19 +864,29 @@ Please provide professional responses to each question based on the company prof
       });
 
       if (!response.ok) {
-        throw new Error(`OpenAI API error: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`OpenAI API error ${response.status}: ${errorText}`);
+        throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
       const content = data.choices[0]?.message?.content;
       
       if (!content) {
+        console.error('No content returned from OpenAI - response:', data);
         throw new Error('No content returned from OpenAI');
       }
 
-      const result = JSON.parse(content);
+      let result;
+      try {
+        result = JSON.parse(content);
+      } catch (parseError) {
+        console.error('Failed to parse OpenAI JSON response:', content);
+        throw new Error(`Invalid JSON response from OpenAI: ${parseError.message}`);
+      }
       
       if (!result.answers || !Array.isArray(result.answers)) {
+        console.error('Invalid response format from OpenAI:', result);
         throw new Error('Invalid response format: missing answers array');
       }
 
@@ -796,7 +901,7 @@ Please provide professional responses to each question based on the company prof
         console.log('Using fallback answers for failed batch');
         return questionBatch.map(q => ({
           question: q.question_text,
-          answer: 'We are unable to provide a detailed response to this question at this time. Please contact us directly to discuss your specific requirements and how our services can meet your needs.'
+          answer: `We are unable to provide a detailed response to this question at this time. Please contact ${enrichment.companyProfile.company_name} directly to discuss your specific requirements and how our services can meet your needs.`
         }));
       }
     }
@@ -1029,13 +1134,18 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       return response;
     }
 
-    // Step 3: Segment the extracted text
-    let segments = { questions: [], context: [], instructions: [] };
+    // Step 3: Segment the extracted text with comprehensive error handling
+    let segments: { questions: any[]; context: any[]; instructions: any[]; } = { questions: [], context: [], instructions: [] };
     try {
       console.log(`[DIAGNOSTIC] ✅ Starting Step 3: Text segmentation...`);
+      console.log(`[DIAGNOSTIC] Chars extracted: ${rawText.length}, will attempt AI segmentation`);
+      
       segments = await segmentContent(rawText);
       
       console.log(`[DIAGNOSTIC] ✅ Segmentation complete - Questions: ${segments.questions.length}, Context: ${segments.context.length}, Instructions: ${segments.instructions.length}`);
+      console.log(`[DIAGNOSTIC] Context items found: ${segments.context.length}`);
+      console.log(`[DIAGNOSTIC] Questions found: ${segments.questions.length}`);
+      console.log(`[DIAGNOSTIC] Instructions found: ${segments.instructions.length}`);
       
       // Update response with segmentation progress
       response.segments = segments;
@@ -1046,15 +1156,23 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       response.status = 'segmented';
       
     } catch (segmentError) {
-      response.error = 'Text segmentation failed';
-      response.message = `Unable to analyze document structure: ${segmentError.message}`;
-      console.error(`[DIAGNOSTIC] ❌ Segmentation error:`, segmentError);
-      // Keep the raw text and partial success
+      const errorMsg = segmentError instanceof Error ? segmentError.message : 'Unknown segmentation error';
+      console.error(`[DIAGNOSTIC] ❌ Segmentation failed:`, errorMsg);
+      // Don't fail completely - continue with minimal segmentation
+      segments = {
+        questions: [],
+        context: [{ text: rawText.substring(0, Math.min(1000, rawText.length)), source: 'fallback' }],
+        instructions: []
+      };
+      response.segments = segments;
+      response.contextFound = 1;
       response.rawText = rawText;
-      return response;
+      response.status = 'segmented';
+      response.error = `Segmentation partially failed: ${errorMsg}`;
+      console.log(`[DIAGNOSTIC] Using fallback segmentation with ${segments.context.length} context items`);
     }
 
-    // Step 4: Perform enrichment (company profile + vector search)
+    // Step 4: Perform enrichment (company profile + vector search) with error resilience
     let enrichment = null;
     try {
       console.log(`[DIAGNOSTIC] ✅ Starting Step 4: Enrichment phase...`);
@@ -1067,21 +1185,36 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       let retrievedSnippets = [];
       if (segments.questions.length > 0) {
         console.log(`[DIAGNOSTIC] Performing vector search for ${segments.questions.length} questions...`);
-        retrievedSnippets = await performVectorSearch(segments.questions, tender.company_profile_id, supabaseClient);
-        console.log(`[DIAGNOSTIC] Vector search complete - ${retrievedSnippets.length} snippets retrieved`);
+        try {
+          retrievedSnippets = await performVectorSearch(segments.questions, tender.company_profile_id, supabaseClient);
+          console.log(`[DIAGNOSTIC] Vector search complete - ${retrievedSnippets.length} snippets retrieved`);
+        } catch (vectorError) {
+          console.error(`[DIAGNOSTIC] Vector search failed (continuing):`, vectorError);
+          retrievedSnippets = [];
+        }
       }
       
       // Build enrichment bundle
       enrichment = buildEnrichmentBundle(companyProfile, retrievedSnippets, segments);
       console.log(`[DIAGNOSTIC] ✅ Enrichment complete`);
+      console.log(`[DIAGNOSTIC] Enrichment bundle: profile=${companyProfile.company_name}, snippets=${retrievedSnippets.length}, context=${segments.context.length}, instructions=${segments.instructions.length}`);
       
       response.enrichment = enrichment;
       response.status = 'enriched';
       
     } catch (enrichmentError) {
-      console.error(`[DIAGNOSTIC] ❌ Enrichment failed (continuing):`, enrichmentError);
-      // Continue processing without enrichment rather than failing completely
-      response.status = 'segmented';
+      console.error(`[DIAGNOSTIC] ❌ Enrichment failed:`, enrichmentError);
+      // Create minimal enrichment to allow processing to continue
+      try {
+        const fallbackProfile = await fetchCompanyProfile(tender.company_profile_id, supabaseClient);
+        enrichment = buildEnrichmentBundle(fallbackProfile, [], segments);
+        console.log(`[DIAGNOSTIC] Using fallback enrichment with minimal profile`);
+        response.status = 'enriched';
+      } catch (fallbackError) {
+        console.error(`[DIAGNOSTIC] ❌ Even fallback enrichment failed:`, fallbackError);
+        response.status = 'segmented';
+        response.error = `Enrichment failed: ${enrichmentError.message}`;
+      }
     }
 
     // Step 5: Generate answers if we have enrichment and questions

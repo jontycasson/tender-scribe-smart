@@ -1,7 +1,4 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { Resend } from "npm:resend@2.0.0";
-
-const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,6 +12,43 @@ interface ContactFormRequest {
   subject: string;
   message: string;
   recaptchaToken: string;
+}
+
+// Send email via Resend API (direct fetch instead of npm package)
+async function sendEmailViaResend(
+  to: string[], 
+  from: string, 
+  subject: string, 
+  html: string, 
+  text: string
+) {
+  const resendApiKey = Deno.env.get("RESEND_API_KEY");
+  
+  if (!resendApiKey) {
+    throw new Error("RESEND_API_KEY not configured");
+  }
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${resendApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from,
+      to,
+      subject,
+      html,
+      text,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Resend API error: ${response.status} - ${errorText}`);
+  }
+
+  return await response.json();
 }
 
 const handler = async (req: Request): Promise<Response> => {
@@ -50,15 +84,14 @@ const handler = async (req: Request): Promise<Response> => {
     }
 
     // Verify reCAPTCHA (optional - you can skip this for now if using test keys)
-    // In production, you would verify the recaptchaToken with Google's API
     console.log("reCAPTCHA token received:", recaptchaToken);
 
     // Send email to info@proposal.fit
-    const emailResponse = await resend.emails.send({
-      from: "Contact Form <noreply@proposal.fit>", // This should be from your verified domain
-      to: ["info@proposal.fit"],
-      subject: `Contact Form: ${subject}`,
-      html: `
+    const emailResponse = await sendEmailViaResend(
+      ["info@proposal.fit"],
+      "Contact Form <noreply@proposal.fit>",
+      `Contact Form: ${subject}`,
+      `
         <h2>New Contact Form Submission</h2>
         <p><strong>From:</strong> ${name} (${email})</p>
         <p><strong>Subject:</strong> ${subject}</p>
@@ -71,7 +104,7 @@ const handler = async (req: Request): Promise<Response> => {
           This message was sent via the Proposal.fit contact form.
         </p>
       `,
-      text: `
+      `
 New Contact Form Submission
 
 From: ${name} (${email})
@@ -82,24 +115,10 @@ ${message}
 
 ---
 This message was sent via the Proposal.fit contact form.
-      `,
-    });
+      `
+    );
 
-    if (emailResponse.error) {
-      console.error("Failed to send email:", emailResponse.error);
-      return new Response(
-        JSON.stringify({ error: "Failed to send email" }),
-        {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            ...corsHeaders,
-          },
-        }
-      );
-    }
-
-    console.log("Email sent successfully:", emailResponse.data?.id);
+    console.log("Email sent successfully:", emailResponse.id || emailResponse);
 
     return new Response(
       JSON.stringify({ 
