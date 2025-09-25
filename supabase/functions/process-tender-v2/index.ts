@@ -245,7 +245,7 @@ async function extractPdfText(fileData: Blob): Promise<string> {
     }
 }
 
-// Text segmentation function with improved error handling and context capture
+// Text segmentation function with improved error handling and rule-based classification
 async function segmentContent(rawText: string): Promise<{
   questions: any[];
   context: any[];
@@ -257,7 +257,7 @@ async function segmentContent(rawText: string): Promise<{
   
   if (!openAIApiKey) {
     console.log('OpenAI API key not configured, using regex-only segmentation');
-    return regexOnlySegmentation(rawText);
+    return enhancedRegexSegmentation(rawText);
   }
 
   // Initialize results container with proper typing
@@ -277,11 +277,17 @@ async function segmentContent(rawText: string): Promise<{
     console.log(`Found ${obviousQuestions.length} obvious questions via regex`);
     allSegments.questions.push(...obviousQuestions);
 
-    // Step 2: Split text into larger overlapping chunks (2500 chars with 500 overlap)
+    // Step 2: Rule-based classification for context and instructions BEFORE AI processing
+    const ruleBasedResults = classifyByRules(rawText);
+    console.log(`Rule-based classification found: ${ruleBasedResults.context.length} context, ${ruleBasedResults.instructions.length} instructions`);
+    allSegments.context.push(...ruleBasedResults.context);
+    allSegments.instructions.push(...ruleBasedResults.instructions);
+
+    // Step 3: Split remaining text into chunks for AI processing
     const chunks = splitTextIntoChunks(rawText, 2500, 500);
     console.log(`Split text into ${chunks.length} chunks for AI processing`);
 
-    // Step 3: Process each chunk with AI (with resilient error handling)
+    // Step 4: Process each chunk with AI (with resilient error handling)
     let successfulChunks = 0;
     let failedChunks = 0;
 
@@ -309,9 +315,11 @@ async function segmentContent(rawText: string): Promise<{
 
     console.log(`Chunk processing complete: ${successfulChunks} successful, ${failedChunks} failed`);
 
-    // Step 4: Deduplicate questions
+    // Step 5: Deduplicate and clean up results
     const rawQuestionCount = allSegments.questions.length;
     allSegments.questions = deduplicateQuestions(allSegments.questions);
+    allSegments.context = deduplicateTextItems(allSegments.context);
+    allSegments.instructions = deduplicateTextItems(allSegments.instructions);
     
     console.log(`Final segmentation: ${allSegments.questions.length} questions (from ${rawQuestionCount} raw), ${allSegments.context.length} context items, ${allSegments.instructions.length} instructions`);
     
@@ -319,19 +327,21 @@ async function segmentContent(rawText: string): Promise<{
 
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    console.error('AI segmentation failed, falling back to regex-only:', errorMsg);
+    console.error('AI segmentation failed, falling back to enhanced regex-only:', errorMsg);
     
-    // Fallback: use regex-only approach but keep any partial AI results
+    // Fallback: use enhanced regex-only approach but keep any partial AI results
     try {
-      const regexResults = regexOnlySegmentation(rawText);
+      const regexResults = enhancedRegexSegmentation(rawText);
       
-      // Merge with any partial AI results
+      // Merge with any partial AI results (avoid duplicates)
       allSegments.questions.push(...regexResults.questions);
       allSegments.context.push(...regexResults.context);
       allSegments.instructions.push(...regexResults.instructions);
       
-      // Deduplicate merged questions
+      // Deduplicate merged results
       allSegments.questions = deduplicateQuestions(allSegments.questions);
+      allSegments.context = deduplicateTextItems(allSegments.context);
+      allSegments.instructions = deduplicateTextItems(allSegments.instructions);
       
       console.log(`Fallback segmentation: ${allSegments.questions.length} questions, ${allSegments.context.length} context items, ${allSegments.instructions.length} instructions`);
       
@@ -339,7 +349,7 @@ async function segmentContent(rawText: string): Promise<{
       
     } catch (fallbackError) {
       const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : 'Unknown error';
-      console.error('Even regex fallback failed:', fallbackMsg);
+      console.error('Even enhanced regex fallback failed:', fallbackMsg);
       
       // Final fallback - return whatever we have
       return {
@@ -564,37 +574,198 @@ function deduplicateQuestions(questions: any[]): any[] {
   return reindexed;
 }
 
-// Fallback regex-only segmentation
-function regexOnlySegmentation(text: string): {
+// Rule-based classification for context and instructions based on section headers
+function classifyByRules(text: string): {
+  context: any[];
+  instructions: any[];
+} {
+  const context = [];
+  const instructions = [];
+  
+  // Split text into paragraphs and sections
+  const sections = splitIntoSections(text);
+  
+  for (const section of sections) {
+    const header = section.header.toLowerCase();
+    const content = section.content;
+    
+    // Skip if content is too short or is likely a question
+    if (content.length < 50 || content.endsWith('?')) continue;
+    
+    // INSTRUCTION patterns - based on section headers
+    if (header.includes('requirement') || header.includes('submission') || 
+        header.includes('terms') || header.includes('proposal') ||
+        header.includes('format') || header.includes('deadline') ||
+        header.includes('evaluation') || header.includes('criteria') ||
+        header.includes('compliance') || header.includes('mandatory') ||
+        header.includes('must') || header.includes('should')) {
+      instructions.push({ 
+        text: content, 
+        source: 'rule-based', 
+        section_header: section.header,
+        confidence: 0.9 
+      });
+    }
+    // CONTEXT patterns - based on section headers  
+    else if (header.includes('introduction') || header.includes('background') || 
+             header.includes('objectives') || header.includes('scope') ||
+             header.includes('overview') || header.includes('purpose') ||
+             header.includes('about') || header.includes('project') ||
+             header.includes('technical') || header.includes('specification')) {
+      context.push({ 
+        text: content, 
+        source: 'rule-based', 
+        section_header: section.header,
+        confidence: 0.9 
+      });
+    }
+  }
+  
+  return { context, instructions };
+}
+
+// Split text into sections based on headers
+function splitIntoSections(text: string): Array<{ header: string; content: string }> {
+  const sections = [];
+  const lines = text.split('\n');
+  
+  let currentHeader = '';
+  let currentContent = [];
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    
+    // Detect section headers - various patterns
+    const isHeader = (
+      // Numbered headers: "1. Introduction", "2.1 Background"
+      /^\d+(\.\d+)*\s+[A-Z]/.test(trimmed) ||
+      // All caps headers: "INTRODUCTION", "BACKGROUND INFORMATION"
+      /^[A-Z\s]{5,}$/.test(trimmed) ||
+      // Title case headers followed by colon: "Project Background:"
+      /^[A-Z][a-z\s]+:$/.test(trimmed) ||
+      // Headers with special formatting: "=== REQUIREMENTS ==="
+      /^[=\-]{3,}/.test(trimmed) ||
+      // Bold-style headers (assume single line, title case, no punctuation at end)
+      (/^[A-Z][a-zA-Z\s]{10,}$/.test(trimmed) && !trimmed.endsWith('.') && !trimmed.endsWith('?'))
+    );
+    
+    if (isHeader) {
+      // Save previous section if it has content
+      if (currentHeader && currentContent.length > 0) {
+        const content = currentContent.join('\n').trim();
+        if (content.length > 50) {
+          sections.push({
+            header: currentHeader,
+            content: content
+          });
+        }
+      }
+      
+      // Start new section
+      currentHeader = trimmed;
+      currentContent = [];
+    } else {
+      // Add to current section content
+      currentContent.push(trimmed);
+    }
+  }
+  
+  // Don't forget the last section
+  if (currentHeader && currentContent.length > 0) {
+    const content = currentContent.join('\n').trim();
+    if (content.length > 50) {
+      sections.push({
+        header: currentHeader,
+        content: content
+      });
+    }
+  }
+  
+  console.log(`Detected ${sections.length} sections with headers`);
+  return sections;
+}
+
+// Enhanced regex-only segmentation with better heuristics
+function enhancedRegexSegmentation(text: string): {
   questions: any[];
   context: any[];
   instructions: any[];
 } {
   const questions = extractObviousQuestions(text);
   
-  // Basic heuristics for context and instructions
-  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 20);
-  const context = [];
-  const instructions = [];
+  // Use rule-based classification first
+  const ruleBasedResults = classifyByRules(text);
+  
+  // Additional heuristics for remaining content
+  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 30);
+  const additionalContext = [];
+  const additionalInstructions = [];
   
   for (const line of lines) {
     const lowerLine = line.toLowerCase();
     
-    // Instruction patterns
-    if (lowerLine.includes('submit') || lowerLine.includes('format') || 
-        lowerLine.includes('requirement') || lowerLine.includes('must') ||
-        lowerLine.includes('should') || lowerLine.includes('criteria')) {
-      instructions.push({ text: line, source: 'regex' });
+    // Skip if already classified by rules or is a question
+    const alreadyClassified = 
+      ruleBasedResults.context.some(c => c.text.includes(line.substring(0, 50))) ||
+      ruleBasedResults.instructions.some(i => i.text.includes(line.substring(0, 50))) ||
+      line.endsWith('?');
+      
+    if (alreadyClassified) continue;
+    
+    // Additional instruction patterns
+    if (lowerLine.includes('submit') || lowerLine.includes('provide') || 
+        lowerLine.includes('include') || lowerLine.includes('attach') ||
+        lowerLine.includes('complete') || lowerLine.includes('demonstrate') ||
+        lowerLine.includes('ensure') || lowerLine.includes('comply')) {
+      additionalInstructions.push({ text: line, source: 'enhanced-regex', confidence: 0.6 });
     }
-    // Context patterns (but not questions)
-    else if (!line.endsWith('?') && 
-             (lowerLine.includes('background') || lowerLine.includes('objective') ||
-              lowerLine.includes('scope') || lowerLine.includes('about'))) {
-      context.push({ text: line, source: 'regex' });
+    // Additional context patterns
+    else if (lowerLine.includes('company') || lowerLine.includes('organization') ||
+             lowerLine.includes('industry') || lowerLine.includes('experience') ||
+             lowerLine.includes('established') || lowerLine.includes('specializes')) {
+      additionalContext.push({ text: line, source: 'enhanced-regex', confidence: 0.6 });
     }
   }
   
-  return { questions, context, instructions };
+  // Combine results
+  const allContext = [...ruleBasedResults.context, ...additionalContext];
+  const allInstructions = [...ruleBasedResults.instructions, ...additionalInstructions];
+  
+  return { 
+    questions, 
+    context: allContext, 
+    instructions: allInstructions 
+  };
+}
+
+// Deduplicate text items based on content similarity
+function deduplicateTextItems(items: any[]): any[] {
+  if (!items || items.length === 0) return [];
+  
+  const deduplicated = [];
+  const seen = new Set();
+  
+  for (const item of items) {
+    const text = item.text || '';
+    if (text.length < 20) continue;
+    
+    // Create a normalized key for deduplication
+    const key = text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .substring(0, 100); // Use first 100 chars for comparison
+    
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduplicated.push(item);
+    }
+  }
+  
+  console.log(`Deduplicated text items: ${items.length} -> ${deduplicated.length}`);
+  return deduplicated;
 }
 
 // Fetch company profile with fallback values
