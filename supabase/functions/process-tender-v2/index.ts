@@ -905,6 +905,43 @@ async function performVectorSearch(questions: any[], companyProfileId: string, s
   return allSnippets;
 }
 
+// Helper function to trim oversized company profile fields for prompts only
+function trimCompanyProfileForPrompt(profile: any): any {
+  const trimmedProfile = { ...profile };
+  
+  const fieldsToTrim = ['past_projects', 'mission', 'values', 'policies', 'accreditations'];
+  let totalWords = 0;
+  const maxCombinedWords = 800;
+  
+  // Count current words in fields to trim
+  for (const field of fieldsToTrim) {
+    if (trimmedProfile[field] && trimmedProfile[field] !== 'N/A') {
+      totalWords += trimmedProfile[field].split(/\s+/).length;
+    }
+  }
+  
+  // If under limit, return as-is
+  if (totalWords <= maxCombinedWords) {
+    return trimmedProfile;
+  }
+  
+  console.log(`🔎 Trimming company profile fields: ${totalWords} words -> max ${maxCombinedWords}`);
+  
+  // Proportionally trim each field
+  const wordsPerField = Math.floor(maxCombinedWords / fieldsToTrim.length);
+  
+  for (const field of fieldsToTrim) {
+    if (trimmedProfile[field] && trimmedProfile[field] !== 'N/A') {
+      const words = trimmedProfile[field].split(/\s+/);
+      if (words.length > wordsPerField) {
+        trimmedProfile[field] = words.slice(0, wordsPerField).join(' ') + '...';
+      }
+    }
+  }
+  
+  return trimmedProfile;
+}
+
 // Generate answers for questions using OpenAI with payload size protection
 async function generateAnswersForBatch(
   questionBatch: any[],
@@ -941,22 +978,25 @@ Return JSON format:
 
   const questions = questionBatch.map(q => `Q${q.question_number}: ${q.question_text}`).join('\n\n');
   
+  // Trim company profile for prompt (keep full version in envelope)
+  const trimmedProfile = trimCompanyProfileForPrompt(enrichment.companyProfile);
+  
   let userPrompt = `COMPANY PROFILE:
-Company Name: ${enrichment.companyProfile.company_name}
-Industry: ${enrichment.companyProfile.industry}
-Team Size: ${enrichment.companyProfile.team_size}
-Services Offered: ${Array.isArray(enrichment.companyProfile.services_offered) ? enrichment.companyProfile.services_offered.join(', ') : enrichment.companyProfile.services_offered}
-Specialisations: ${enrichment.companyProfile.specializations}
-Mission: ${enrichment.companyProfile.mission}
-Values: ${enrichment.companyProfile.values}
-Past Projects: ${enrichment.companyProfile.past_projects}
-Years in Business: ${enrichment.companyProfile.years_in_business}`;
+Company Name: ${trimmedProfile.company_name}
+Industry: ${trimmedProfile.industry}
+Team Size: ${trimmedProfile.team_size}
+Services Offered: ${Array.isArray(trimmedProfile.services_offered) ? trimmedProfile.services_offered.join(', ') : trimmedProfile.services_offered}
+Specialisations: ${trimmedProfile.specializations}
+Mission: ${trimmedProfile.mission}
+Values: ${trimmedProfile.values}
+Past Projects: ${trimmedProfile.past_projects}
+Years in Business: ${trimmedProfile.years_in_business}`;
 
-  if (enrichment.companyProfile.accreditations && enrichment.companyProfile.accreditations !== 'N/A') {
-    userPrompt += `\nAccreditations: ${enrichment.companyProfile.accreditations}`;
+  if (trimmedProfile.accreditations && trimmedProfile.accreditations !== 'N/A') {
+    userPrompt += `\nAccreditations: ${trimmedProfile.accreditations}`;
   }
-  if (enrichment.companyProfile.policies && enrichment.companyProfile.policies !== 'N/A') {
-    userPrompt += `\nPolicies: ${enrichment.companyProfile.policies}`;
+  if (trimmedProfile.policies && trimmedProfile.policies !== 'N/A') {
+    userPrompt += `\nPolicies: ${trimmedProfile.policies}`;
   }
 
   // Add retrieved snippets if available
@@ -970,7 +1010,7 @@ Years in Business: ${enrichment.companyProfile.years_in_business}`;
   // Calculate payload summary for debugging
   const payloadSummary = {
     questionsCount: questionBatch.length,
-    companyProfileChars: JSON.stringify(enrichment.companyProfile).length,
+    companyProfileChars: JSON.stringify(trimmedProfile).length,
     documentContextChars: enrichment.documentContext ? enrichment.documentContext.join(" ").length : 0,
     instructionsChars: enrichment.instructions ? enrichment.instructions.join(" ").length : 0
   };
@@ -1063,7 +1103,7 @@ Please provide professional responses to each question based on the company prof
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt }
           ],
-          max_completion_tokens: 2000,
+          max_completion_tokens: 3500,
           response_format: { type: "json_object" }
         }),
       });
@@ -1087,13 +1127,12 @@ Please provide professional responses to each question based on the company prof
         result = JSON.parse(content);
       } catch (parseError) {
         console.error("❌ Invalid JSON from OpenAI:", getErrorMessage(parseError), content.slice(0, 200));
-        // Instead of throwing, continue with empty answers
-        result = { answers: [] };
+        throw new Error("Invalid JSON from OpenAI");
       }
       
-      if (!result.answers || !Array.isArray(result.answers)) {
-        console.error('Invalid response format from OpenAI:', result);
-        throw new Error('Invalid response format: missing answers array');
+      // Harden OpenAI parsing - ensure we have valid answers
+      if (!content || !result.answers || !Array.isArray(result.answers) || result.answers.length === 0) {
+        throw new Error("No answers generated");
       }
 
       console.log(`Successfully generated ${result.answers.length} answers`);
@@ -1104,7 +1143,7 @@ Please provide professional responses to each question based on the company prof
       
       if (attempt === 2) {
         // Final attempt failed, return fallback answers
-        console.log('Using fallback answers for failed batch');
+        console.log('🔎 Using fallback answers for failed batch');
         return questionBatch.map(q => ({
           question: q.question_text,
           answer: `We are unable to provide a detailed response to this question at this time. Please contact ${enrichment.companyProfile.company_name} directly to discuss your specific requirements and how our services can meet your needs.`
@@ -1123,7 +1162,7 @@ async function saveAnswerBatch(
   tenderId: string,
   companyProfileId: string,
   supabaseClient: any
-): Promise<any> {
+): Promise<{ data: any; error: any }> {
   const batchAnswers = [];
   
   for (let i = 0; i < answers.length && i < questionBatch.length; i++) {
@@ -1148,15 +1187,16 @@ async function saveAnswerBatch(
     .from("tender_responses")
     .upsert(batchAnswers, {
       onConflict: "tender_id,question_index"
-    });
+    })
+    .select();
 
   if (error) {
     console.error("❌ Error saving answers batch:", error, batchAnswers);
-    return { error, unsaved: batchAnswers };
+    return { data: null, error };
   }
 
   console.log(`✅ Saved ${data?.length ?? 0} answers for tender ${tenderId}`);
-  return data;
+  return { data, error: null };
 }
 
 // Generate all answers with progressive saving and graceful error handling
@@ -1179,7 +1219,27 @@ async function generateAllAnswers(
     return { totalAnswers: 0, batchesProcessed: 0, allAnswers: [], status: 'failed' };
   }
 
-  const batchSize = 5; // Process 5 questions at a time for optimal performance
+  // Dynamic batch size adjustment based on payload size
+  let batchSize = 5; // Default: 5 questions at a time
+  
+  // Estimate payload size for dynamic batching
+  const sampleProfileChars = JSON.stringify(enrichment.companyProfile).length;
+  const sampleContextChars = enrichment.documentContext ? enrichment.documentContext.join(" ").length : 0;
+  const sampleInstructionsChars = enrichment.instructions ? enrichment.instructions.join(" ").length : 0;
+  const totalPayloadChars = sampleProfileChars + sampleContextChars + sampleInstructionsChars;
+  const tokenEstimate = Math.floor(totalPayloadChars / 4);
+  
+  // Adjust batch size based on payload complexity
+  if (tokenEstimate > 3500 || totalPayloadChars > 15000) {
+    batchSize = 2;
+    console.log(`🔎 Reducing batch size to 2 due to large payload (${tokenEstimate} tokens, ${totalPayloadChars} chars)`);
+  } else if (tokenEstimate > 2500 || totalPayloadChars > 12000) {
+    batchSize = 3;
+    console.log(`🔎 Reducing batch size to 3 due to medium payload (${tokenEstimate} tokens, ${totalPayloadChars} chars)`);
+  } else {
+    console.log(`🔎 Using default batch size of 5 (${tokenEstimate} tokens, ${totalPayloadChars} chars)`);
+  }
+  
   const batches = [];
   
   // Split questions into batches
@@ -1187,7 +1247,7 @@ async function generateAllAnswers(
     batches.push(segments.questions.slice(i, i + batchSize));
   }
 
-  console.log(`🔎 Processing ${segments.questions.length} questions in ${batches.length} batches`);
+  console.log(`🔎 Processing ${segments.questions.length} questions in ${batches.length} batches (batch size: ${batchSize})`);
   
   let totalAnswers = 0;
   let batchesProcessed = 0;
@@ -1207,7 +1267,10 @@ async function generateAllAnswers(
         // Save answers to database
         const saveResult = await saveAnswerBatch(answers, batch, tenderId, companyProfileId, supabaseClient);
         
-        if (!saveResult.error) {
+        // Log save result
+        console.log(`🔎 Save result for batch ${batchIndex + 1}: { hasData: ${!!saveResult.data}, hasError: ${!!saveResult.error} }`);
+        
+        if (saveResult && !saveResult.error && saveResult.data) {
           // Collect answers for response envelope
           for (let i = 0; i < answers.length && i < batch.length; i++) {
             allAnswers.push({
@@ -1221,7 +1284,7 @@ async function generateAllAnswers(
           batchesProcessed++;
           console.log(`✅ Answer batch ${batchIndex + 1} saved (count: ${answers.length})`);
         } else {
-          console.error(`❌ Batch ${batchIndex + 1} save failed, continuing...`, saveResult.error);
+          console.error(`❌ Batch ${batchIndex + 1} save failed, continuing...`, saveResult?.error);
           failedBatches++;
         }
       } else {
