@@ -283,16 +283,25 @@ async function segmentContent(rawText: string): Promise<{
     allSegments.context.push(...ruleBasedResults.context);
     allSegments.instructions.push(...ruleBasedResults.instructions);
 
-    // Step 3: Split remaining text into chunks for AI processing
-    const chunks = splitTextIntoChunks(rawText, 2500, 500);
-    console.log(`Split text into ${chunks.length} chunks for AI processing`);
+    // Step 3: Reduce upstream calls - limit AI classification for heavy docs
+    const shouldLimitAI = allSegments.questions.length >= 10 || rawText.length > 50000;
+    const maxChunksToProcess = shouldLimitAI ? 2 : Infinity;
+    
+    if (shouldLimitAI) {
+      console.log(`🔎 Limiting AI chunk processing to ${maxChunksToProcess} chunks (found ${allSegments.questions.length} questions, ${rawText.length} chars)`);
+    }
 
-    // Step 4: Process each chunk with AI (with resilient error handling)
+    // Step 4: Split remaining text into chunks for AI processing
+    const chunks = splitTextIntoChunks(rawText, 2500, 500);
+    const chunksToProcess = Math.min(chunks.length, maxChunksToProcess);
+    console.log(`Split text into ${chunks.length} chunks, will process ${chunksToProcess} chunks with AI`);
+
+    // Step 5: Process each chunk with AI (with resilient error handling)
     let successfulChunks = 0;
     let failedChunks = 0;
 
-    for (let i = 0; i < chunks.length; i++) {
-      console.log(`Processing chunk ${i + 1}/${chunks.length}`);
+    for (let i = 0; i < chunksToProcess; i++) {
+      console.log(`Processing chunk ${i + 1}/${chunksToProcess}`);
       
       try {
         const chunkSegments = await classifyChunkWithAI(chunks[i], openAIApiKey);
@@ -315,11 +324,21 @@ async function segmentContent(rawText: string): Promise<{
 
     console.log(`Chunk processing complete: ${successfulChunks} successful, ${failedChunks} failed`);
 
-    // Step 5: Deduplicate and clean up results
+    // Step 6: Deduplicate and clean up results
     const rawQuestionCount = allSegments.questions.length;
     allSegments.questions = deduplicateQuestions(allSegments.questions);
     allSegments.context = deduplicateTextItems(allSegments.context);
     allSegments.instructions = deduplicateTextItems(allSegments.instructions);
+    
+    // Step 7: Context rescue - if no context found, scan for background content
+    if (allSegments.context.length === 0) {
+      console.log(`🔎 Context rescue: scanning for background content...`);
+      const rescuedContext = rescueContextFromText(rawText);
+      if (rescuedContext.length > 0) {
+        allSegments.context.push(...rescuedContext);
+        console.log(`🔎 Context rescued: found ${rescuedContext.length} items`);
+      }
+    }
     
     console.log(`Final segmentation: ${allSegments.questions.length} questions (from ${rawQuestionCount} raw), ${allSegments.context.length} context items, ${allSegments.instructions.length} instructions`);
     
@@ -343,6 +362,12 @@ async function segmentContent(rawText: string): Promise<{
       allSegments.context = deduplicateTextItems(allSegments.context);
       allSegments.instructions = deduplicateTextItems(allSegments.instructions);
       
+      // Context rescue for fallback too
+      if (allSegments.context.length === 0) {
+        const rescuedContext = rescueContextFromText(rawText);
+        allSegments.context.push(...rescuedContext);
+      }
+      
       console.log(`Fallback segmentation: ${allSegments.questions.length} questions, ${allSegments.context.length} context items, ${allSegments.instructions.length} instructions`);
       
       return allSegments;
@@ -359,6 +384,34 @@ async function segmentContent(rawText: string): Promise<{
       };
     }
   }
+}
+
+// Context rescue function - scan rawText for background content
+function rescueContextFromText(rawText: string): any[] {
+  const contextItems = [];
+  const paragraphs = rawText.split('\n\n').filter(p => p.trim().length > 100);
+  
+  for (const paragraph of paragraphs) {
+    const lowerPara = paragraph.toLowerCase();
+    
+    // Look for paragraphs containing background keywords
+    if (lowerPara.includes('introduction') || lowerPara.includes('background') || 
+        lowerPara.includes('scope') || lowerPara.includes('objective') ||
+        lowerPara.includes('overview') || lowerPara.includes('purpose') ||
+        lowerPara.includes('about') || lowerPara.includes('project')) {
+      
+      contextItems.push({
+        text: paragraph.trim(),
+        source: 'context-rescue',
+        confidence: 0.7
+      });
+      
+      // Limit to 3 rescued context items to avoid bloat
+      if (contextItems.length >= 3) break;
+    }
+  }
+  
+  return contextItems;
 }
 
 // Extract obvious questions using regex patterns
@@ -830,7 +883,7 @@ async function fetchCompanyProfile(companyProfileId: string, supabaseClient: any
   }
 }
 
-// Perform vector search for questions using qa_memory
+// Perform vector search for questions using qa_memory - limit to 5 questions for performance
 async function performVectorSearch(questions: any[], companyProfileId: string, supabaseClient: any): Promise<any[]> {
   const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
   if (!openAIApiKey) {
@@ -839,8 +892,13 @@ async function performVectorSearch(questions: any[], companyProfileId: string, s
   }
 
   const allSnippets = [];
+  const questionsToSearch = questions.slice(0, 5); // Limit to first 5 questions for performance
   
-  for (const question of questions.slice(0, 10)) { // Limit to first 10 questions for performance
+  if (questionsToSearch.length < questions.length) {
+    console.log(`🔎 Limiting vector search to ${questionsToSearch.length} questions (from ${questions.length} total)`);
+  }
+  
+  for (const question of questionsToSearch) {
     try {
       console.log(`Performing vector search for question ${question.question_number}`);
       
@@ -942,7 +1000,7 @@ function trimCompanyProfileForPrompt(profile: any): any {
   return trimmedProfile;
 }
 
-// Generate answers for questions using OpenAI with payload size protection
+// Generate answers for questions using OpenAI with timeout and better logging
 async function generateAnswersForBatch(
   questionBatch: any[],
   enrichment: any,
@@ -1086,10 +1144,16 @@ Please provide professional responses to each question based on the company prof
     console.warn(`⚠️ Large payload detected: ${finalPayloadSize} chars - may cause API issues`);
   }
 
-  // Try generating answers with retry logic
+  let fallbackAnswersUsed = false;
+
+  // Try generating answers with retry logic and timeout
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       console.log(`Generating answers for batch (attempt ${attempt})`);
+      
+      // Create AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
       
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -1103,10 +1167,13 @@ Please provide professional responses to each question based on the company prof
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt }
           ],
-          max_completion_tokens: 3500,
+          max_completion_tokens: 4000, // Increased from 3500
           response_format: { type: "json_object" }
         }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -1116,6 +1183,11 @@ Please provide professional responses to each question based on the company prof
 
       const data = await response.json();
       const content = data.choices[0]?.message?.content;
+      
+      // Better logging - OpenAI response metadata
+      const usage = data.usage;
+      const finishReason = data.choices[0]?.finish_reason;
+      console.log(`🔎 OpenAI response: finish_reason=${finishReason}, prompt_tokens=${usage?.prompt_tokens}, completion_tokens=${usage?.completion_tokens}, total_tokens=${usage?.total_tokens}`);
       
       if (!content) {
         console.error('No content returned from OpenAI - response:', data);
@@ -1144,10 +1216,14 @@ Please provide professional responses to each question based on the company prof
       if (attempt === 2) {
         // Final attempt failed, return fallback answers
         console.log('🔎 Using fallback answers for failed batch');
-        return questionBatch.map(q => ({
+        fallbackAnswersUsed = true;
+        const fallbackAnswers = questionBatch.map(q => ({
           question: q.question_text,
-          answer: `We are unable to provide a detailed response to this question at this time. Please contact ${enrichment.companyProfile.company_name} directly to discuss your specific requirements and how our services can meet your needs.`
+          answer: "We will provide a concise, fully evidenced response during clarifications. Certain details depend on project-specific scope and will be confirmed as required."
         }));
+        
+        console.log(`🔎 Fallback answers used: ${fallbackAnswersUsed}`);
+        return fallbackAnswers;
       }
     }
   }
@@ -1199,7 +1275,7 @@ async function saveAnswerBatch(
   return { data, error: null };
 }
 
-// Generate all answers with progressive saving and graceful error handling
+// Generate all answers with adaptive batch sizing and graceful error handling
 async function generateAllAnswers(
   segments: { questions: any[] },
   enrichment: any,
@@ -1219,35 +1295,52 @@ async function generateAllAnswers(
     return { totalAnswers: 0, batchesProcessed: 0, allAnswers: [], status: 'failed' };
   }
 
-  // Dynamic batch size adjustment based on payload size
-  let batchSize = 5; // Default: 5 questions at a time
-  
-  // Estimate payload size for dynamic batching
-  const sampleProfileChars = JSON.stringify(enrichment.companyProfile).length;
-  const sampleContextChars = enrichment.documentContext ? enrichment.documentContext.join(" ").length : 0;
-  const sampleInstructionsChars = enrichment.instructions ? enrichment.instructions.join(" ").length : 0;
-  const totalPayloadChars = sampleProfileChars + sampleContextChars + sampleInstructionsChars;
-  const tokenEstimate = Math.floor(totalPayloadChars / 4);
-  
-  // Adjust batch size based on payload complexity
-  if (tokenEstimate > 3500 || totalPayloadChars > 15000) {
-    batchSize = 2;
-    console.log(`🔎 Reducing batch size to 2 due to large payload (${tokenEstimate} tokens, ${totalPayloadChars} chars)`);
-  } else if (tokenEstimate > 2500 || totalPayloadChars > 12000) {
-    batchSize = 3;
-    console.log(`🔎 Reducing batch size to 3 due to medium payload (${tokenEstimate} tokens, ${totalPayloadChars} chars)`);
-  } else {
-    console.log(`🔎 Using default batch size of 5 (${tokenEstimate} tokens, ${totalPayloadChars} chars)`);
-  }
-  
-  const batches = [];
-  
-  // Split questions into batches
-  for (let i = 0; i < segments.questions.length; i += batchSize) {
-    batches.push(segments.questions.slice(i, i + batchSize));
+  // Adaptive batch sizing - include question text in calculations
+  function calculateOptimalBatchSize(questions: any[], startIndex: number): number {
+    let batchSize = 5; // Default: 5 questions at a time
+    
+    // Build a test batch to calculate actual payload size
+    let testBatch = questions.slice(startIndex, startIndex + batchSize);
+    
+    while (batchSize >= 2) {
+      // Calculate actual payload size including question text
+      const testQuestions = testBatch.map(q => `Q${q.question_number}: ${q.question_text}`).join('\n\n');
+      const sampleProfileChars = JSON.stringify(enrichment.companyProfile).length;
+      const sampleContextChars = enrichment.documentContext ? enrichment.documentContext.join(" ").length : 0;
+      const sampleInstructionsChars = enrichment.instructions ? enrichment.instructions.join(" ").length : 0;
+      const questionTextChars = testQuestions.length;
+      
+      const totalPayloadChars = sampleProfileChars + sampleContextChars + sampleInstructionsChars + questionTextChars;
+      const tokenEstimate = Math.floor(totalPayloadChars / 4);
+      
+      // Check if within limits
+      if (tokenEstimate <= 2500 && totalPayloadChars <= 12000) {
+        console.log(`🔎 Optimal batch size: ${batchSize} (payload: ${totalPayloadChars} chars, tokens: ${tokenEstimate})`);
+        return batchSize;
+      }
+      
+      // If still too large, try smaller batch
+      batchSize--;
+      testBatch = questions.slice(startIndex, startIndex + batchSize);
+    }
+    
+    // If still too large at batch size 2, we'll increase max_completion_tokens in the API call
+    console.log(`🔎 Using minimum batch size of 2 (payload may be large)`);
+    return 2;
   }
 
-  console.log(`🔎 Processing ${segments.questions.length} questions in ${batches.length} batches (batch size: ${batchSize})`);
+  const batches = [];
+  let currentIndex = 0;
+  
+  // Split questions into adaptive batches
+  while (currentIndex < segments.questions.length) {
+    const optimalBatchSize = calculateOptimalBatchSize(segments.questions, currentIndex);
+    const batch = segments.questions.slice(currentIndex, currentIndex + optimalBatchSize);
+    batches.push(batch);
+    currentIndex += optimalBatchSize;
+  }
+
+  console.log(`🔎 Processing ${segments.questions.length} questions in ${batches.length} adaptive batches`);
   
   let totalAnswers = 0;
   let batchesProcessed = 0;
@@ -1256,7 +1349,18 @@ async function generateAllAnswers(
 
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
     const batch = batches[batchIndex];
-    console.log(`🔎 Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} questions)`);
+    const batchSize = batch.length;
+    
+    // Calculate actual payload metrics for this batch
+    const testQuestions = batch.map(q => `Q${q.question_number}: ${q.question_text}`).join('\n\n');
+    const profileChars = JSON.stringify(enrichment.companyProfile).length;
+    const contextChars = enrichment.documentContext ? enrichment.documentContext.join(" ").length : 0;
+    const instructionsChars = enrichment.instructions ? enrichment.instructions.join(" ").length : 0;
+    const payloadChars = profileChars + contextChars + instructionsChars + testQuestions.length;
+    const tokenEstimate = Math.floor(payloadChars / 4);
+    
+    console.log(`🔎 Processing batch ${batchIndex + 1}/${batches.length} (${batchSize} questions)`);
+    console.log(`🔎 Batch payload: ${payloadChars} chars, tokens: ${tokenEstimate}`);
     
     try {
       // Generate answers for this batch
@@ -1267,7 +1371,7 @@ async function generateAllAnswers(
         // Save answers to database
         const saveResult = await saveAnswerBatch(answers, batch, tenderId, companyProfileId, supabaseClient);
         
-        // Log save result
+        // Better logging - save result
         console.log(`🔎 Save result for batch ${batchIndex + 1}: { hasData: ${!!saveResult.data}, hasError: ${!!saveResult.error} }`);
         
         if (saveResult && !saveResult.error && saveResult.data) {
@@ -1299,10 +1403,10 @@ async function generateAllAnswers(
     }
   }
 
-  // Determine final status
+  // Final status safety net - if at least one answer was saved, set status to draft
   let finalStatus = 'failed';
   if (totalAnswers > 0) {
-    finalStatus = batchesProcessed === batches.length ? 'draft' : 'draft'; // Always draft if any answers saved
+    finalStatus = 'draft'; // Always draft if any answers saved
   }
 
   console.log(`✅ Tender processing finished, status: ${finalStatus} (${totalAnswers} answers, ${batchesProcessed} successful batches, ${failedBatches} failed)`);
