@@ -1008,142 +1008,76 @@ async function generateAnswersForBatch(
   maxCompletionTokens: number = 3000,
   hasTimeForAnotherCall: () => boolean
 ): Promise<any[]> {
-  const systemPrompt = `Use the following company profile context when answering. Personalise each response to reflect this company. If profile fields are missing, use "N/A" but do not hallucinate.
+  const systemPrompt = `
+You are Proposal.fit, an AI tender response assistant.
+Your job is to answer each question individually and specifically.
+Use the company profile, tender context, and instructions.
+Do not reuse the same answer across questions.
+Always respond in UK English.
+Keep answers concise but specific: 1–3 focused paragraphs.
+If a question is closed (yes/no), give a short answer with explanation.
+`;
 
-You are an expert tender response writer specializing in UK government and corporate procurement. Generate professional, compliant responses in UK English.
-
-CRITICAL: Answer each question individually and specifically. Do not reuse the same boilerplate answer. Tailor each answer to the question asked. Always respond in UK English.
-
-RESPONSE REQUIREMENTS:
-- Use UK English spelling and terminology throughout
-- Be concise: short answers for closed questions, 1-2 paragraphs for open questions
-- No padding or filler content
-- Professional, formal tone appropriate for UK procurement
-- Be specific and factual based on provided company information
-- Always reference company-specific details where relevant (services, industry, experience, etc.)
-- Each answer must be unique and directly address the specific question asked
-
-COMPLIANCE RULES:
-- Follow all MANDATORY COMPLIANCE requirements exactly
-- Address evaluation criteria mentioned in instructions
-- Use company-specific information where available
-- If information is unavailable, state this clearly rather than making assumptions
-
-Return JSON format:
-{
-  "answers": [
-    {
-      "question": "exact question text from input",
-      "answer": "professional UK English response tailored specifically to this question"
+  // Create profile summary bullets for concise, focused company info
+  const createProfileBullets = (profile: any): string[] => {
+    const bullets = [];
+    
+    if (profile.company_name) bullets.push(`Company: ${profile.company_name}`);
+    if (profile.industry) bullets.push(`Industry: ${profile.industry}`);
+    if (profile.services_offered) {
+      const services = Array.isArray(profile.services_offered) ? profile.services_offered.join(', ') : profile.services_offered;
+      bullets.push(`Services: ${services}`);
     }
-  ]
-}`;
-
-  const questions = questionBatch.map(q => `Q${q.question_number}: ${q.question_text}`).join('\n\n');
-  
-  // Trim company profile for prompt (keep full version in envelope)
-  const trimmedProfile = trimCompanyProfileForPrompt(enrichment.companyProfile);
-  
-  let userPrompt = `COMPANY PROFILE:
-Company Name: ${trimmedProfile.company_name}
-Industry: ${trimmedProfile.industry}
-Team Size: ${trimmedProfile.team_size}
-Services Offered: ${Array.isArray(trimmedProfile.services_offered) ? trimmedProfile.services_offered.join(', ') : trimmedProfile.services_offered}
-Specialisations: ${trimmedProfile.specializations}
-Mission: ${trimmedProfile.mission}
-Values: ${trimmedProfile.values}
-Past Projects: ${trimmedProfile.past_projects}
-Years in Business: ${trimmedProfile.years_in_business}`;
-
-  if (trimmedProfile.accreditations && trimmedProfile.accreditations !== 'N/A') {
-    userPrompt += `\nAccreditations: ${trimmedProfile.accreditations}`;
-  }
-  if (trimmedProfile.policies && trimmedProfile.policies !== 'N/A') {
-    userPrompt += `\nPolicies: ${trimmedProfile.policies}`;
-  }
-
-  // Add retrieved snippets if available
-  if (enrichment.retrievedSnippets && enrichment.retrievedSnippets.length > 0) {
-    userPrompt += `\n\nRELEVANT EXPERIENCE (from previous tenders):`;
-    enrichment.retrievedSnippets.forEach((snippet: any, index: number) => {
-      userPrompt += `\n${index + 1}. Q: ${snippet.similar_question}\n   A: ${snippet.answer}`;
-    });
-  }
-
-  // Calculate payload summary for debugging
-  const payloadSummary = {
-    questionsCount: questionBatch.length,
-    companyProfileChars: charLen(trimmedProfile),
-    documentContextChars: toText(enrichment.documentContext || []).length,
-    instructionsChars: toText(enrichment.instructions || []).length
+    if (profile.team_size) bullets.push(`Team Size: ${profile.team_size}`);
+    if (profile.years_in_business) bullets.push(`Experience: ${profile.years_in_business} years in business`);
+    
+    // Cap long fields at 5 items max
+    if (profile.accreditations && profile.accreditations !== 'N/A') {
+      const accreds = profile.accreditations.length > 200 ? profile.accreditations.substring(0, 200) + '...' : profile.accreditations;
+      bullets.push(`Accreditations: ${accreds}`);
+    }
+    if (profile.policies && profile.policies !== 'N/A') {
+      const policies = profile.policies.length > 200 ? profile.policies.substring(0, 200) + '...' : profile.policies;
+      bullets.push(`Policies: ${policies}`);
+    }
+    if (profile.past_projects) {
+      // Take first 5 items from past_projects or truncate if too long
+      const projects = profile.past_projects.length > 300 ? profile.past_projects.substring(0, 300) + '...' : profile.past_projects;
+      bullets.push(`Past Projects: ${projects}`);
+    }
+    
+    return bullets;
   };
-  console.log("🔎 Payload summary:", payloadSummary);
 
-  // Add document context with size protection - TRUNCATE TO ~800 WORDS IF TOTAL > 10,000 CHARS
-  if (enrichment.documentContext && enrichment.documentContext.length > 0) {
-    console.log(`Adding document context: ${enrichment.documentContext.length} items`);
-    
-    let contextText = '';
-    let wordCount = 0;
-    const totalChars = payloadSummary.companyProfileChars + payloadSummary.documentContextChars + payloadSummary.instructionsChars;
-    const maxWords = totalChars > 10000 ? 800 : 1000; // More aggressive truncation for large payloads
-    
-    for (const contextItem of enrichment.documentContext) {
-      const itemText = typeof contextItem === 'string' ? contextItem : (contextItem.text || '');
-      const itemWords = itemText.split(/\s+/).length;
-      
-      if (wordCount + itemWords > maxWords) {
-        const remainingWords = maxWords - wordCount;
-        if (remainingWords > 20) {
-          // Take partial text if we have room for meaningful content
-          const partialText = itemText.split(/\s+/).slice(0, remainingWords).join(' ') + '...';
-          contextText += `\n- ${partialText}`;
-        }
-        console.log(`🔎 Context truncated at ${wordCount} words (max ${maxWords}) due to large payload`);
-        break;
-      } else {
-        contextText += `\n- ${itemText}`;
-        wordCount += itemWords;
-      }
-    }
-    
-    if (contextText.trim()) {
-      userPrompt += `\n\nTENDER CONTEXT:${contextText}`;
-    }
+  const profileSummaryBullets = createProfileBullets(enrichment.companyProfile);
+  const contextItems = enrichment.documentContext || [];
+  const instructions = enrichment.instructions || [];
+  
+  // Build user prompt with new structure
+  const userPrompt = {
+    questions: questionBatch.map(q => q.question_text),
+    companyProfile: profileSummaryBullets,
+    context: toText(contextItems).slice(0, 800),
+    instructions: toText(instructions)
+  };
+
+  // Convert to prompt text for OpenAI
+  let promptText = `COMPANY PROFILE:\n${profileSummaryBullets.map(bullet => `• ${bullet}`).join('\n')}`;
+  
+  if (userPrompt.context.length > 0) {
+    promptText += `\n\nTENDER CONTEXT:\n${userPrompt.context}`;
   }
-
-  // Add mandatory compliance instructions with truncation protection
-  if (enrichment.instructions && enrichment.instructions.length > 0) {
-    const totalChars = payloadSummary.companyProfileChars + payloadSummary.documentContextChars + payloadSummary.instructionsChars;
-    let instructionsText = '';
-    let wordCount = 0;
-    const maxWords = totalChars > 10000 ? 300 : 500; // Limit instructions if payload is large
-    
-    userPrompt += `\n\nMANDATORY COMPLIANCE REQUIREMENTS:`;
-    
-    for (const instruction of enrichment.instructions) {
-      const instructionText = typeof instruction === 'string' ? instruction : (instruction.text || instruction);
-      const itemWords = instructionText.split(/\s+/).length;
-      
-      if (wordCount + itemWords > maxWords) {
-        console.log(`🔎 Instructions truncated at ${wordCount} words (max ${maxWords})`);
-        break;
-      } else {
-        userPrompt += `\n- ${instructionText}`;
-        wordCount += itemWords;
-      }
-    }
+  
+  if (userPrompt.instructions.length > 0) {
+    promptText += `\n\nMANDATORY COMPLIANCE:\n${userPrompt.instructions}`;
   }
+  
+  promptText += `\n\nQUESTIONS TO ANSWER:\n${userPrompt.questions.map((q, i) => `${i + 1}. ${q}`).join('\n\n')}`;
 
-  userPrompt += `\n\nQUESTIONS TO ANSWER:\n${questions}
-
-Please provide professional responses to each question based on the company profile and requirements above.`;
-
-  // Calculate final payload metrics
-  const finalPayloadSize = (systemPrompt + userPrompt).length;
-  const tokenEstimate = estimateTokens(systemPrompt + userPrompt);
-  console.log(`🔎 Generating answers for ${questionBatch.length} questions - payload size: ${finalPayloadSize} chars`);
-  console.log(`🔎 Estimated tokens for batch: ${tokenEstimate}`);
+  // Calculate final payload metrics for logging
+  const finalPayloadSize = (systemPrompt + promptText).length;
+  const tokenEstimate = estimateTokens(systemPrompt + promptText);
+  console.log(`🔎 Generating answers for ${questionBatch.length} questions - payload size: ${finalPayloadSize} chars, tokens: ${tokenEstimate}`);
   
   if (finalPayloadSize > 50000) {
     console.warn(`⚠️ Large payload detected: ${finalPayloadSize} chars - may cause API issues`);
@@ -1158,13 +1092,13 @@ Please provide professional responses to each question based on the company prof
       
       // Check if we have time for another call before starting
       if (!hasTimeForAnotherCall()) {
-        console.log(`⏰ Time budget exceeded, using fallback answers`);
+        console.log(`⏰ Time budget exceeded, using batch fallback for all ${questionBatch.length} questions`);
         fallbackAnswersUsed = true;
         const fallbackAnswers = questionBatch.map(q => ({
           question: q.question_text,
           answer: "We will provide a concise, fully evidenced response during clarifications. Certain details depend on project-specific scope and will be confirmed as required."
         }));
-        console.log(`🔎 Fallback answers used: ${fallbackAnswersUsed}`);
+        console.log(`🔎 Batch fallback used for all questions (individual fallbacks: 0, batch fallback: true)`);
         return fallbackAnswers;
       }
       
@@ -1182,7 +1116,7 @@ Please provide professional responses to each question based on the company prof
           model: 'gpt-5-mini-2025-08-07',
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
+            { role: 'user', content: promptText }
           ],
           max_completion_tokens: maxCompletionTokens,
           response_format: { type: "json_object" }
@@ -1224,6 +1158,8 @@ Please provide professional responses to each question based on the company prof
 
       // Validate and ensure all questions have answers, fill gaps with fallback if needed
       const validatedAnswers = [];
+      let individualFallbackCount = 0;
+      
       for (let i = 0; i < questionBatch.length; i++) {
         const question = questionBatch[i];
         const aiAnswer = parsed.answers.find((a: any) => a.question === question.question_text);
@@ -1232,7 +1168,8 @@ Please provide professional responses to each question based on the company prof
           validatedAnswers.push(aiAnswer);
         } else {
           // Individual question fallback - only for missing/empty answers
-          console.log(`🔎 Using individual fallback for question ${i + 1}: ${question.question_text.substring(0, 50)}...`);
+          individualFallbackCount++;
+          console.log(`🔎 Individual fallback used for question ${i + 1}: "${question.question_text.substring(0, 50)}..."`);
           fallbackAnswersUsed = true;
           validatedAnswers.push({
             question: question.question_text,
@@ -1241,7 +1178,7 @@ Please provide professional responses to each question based on the company prof
         }
       }
 
-      console.log(`Successfully generated ${validatedAnswers.length} answers (fallback used: ${fallbackAnswersUsed})`);
+      console.log(`Successfully generated ${validatedAnswers.length} answers (individual fallbacks: ${individualFallbackCount}, batch fallback: false)`);
       return validatedAnswers;
 
     } catch (error) {
@@ -1250,14 +1187,14 @@ Please provide professional responses to each question based on the company prof
       // Check if we should retry or use fallback
       if (attempt === 2 || !hasTimeForAnotherCall()) {
         // Final attempt failed or no time left, return fallback answers
-        console.log('🔎 Using fallback answers for failed batch');
+        console.log(`🔎 Using batch fallback for failed attempt ${attempt} (all ${questionBatch.length} questions)`);
         fallbackAnswersUsed = true;
         const fallbackAnswers = questionBatch.map(q => ({
           question: q.question_text,
           answer: "We will provide a concise, fully evidenced response during clarifications. Certain details depend on project-specific scope and will be confirmed as required."
         }));
         
-        console.log(`🔎 Fallback answers used: ${fallbackAnswersUsed}`);
+        console.log(`🔎 Batch fallback used after failure (individual fallbacks: 0, batch fallback: true)`);
         return fallbackAnswers;
       }
     }
