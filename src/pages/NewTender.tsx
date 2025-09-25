@@ -1199,40 +1199,9 @@ const NewTender = () => {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-primary">{contentPreview.totalQuestions}</div>
-                          <div className="text-sm text-muted-foreground">Questions Detected</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-blue-600">{contentPreview.segmentCounts.context}</div>
-                          <div className="text-sm text-muted-foreground">Context Items</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-green-600">{contentPreview.segmentCounts.instructions}</div>
-                          <div className="text-sm text-muted-foreground">Instructions</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-orange-600">{contentPreview.segmentCounts.other}</div>
-                          <div className="text-sm text-muted-foreground">Other Content</div>
-                        </div>
-                      </div>
-                      
-                      {contentPreview.sampleQuestions.length > 0 && (
-                        <div>
-                          <h4 className="font-semibold mb-2">Sample Questions:</h4>
-                          <ul className="space-y-1">
-                            {contentPreview.sampleQuestions.map((q, i) => (
-                              <li key={i} className="text-sm text-muted-foreground">
-                                {i + 1}. {q.length > 100 ? `${q.substring(0, 100)}...` : q}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      
-                      <div className="mt-3 text-xs text-muted-foreground">
-                        ✨ Context and instructions extracted to improve AI-generated response quality
+                      <div className="text-center mb-4">
+                        <div className="text-4xl font-bold text-primary">{contentPreview.totalQuestions}</div>
+                        <div className="text-lg text-muted-foreground">Questions Detected</div>
                       </div>
                     </CardContent>
                   </Card>

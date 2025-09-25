@@ -1012,6 +1012,8 @@ async function generateAnswersForBatch(
 
 You are an expert tender response writer specializing in UK government and corporate procurement. Generate professional, compliant responses in UK English.
 
+CRITICAL: Answer each question individually and specifically. Do not reuse the same boilerplate answer. Tailor each answer to the question asked. Always respond in UK English.
+
 RESPONSE REQUIREMENTS:
 - Use UK English spelling and terminology throughout
 - Be concise: short answers for closed questions, 1-2 paragraphs for open questions
@@ -1019,6 +1021,7 @@ RESPONSE REQUIREMENTS:
 - Professional, formal tone appropriate for UK procurement
 - Be specific and factual based on provided company information
 - Always reference company-specific details where relevant (services, industry, experience, etc.)
+- Each answer must be unique and directly address the specific question asked
 
 COMPLIANCE RULES:
 - Follow all MANDATORY COMPLIANCE requirements exactly
@@ -1031,7 +1034,7 @@ Return JSON format:
   "answers": [
     {
       "question": "exact question text from input",
-      "answer": "professional UK English response"
+      "answer": "professional UK English response tailored specifically to this question"
     }
   ]
 }`;
@@ -1219,8 +1222,27 @@ Please provide professional responses to each question based on the company prof
         throw new Error("No answers generated");
       }
 
-      console.log(`Successfully generated ${parsed.answers.length} answers`);
-      return parsed.answers;
+      // Validate and ensure all questions have answers, fill gaps with fallback if needed
+      const validatedAnswers = [];
+      for (let i = 0; i < questionBatch.length; i++) {
+        const question = questionBatch[i];
+        const aiAnswer = parsed.answers.find((a: any) => a.question === question.question_text);
+        
+        if (aiAnswer && aiAnswer.answer && aiAnswer.answer.trim().length > 0) {
+          validatedAnswers.push(aiAnswer);
+        } else {
+          // Individual question fallback - only for missing/empty answers
+          console.log(`🔎 Using individual fallback for question ${i + 1}: ${question.question_text.substring(0, 50)}...`);
+          fallbackAnswersUsed = true;
+          validatedAnswers.push({
+            question: question.question_text,
+            answer: "We will provide a concise, fully evidenced response during clarifications. Certain details depend on project-specific scope and will be confirmed as required."
+          });
+        }
+      }
+
+      console.log(`Successfully generated ${validatedAnswers.length} answers (fallback used: ${fallbackAnswersUsed})`);
+      return validatedAnswers;
 
     } catch (error) {
       console.error(`Answer generation attempt ${attempt} failed:`, error);
