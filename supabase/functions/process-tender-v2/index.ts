@@ -1000,11 +1000,13 @@ function trimCompanyProfileForPrompt(profile: any): any {
   return trimmedProfile;
 }
 
-// Generate answers for questions using OpenAI with timeout and better logging
+// Generate answers for questions using OpenAI with timeout, better logging, and fallback
 async function generateAnswersForBatch(
   questionBatch: any[],
   enrichment: any,
-  openAIApiKey: string
+  openAIApiKey: string,
+  maxCompletionTokens: number = 3000,
+  hasTimeForAnotherCall: () => boolean
 ): Promise<any[]> {
   const systemPrompt = `Use the following company profile context when answering. Personalise each response to reflect this company. If profile fields are missing, use "N/A" but do not hallucinate.
 
@@ -1068,9 +1070,9 @@ Years in Business: ${trimmedProfile.years_in_business}`;
   // Calculate payload summary for debugging
   const payloadSummary = {
     questionsCount: questionBatch.length,
-    companyProfileChars: JSON.stringify(trimmedProfile).length,
-    documentContextChars: enrichment.documentContext ? enrichment.documentContext.join(" ").length : 0,
-    instructionsChars: enrichment.instructions ? enrichment.instructions.join(" ").length : 0
+    companyProfileChars: charLen(trimmedProfile),
+    documentContextChars: toText(enrichment.documentContext || []).length,
+    instructionsChars: toText(enrichment.instructions || []).length
   };
   console.log("🔎 Payload summary:", payloadSummary);
 
@@ -1136,7 +1138,7 @@ Please provide professional responses to each question based on the company prof
 
   // Calculate final payload metrics
   const finalPayloadSize = (systemPrompt + userPrompt).length;
-  const tokenEstimate = Math.floor(finalPayloadSize / 4);
+  const tokenEstimate = estimateTokens(systemPrompt + userPrompt);
   console.log(`🔎 Generating answers for ${questionBatch.length} questions - payload size: ${finalPayloadSize} chars`);
   console.log(`🔎 Estimated tokens for batch: ${tokenEstimate}`);
   
@@ -1151,9 +1153,21 @@ Please provide professional responses to each question based on the company prof
     try {
       console.log(`Generating answers for batch (attempt ${attempt})`);
       
-      // Create AbortController for timeout
+      // Check if we have time for another call before starting
+      if (!hasTimeForAnotherCall()) {
+        console.log(`⏰ Time budget exceeded, using fallback answers`);
+        fallbackAnswersUsed = true;
+        const fallbackAnswers = questionBatch.map(q => ({
+          question: q.question_text,
+          answer: "We will provide a concise, fully evidenced response during clarifications. Certain details depend on project-specific scope and will be confirmed as required."
+        }));
+        console.log(`🔎 Fallback answers used: ${fallbackAnswersUsed}`);
+        return fallbackAnswers;
+      }
+      
+      // Create AbortController for timeout (25-30s)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
       
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -1167,7 +1181,7 @@ Please provide professional responses to each question based on the company prof
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt }
           ],
-          max_completion_tokens: 4000, // Increased from 3500
+          max_completion_tokens: maxCompletionTokens,
           response_format: { type: "json_object" }
         }),
         signal: controller.signal
@@ -1187,34 +1201,33 @@ Please provide professional responses to each question based on the company prof
       // Better logging - OpenAI response metadata
       const usage = data.usage;
       const finishReason = data.choices[0]?.finish_reason;
-      console.log(`🔎 OpenAI response: finish_reason=${finishReason}, prompt_tokens=${usage?.prompt_tokens}, completion_tokens=${usage?.completion_tokens}, total_tokens=${usage?.total_tokens}`);
+      console.log(`finish_reason=${finishReason}, prompt_tokens=${usage?.prompt_tokens || 0}, completion_tokens=${usage?.completion_tokens || 0}, total_tokens=${usage?.total_tokens || 0}`);
       
+      // Harden empty/invalid JSON path - force retry/fallback
       if (!content) {
-        console.error('No content returned from OpenAI - response:', data);
-        throw new Error('No content returned from OpenAI');
+        throw new Error("Empty content");
       }
 
-      let result;
+      let parsed;
       try {
-        result = JSON.parse(content);
-      } catch (parseError) {
-        console.error("❌ Invalid JSON from OpenAI:", getErrorMessage(parseError), content.slice(0, 200));
+        parsed = JSON.parse(content);
+      } catch (e) {
         throw new Error("Invalid JSON from OpenAI");
       }
       
-      // Harden OpenAI parsing - ensure we have valid answers
-      if (!content || !result.answers || !Array.isArray(result.answers) || result.answers.length === 0) {
+      if (!parsed?.answers?.length) {
         throw new Error("No answers generated");
       }
 
-      console.log(`Successfully generated ${result.answers.length} answers`);
-      return result.answers;
+      console.log(`Successfully generated ${parsed.answers.length} answers`);
+      return parsed.answers;
 
     } catch (error) {
       console.error(`Answer generation attempt ${attempt} failed:`, error);
       
-      if (attempt === 2) {
-        // Final attempt failed, return fallback answers
+      // Check if we should retry or use fallback
+      if (attempt === 2 || !hasTimeForAnotherCall()) {
+        // Final attempt failed or no time left, return fallback answers
         console.log('🔎 Using fallback answers for failed batch');
         fallbackAnswersUsed = true;
         const fallbackAnswers = questionBatch.map(q => ({
@@ -1231,14 +1244,14 @@ Please provide professional responses to each question based on the company prof
   return [];
 }
 
-// Progressive save to tender_responses table
+// Progressive save to tender_responses table with normalized return shape
 async function saveAnswerBatch(
   answers: any[],
   questionBatch: any[],
   tenderId: string,
   companyProfileId: string,
   supabaseClient: any
-): Promise<{ data: any; error: any }> {
+): Promise<{ data: any[] | null; error?: any }> {
   const batchAnswers = [];
   
   for (let i = 0; i < answers.length && i < questionBatch.length; i++) {
@@ -1272,16 +1285,17 @@ async function saveAnswerBatch(
   }
 
   console.log(`✅ Saved ${data?.length ?? 0} answers for tender ${tenderId}`);
-  return { data, error: null };
+  return { data, error: undefined };
 }
 
-// Generate all answers with adaptive batch sizing and graceful error handling
+// Generate all answers with adaptive batch sizing, global timeout, and graceful error handling
 async function generateAllAnswers(
   segments: { questions: any[] },
   enrichment: any,
   tenderId: string,
   companyProfileId: string,
-  supabaseClient: any
+  supabaseClient: any,
+  hasTimeForAnotherCall: () => boolean
 ): Promise<{ totalAnswers: number; batchesProcessed: number; allAnswers: any[]; status: string }> {
   const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
   
@@ -1295,38 +1309,48 @@ async function generateAllAnswers(
     return { totalAnswers: 0, batchesProcessed: 0, allAnswers: [], status: 'failed' };
   }
 
-  // Adaptive batch sizing - include question text in calculations
-  function calculateOptimalBatchSize(questions: any[], startIndex: number): number {
+  // Fixed payload estimation - include question text and stringify context properly
+  function calculateOptimalBatchSize(questions: any[], startIndex: number): { batchSize: number; maxTokens: number } {
     let batchSize = 5; // Default: 5 questions at a time
-    
-    // Build a test batch to calculate actual payload size
-    let testBatch = questions.slice(startIndex, startIndex + batchSize);
+    let maxTokens = 3000; // Default token limit
     
     while (batchSize >= 2) {
-      // Calculate actual payload size including question text
+      // Build the actual final prompt components
+      const testBatch = questions.slice(startIndex, startIndex + batchSize);
       const testQuestions = testBatch.map(q => `Q${q.question_number}: ${q.question_text}`).join('\n\n');
-      const sampleProfileChars = JSON.stringify(enrichment.companyProfile).length;
-      const sampleContextChars = enrichment.documentContext ? enrichment.documentContext.join(" ").length : 0;
-      const sampleInstructionsChars = enrichment.instructions ? enrichment.instructions.join(" ").length : 0;
-      const questionTextChars = testQuestions.length;
       
-      const totalPayloadChars = sampleProfileChars + sampleContextChars + sampleInstructionsChars + questionTextChars;
-      const tokenEstimate = Math.floor(totalPayloadChars / 4);
+      // Calculate payload using same logic as generateAnswersForBatch
+      const companyProfileChars = charLen(enrichment.companyProfile);
+      const documentContextChars = toText(enrichment.documentContext || []).length;
+      const instructionsChars = toText(enrichment.instructions || []).length;
+      const questionsChars = testQuestions.length;
+      
+      const payloadChars = companyProfileChars + documentContextChars + instructionsChars + questionsChars;
+      const tokenEstimate = estimateTokens(`${payloadChars}`);
       
       // Check if within limits
-      if (tokenEstimate <= 2500 && totalPayloadChars <= 12000) {
-        console.log(`🔎 Optimal batch size: ${batchSize} (payload: ${totalPayloadChars} chars, tokens: ${tokenEstimate})`);
-        return batchSize;
+      if (tokenEstimate <= 2500 && payloadChars <= 12000) {
+        console.log(`[BATCH] size=${batchSize}, payloadChars=${payloadChars}, tokenEstimate=${tokenEstimate}, maxCompletion=${maxTokens}`);
+        return { batchSize, maxTokens };
       }
       
       // If still too large, try smaller batch
       batchSize--;
-      testBatch = questions.slice(startIndex, startIndex + batchSize);
     }
     
-    // If still too large at batch size 2, we'll increase max_completion_tokens in the API call
-    console.log(`🔎 Using minimum batch size of 2 (payload may be large)`);
-    return 2;
+    // If still too large at batch size 2, bump max_completion_tokens to 4000
+    if (batchSize < 2) {
+      batchSize = 2;
+      maxTokens = 4000;
+      const testBatch = questions.slice(startIndex, startIndex + batchSize);
+      const testQuestions = testBatch.map(q => `Q${q.question_number}: ${q.question_text}`).join('\n\n');
+      const payloadChars = charLen(enrichment.companyProfile) + toText(enrichment.documentContext || []).length + 
+                          toText(enrichment.instructions || []).length + testQuestions.length;
+      const tokenEstimate = estimateTokens(`${payloadChars}`);
+      console.log(`[BATCH] size=${batchSize}, payloadChars=${payloadChars}, tokenEstimate=${tokenEstimate}, maxCompletion=${maxTokens} (increased for heavy batch)`);
+    }
+    
+    return { batchSize, maxTokens };
   }
 
   const batches = [];
@@ -1334,10 +1358,10 @@ async function generateAllAnswers(
   
   // Split questions into adaptive batches
   while (currentIndex < segments.questions.length) {
-    const optimalBatchSize = calculateOptimalBatchSize(segments.questions, currentIndex);
-    const batch = segments.questions.slice(currentIndex, currentIndex + optimalBatchSize);
+    const { batchSize } = calculateOptimalBatchSize(segments.questions, currentIndex);
+    const batch = segments.questions.slice(currentIndex, currentIndex + batchSize);
     batches.push(batch);
-    currentIndex += optimalBatchSize;
+    currentIndex += batchSize;
   }
 
   console.log(`🔎 Processing ${segments.questions.length} questions in ${batches.length} adaptive batches`);
@@ -1349,22 +1373,52 @@ async function generateAllAnswers(
 
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
     const batch = batches[batchIndex];
-    const batchSize = batch.length;
+    const { batchSize, maxTokens } = calculateOptimalBatchSize(segments.questions, batchIndex * batch.length);
     
-    // Calculate actual payload metrics for this batch
-    const testQuestions = batch.map(q => `Q${q.question_number}: ${q.question_text}`).join('\n\n');
-    const profileChars = JSON.stringify(enrichment.companyProfile).length;
-    const contextChars = enrichment.documentContext ? enrichment.documentContext.join(" ").length : 0;
-    const instructionsChars = enrichment.instructions ? enrichment.instructions.join(" ").length : 0;
-    const payloadChars = profileChars + contextChars + instructionsChars + testQuestions.length;
-    const tokenEstimate = Math.floor(payloadChars / 4);
+    // Check if we have time for another call
+    if (!hasTimeForAnotherCall()) {
+      console.log(`⏰ Time budget exceeded, using fallback for remaining ${batches.length - batchIndex} batches`);
+      
+      // Generate fallback answers for all remaining questions
+      const remainingQuestions = batches.slice(batchIndex).flat();
+      const fallbackAnswers = remainingQuestions.map(q => ({
+        question: q.question_text,
+        answer: "We will provide a concise, fully evidenced response during clarifications. Certain details depend on project-specific scope and will be confirmed as required."
+      }));
+      
+      // Save fallback answers
+      for (let i = batchIndex; i < batches.length; i++) {
+        const remainingBatch = batches[i];
+        const batchFallbacks = fallbackAnswers.slice((i - batchIndex) * remainingBatch.length, (i - batchIndex + 1) * remainingBatch.length);
+        
+        const saveResult = await saveAnswerBatch(batchFallbacks, remainingBatch, tenderId, companyProfileId, supabaseClient);
+        console.log(`🔎 Fallback batch ${i + 1} saveResult: { hasData: ${!!saveResult.data}, hasError: ${!!saveResult.error} }`);
+        
+        if (saveResult && !saveResult.error && saveResult.data) {
+          totalAnswers += batchFallbacks.length;
+          batchesProcessed++;
+          
+          // Add to allAnswers for response
+          for (let j = 0; j < batchFallbacks.length && j < remainingBatch.length; j++) {
+            allAnswers.push({
+              question: remainingBatch[j].question_text,
+              question_number: remainingBatch[j].question_number,
+              answer: batchFallbacks[j].answer,
+              fallbackUsed: true
+            });
+          }
+        }
+      }
+      
+      break; // Exit the main loop
+    }
     
-    console.log(`🔎 Processing batch ${batchIndex + 1}/${batches.length} (${batchSize} questions)`);
-    console.log(`🔎 Batch payload: ${payloadChars} chars, tokens: ${tokenEstimate}`);
+    const timeLeftMs = hasTimeForAnotherCall() ? Math.max(0, 55000 - (Date.now() - Date.now())) : 0;
+    console.log(`🔎 Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} questions), timeLeftMs=${timeLeftMs}`);
     
     try {
       // Generate answers for this batch
-      const answers = await generateAnswersForBatch(batch, enrichment, openAIApiKey);
+      const answers = await generateAnswersForBatch(batch, enrichment, openAIApiKey, maxTokens, hasTimeForAnotherCall);
       
       // Check if we got valid answers
       if (answers && answers.length > 0) {
@@ -1380,7 +1434,8 @@ async function generateAllAnswers(
             allAnswers.push({
               question: batch[i].question_text,
               question_number: batch[i].question_number,
-              answer: answers[i].answer
+              answer: answers[i].answer,
+              fallbackUsed: false
             });
           }
           
@@ -1409,6 +1464,7 @@ async function generateAllAnswers(
     finalStatus = 'draft'; // Always draft if any answers saved
   }
 
+  console.log(`[FINAL] savedAnswers=${totalAnswers}, status=${finalStatus}`);
   console.log(`✅ Tender processing finished, status: ${finalStatus} (${totalAnswers} answers, ${batchesProcessed} successful batches, ${failedBatches} failed)`);
   return { totalAnswers, batchesProcessed, allAnswers, status: finalStatus };
 }
@@ -1427,8 +1483,23 @@ function buildEnrichmentBundle(
   };
 }
 
+// Helper functions for payload estimation and timeout management
+const toText = (items: any[]): string =>
+  items.map(it => typeof it === "string" ? it : (it?.text ?? JSON.stringify(it))).join(" ");
+
+const charLen = (v: any) => (typeof v === "string" ? v.length : JSON.stringify(v).length);
+
+const estimateTokens = (s: string) => Math.floor(s.length / 4); // rough
+
 // Main processing function with comprehensive error handling
 async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTenderResponse> {
+  // Global execution budget - hard stop with graceful degrade
+  const START = Date.now();
+  const BUDGET_MS = 55_000;                 // adjust to platform limit minus safety margin
+  const SAFETY_MS = 10_000;                 // leave time to finalise + DB writes
+  const timeLeft = () => BUDGET_MS - (Date.now() - START);
+  const hasTimeForAnotherCall = () => timeLeft() > SAFETY_MS;
+
   const supabaseClient = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -1623,7 +1694,8 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
           enrichment, 
           request.tenderId, 
           tender.company_profile_id, 
-          supabaseClient
+          supabaseClient,
+          hasTimeForAnotherCall
         );
         
         console.log(`✅ Answer generation complete - ${answerStats.totalAnswers} answers in ${answerStats.batchesProcessed} batches`);
