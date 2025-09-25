@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { getErrorMessage, asError } from "../_shared/errors.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -721,7 +722,7 @@ Common tender questions:
         .update({
           status: 'failed',
           processing_stage: 'failed',
-          error_message: error instanceof Error ? error.message : 'Unknown error',
+          error_message: getErrorMessage(error),
           last_activity_at: new Date().toISOString()
         })
         .eq('id', tenderId);
@@ -730,7 +731,7 @@ Common tender questions:
     }
 
     // Return structured error response instead of throwing
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = getErrorMessage(error);
     return {
       success: false,
       tenderId,
@@ -781,7 +782,7 @@ serve(async (req) => {
     console.error('Error in process-tender function:', error);
     
     // Always return structured response, never throw
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = getErrorMessage(error);
     return new Response(
       JSON.stringify({ 
         success: false, 

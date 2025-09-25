@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+import { getErrorMessage, asError } from "../_shared/errors.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -136,7 +137,7 @@ Rewritten Response:`;
       console.log('GPT-5 rewrite successful');
       
     } catch (gpt5Error) {
-      const gpt5ErrorMessage = gpt5Error instanceof Error ? gpt5Error.message : 'Unknown GPT-5 error';
+      const gpt5ErrorMessage = getErrorMessage(gpt5Error);
       console.log('GPT-5 failed, trying GPT-4o-mini fallback:', gpt5ErrorMessage);
       modelUsed = 'gpt-4o-mini';
       
@@ -178,7 +179,7 @@ Rewritten Response:`;
         
       } catch (fallbackError) {
         console.error('Both GPT-5 and GPT-4o-mini failed:', fallbackError);
-        const fallbackErrorMessage = fallbackError instanceof Error ? fallbackError.message : 'Unknown fallback error';
+        const fallbackErrorMessage = getErrorMessage(fallbackError);
         return new Response(JSON.stringify({ 
           error: 'Failed to rewrite response with both models',
           details: fallbackErrorMessage 
@@ -226,7 +227,7 @@ Rewritten Response:`;
 
   } catch (error) {
     console.error('Error in rewrite-response function:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = getErrorMessage(error);
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

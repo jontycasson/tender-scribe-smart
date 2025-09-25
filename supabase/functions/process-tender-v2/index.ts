@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+import { getErrorMessage, asError } from "../_shared/errors.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -99,7 +100,7 @@ async function extractText(filePath: string, mimeOrExt: string, supabaseClient: 
     return extractedText;
     
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = getErrorMessage(error);
     const errorMsg = `Text extraction failed for ${filePath}: ${errorMessage}`;
     console.error(`[DIAGNOSTIC] ${errorMsg}`);
     throw new Error(errorMsg);
@@ -114,7 +115,7 @@ async function extractTxtText(fileData: Blob): Promise<string> {
     console.log(`[DIAGNOSTIC] TXT extraction successful - ${cleanText.length} characters`);
     return cleanText;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = getErrorMessage(error);
       throw new Error(`TXT file reading failed: ${errorMessage}`);
     }
 }
@@ -148,7 +149,7 @@ async function extractDocxText(fileData: Blob): Promise<string> {
     throw new Error('Unable to extract sufficient text from DOCX file');
     
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = getErrorMessage(error);
     const errorMsg = `DOCX extraction failed: ${errorMessage}`;
     console.error(`[DIAGNOSTIC] ${errorMsg}`);
     throw new Error('DOCX file parsing failed - please convert to TXT format for better results');
@@ -177,7 +178,7 @@ async function extractRtfText(fileData: Blob): Promise<string> {
     return cleaned;
     
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = getErrorMessage(error);
       throw new Error(`RTF extraction failed: ${errorMessage}`);
     }
 }
@@ -212,7 +213,7 @@ async function extractXlsxText(fileData: Blob): Promise<string> {
     throw new Error('Unable to extract meaningful text from XLSX');
     
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = getErrorMessage(error);
     const errorMsg = `XLSX extraction failed: ${errorMessage}`;
     console.error(`[DIAGNOSTIC] ${errorMsg}`);
     throw new Error('XLSX file parsing failed - please convert to CSV or TXT format');
@@ -239,7 +240,7 @@ async function extractPdfText(fileData: Blob): Promise<string> {
     return stubText;
     
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = getErrorMessage(error);
       throw new Error(`PDF processing failed: ${errorMessage}`);
     }
 }
@@ -888,7 +889,7 @@ Please provide professional responses to each question based on the company prof
         result = JSON.parse(content);
       } catch (parseError) {
         console.error('Failed to parse OpenAI JSON response:', content);
-        const errorMessage = parseError instanceof Error ? parseError.message : 'Unknown parse error';
+        const errorMessage = getErrorMessage(parseError);
         throw new Error(`Invalid JSON response from OpenAI: ${errorMessage}`);
       }
       
@@ -1136,7 +1137,7 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       
     } catch (extractError) {
       response.error = 'Text extraction failed';
-      const errorMessage = extractError instanceof Error ? extractError.message : 'Unknown extraction error';
+      const errorMessage = getErrorMessage(extractError);
       response.message = `Unable to extract text: ${errorMessage}`;
       console.error(`[DIAGNOSTIC] ❌ Text extraction error:`, extractError);
       return response;
@@ -1221,7 +1222,7 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       } catch (fallbackError) {
         console.error(`[DIAGNOSTIC] ❌ Even fallback enrichment failed:`, fallbackError);
         response.status = 'segmented';
-        const errorMessage = fallbackError instanceof Error ? fallbackError.message : 'Unknown fallback error';
+        const errorMessage = getErrorMessage(fallbackError);
         response.error = `Enrichment failed: ${errorMessage}`;
       }
     }
@@ -1318,7 +1319,7 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
     response.success = false;
     response.status = 'failed';
     response.error = 'Unexpected processing error';
-    const errorMessage = fatalError instanceof Error ? fatalError.message : 'Unknown fatal error';
+    const errorMessage = getErrorMessage(fatalError);
     response.message = `Processing failed due to unexpected error: ${errorMessage}`;
     
     return response;
