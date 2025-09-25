@@ -721,7 +721,7 @@ Common tender questions:
         .update({
           status: 'failed',
           processing_stage: 'failed',
-          error_message: error.message,
+          error_message: error instanceof Error ? error.message : 'Unknown error',
           last_activity_at: new Date().toISOString()
         })
         .eq('id', tenderId);
@@ -730,6 +730,7 @@ Common tender questions:
     }
 
     // Return structured error response instead of throwing
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return {
       success: false,
       tenderId,
@@ -738,8 +739,8 @@ Common tender questions:
       hasContext: false,
       hasInstructions: false,
       status: 'failed',
-      error: error.message,
-      message: `Processing failed: ${error.message}`
+      error: errorMessage,
+      message: `Processing failed: ${errorMessage}`
     };
   }
 }
@@ -780,16 +781,17 @@ serve(async (req) => {
     console.error('Error in process-tender function:', error);
     
     // Always return structured response, never throw
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(
       JSON.stringify({ 
         success: false, 
-        error: error.message || 'An unexpected error occurred',
+        error: errorMessage,
         questionsFound: 0,
         questionPreviews: [],
         hasContext: false,
         hasInstructions: false,
         status: 'failed',
-        message: `Unexpected error: ${error.message || 'Unknown error'}`
+        message: `Unexpected error: ${errorMessage}`
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }, 

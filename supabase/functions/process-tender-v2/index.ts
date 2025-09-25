@@ -99,7 +99,8 @@ async function extractText(filePath: string, mimeOrExt: string, supabaseClient: 
     return extractedText;
     
   } catch (error) {
-    const errorMsg = `Text extraction failed for ${filePath}: ${error.message}`;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMsg = `Text extraction failed for ${filePath}: ${errorMessage}`;
     console.error(`[DIAGNOSTIC] ${errorMsg}`);
     throw new Error(errorMsg);
   }
@@ -112,9 +113,10 @@ async function extractTxtText(fileData: Blob): Promise<string> {
     const cleanText = text.trim();
     console.log(`[DIAGNOSTIC] TXT extraction successful - ${cleanText.length} characters`);
     return cleanText;
-  } catch (error) {
-    throw new Error(`TXT file reading failed: ${error.message}`);
-  }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`TXT file reading failed: ${errorMessage}`);
+    }
 }
 
 // DOCX text extraction with improved error handling
@@ -146,7 +148,8 @@ async function extractDocxText(fileData: Blob): Promise<string> {
     throw new Error('Unable to extract sufficient text from DOCX file');
     
   } catch (error) {
-    const errorMsg = `DOCX extraction failed: ${error.message}`;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMsg = `DOCX extraction failed: ${errorMessage}`;
     console.error(`[DIAGNOSTIC] ${errorMsg}`);
     throw new Error('DOCX file parsing failed - please convert to TXT format for better results');
   }
@@ -173,9 +176,10 @@ async function extractRtfText(fileData: Blob): Promise<string> {
     console.log(`[DIAGNOSTIC] RTF extraction successful - ${cleaned.length} characters`);
     return cleaned;
     
-  } catch (error) {
-    throw new Error(`RTF extraction failed: ${error.message}`);
-  }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`RTF extraction failed: ${errorMessage}`);
+    }
 }
 
 // XLSX text extraction with improved error handling
@@ -208,7 +212,8 @@ async function extractXlsxText(fileData: Blob): Promise<string> {
     throw new Error('Unable to extract meaningful text from XLSX');
     
   } catch (error) {
-    const errorMsg = `XLSX extraction failed: ${error.message}`;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMsg = `XLSX extraction failed: ${errorMessage}`;
     console.error(`[DIAGNOSTIC] ${errorMsg}`);
     throw new Error('XLSX file parsing failed - please convert to CSV or TXT format');
   }
@@ -233,9 +238,10 @@ async function extractPdfText(fileData: Blob): Promise<string> {
     console.log(`[DIAGNOSTIC] PDF stub processing - returning placeholder text`);
     return stubText;
     
-  } catch (error) {
-    throw new Error(`PDF processing failed: ${error.message}`);
-  }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`PDF processing failed: ${errorMessage}`);
+    }
 }
 
 // Text segmentation function with improved error handling and context capture
@@ -882,7 +888,8 @@ Please provide professional responses to each question based on the company prof
         result = JSON.parse(content);
       } catch (parseError) {
         console.error('Failed to parse OpenAI JSON response:', content);
-        throw new Error(`Invalid JSON response from OpenAI: ${parseError.message}`);
+        const errorMessage = parseError instanceof Error ? parseError.message : 'Unknown parse error';
+        throw new Error(`Invalid JSON response from OpenAI: ${errorMessage}`);
       }
       
       if (!result.answers || !Array.isArray(result.answers)) {
@@ -1129,7 +1136,8 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       
     } catch (extractError) {
       response.error = 'Text extraction failed';
-      response.message = `Unable to extract text: ${extractError.message}`;
+      const errorMessage = extractError instanceof Error ? extractError.message : 'Unknown extraction error';
+      response.message = `Unable to extract text: ${errorMessage}`;
       console.error(`[DIAGNOSTIC] ❌ Text extraction error:`, extractError);
       return response;
     }
@@ -1213,12 +1221,13 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       } catch (fallbackError) {
         console.error(`[DIAGNOSTIC] ❌ Even fallback enrichment failed:`, fallbackError);
         response.status = 'segmented';
-        response.error = `Enrichment failed: ${enrichmentError.message}`;
+        const errorMessage = fallbackError instanceof Error ? fallbackError.message : 'Unknown fallback error';
+        response.error = `Enrichment failed: ${errorMessage}`;
       }
     }
 
     // Step 5: Generate answers if we have enrichment and questions
-    let answerStats = { totalAnswers: 0, batchesProcessed: 0, allAnswers: [] };
+    let answerStats: { totalAnswers: number; batchesProcessed: number; allAnswers: any[] } = { totalAnswers: 0, batchesProcessed: 0, allAnswers: [] };
     if (enrichment && segments.questions.length > 0) {
       try {
         console.log(`[DIAGNOSTIC] ✅ Starting Step 5: Answer generation for ${segments.questions.length} questions...`);
@@ -1309,7 +1318,8 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
     response.success = false;
     response.status = 'failed';
     response.error = 'Unexpected processing error';
-    response.message = `Processing failed due to unexpected error: ${fatalError.message}`;
+    const errorMessage = fatalError instanceof Error ? fatalError.message : 'Unknown fatal error';
+    response.message = `Processing failed due to unexpected error: ${errorMessage}`;
     
     return response;
   }
@@ -1415,7 +1425,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify(createErrorResponse(
         'Server error',
-        `An unexpected server error occurred: ${serverError.message}`
+        `An unexpected server error occurred: ${serverError instanceof Error ? serverError.message : 'Unknown server error'}`
       )),
       { 
         status: 200, // Always return 200 even for server errors

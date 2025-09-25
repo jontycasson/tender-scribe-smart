@@ -153,7 +153,7 @@ serve(async (req) => {
     console.error('Error in upsert-memory function:', error);
     return new Response(
       JSON.stringify({ 
-        error: `Failed to upsert memory: ${error.message}`
+        error: `Failed to upsert memory: ${error instanceof Error ? error.message : 'Unknown error'}`
       }),
       { 
         status: 500,

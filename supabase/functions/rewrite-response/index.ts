@@ -136,7 +136,8 @@ Rewritten Response:`;
       console.log('GPT-5 rewrite successful');
       
     } catch (gpt5Error) {
-      console.log('GPT-5 failed, trying GPT-4o-mini fallback:', gpt5Error.message);
+      const gpt5ErrorMessage = gpt5Error instanceof Error ? gpt5Error.message : 'Unknown GPT-5 error';
+      console.log('GPT-5 failed, trying GPT-4o-mini fallback:', gpt5ErrorMessage);
       modelUsed = 'gpt-4o-mini';
       
       try {
@@ -177,9 +178,10 @@ Rewritten Response:`;
         
       } catch (fallbackError) {
         console.error('Both GPT-5 and GPT-4o-mini failed:', fallbackError);
+        const fallbackErrorMessage = fallbackError instanceof Error ? fallbackError.message : 'Unknown fallback error';
         return new Response(JSON.stringify({ 
           error: 'Failed to rewrite response with both models',
-          details: fallbackError.message 
+          details: fallbackErrorMessage 
         }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -224,7 +226,8 @@ Rewritten Response:`;
 
   } catch (error) {
     console.error('Error in rewrite-response function:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
