@@ -499,7 +499,7 @@ Return JSON format:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-5-mini-2025-08-07',
+        model: 'gpt-4o-mini',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Classify this text chunk:\n\n${chunk}` }
@@ -1093,19 +1093,13 @@ STRICT RULES:
     answer: `We will provide a tailored response during clarifications related to: "${q.question_text}".`
   }));
 
-  // Early fallback if no time
-  if (!hasTimeForAnotherCall()) {
-    console.log(`⏰ Time budget exceeded, using fallback for batch ${batchIndex + 1}`);
-    return { answers: makeFallbackAnswers(), modelUsed: modelActuallyUsed };
-  }
-
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       console.log(`Generating answers for batch ${batchIndex + 1} (attempt ${attempt})`);
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 25000);
 
-      const model = attempt === 1 ? 'gpt-4o-mini' : 'gpt-5-mini-2025-08-07';
+      const model = attempt === 1 ? 'gpt-4o-mini' : 'gpt-3.5-turbo';
       modelActuallyUsed = model;
 
       const body: any = {
@@ -1117,7 +1111,7 @@ STRICT RULES:
         response_format: { type: "json_object" }
       };
       if (model === 'gpt-4o-mini') body.max_tokens = maxCompletionTokens;
-      else body.max_completion_tokens = maxCompletionTokens;
+      body.max_tokens = maxCompletionTokens;
 
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -1320,8 +1314,8 @@ async function generateAllAnswers(
     const batch = batches[batchIndex];
     const { batchSize, maxTokens } = calculateOptimalBatchSize(segments.questions, batchIndex * batch.length);
     
-    // Check if we have time for another call
-    if (!hasTimeForAnotherCall()) {
+   // Check if we have time for another call (only after first batch)
+if (batchIndex > 0 && !hasTimeForAnotherCall()) {
       console.log(`⏰ Time budget exceeded, using fallback for remaining ${batches.length - batchIndex} batches`);
       
       // Generate per-question contextual fallback answers for all remaining questions
@@ -1440,8 +1434,8 @@ const estimateTokens = (s: string) => Math.floor(s.length / 4); // rough
 async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTenderResponse> {
   // Global execution budget - hard stop with graceful degrade
   const START = Date.now();
-  const BUDGET_MS = 55_000;                 // adjust to platform limit minus safety margin
-  const SAFETY_MS = 10_000;                 // leave time to finalise + DB writes
+  const BUDGET_MS = 85_000;                 // adjust to platform limit minus safety margin
+  const SAFETY_MS = 15_000;                 // leave time to finalise + DB writes
   const timeLeft = () => BUDGET_MS - (Date.now() - START);
   const hasTimeForAnotherCall = () => timeLeft() > SAFETY_MS;
 
