@@ -1010,28 +1010,39 @@ async function generateAnswersForBatch(
   batchIndex: number = 0
 ): Promise<{ answers: any[]; modelUsed: string }> {
 
-  const systemPrompt = `You are Proposal.fit, an AI tender response assistant.
+  const systemPrompt = `You are Proposal.fit, an expert tender response assistant specialising in competitive bid writing.
 
 Return JSON ONLY in this schema:
 {
   "answers": [
-    { "id": number, "answer": "string", "sources_used": ["profile" | "context" | "instructions"] }
+    { "id": number, "answer": "string" }
   ]
 }
 
+RESPONSE REQUIREMENTS:
+- Write comprehensive, professional tender responses (2-4 paragraphs per answer)
+- Each answer must be unique, specific, and directly address the question asked
+- Reference specific company capabilities, experience, and qualifications
+- Include concrete examples, metrics, and evidence where relevant
+- Use confident, professional language that demonstrates expertise
+- Follow UK English spelling and business writing conventions
+- For Yes/No questions: state position clearly, then provide detailed justification
+
+CONTENT STRATEGY:
+- Lead with your strongest relevant capability or experience
+- Provide specific examples of similar work or achievements
+- Include quantifiable results where possible (years experience, team size, project scale)
+- Address compliance requirements explicitly
+- Demonstrate understanding of the client's specific needs
+- Show differentiation from competitors through unique value propositions
+
 STRICT RULES:
-- Each answer must be unique and tailored to its question.
-- Every answer must reference at least one element from:
-  - Company Profile
-  - Tender Context
-  - Mandatory Compliance
-- Do NOT reuse the same text for multiple answers.
-- Do NOT output boilerplate like "We will provide a concise response during clarifications".
-- Use UK English spelling.
-- Keep answers concise but specific (1–3 short paragraphs).
-- For Yes/No questions: respond directly and justify briefly.
-- The "id" MUST exactly match the input question id.
-- If context is missing, infer from company profile or clearly state assumptions.`;
+- The "id" MUST exactly match the input question id
+- NO generic boilerplate or placeholder text
+- NO phrases like "we will provide details during clarifications"
+- Each answer must be substantive and self-contained
+- Reference company profile information naturally within responses
+- Maintain professional tone throughout while being specific and detailed`;
 
   // Create profile summary bullets
   const createProfileBullets = (profile: any): string[] => {
@@ -1099,7 +1110,7 @@ STRICT RULES:
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 25000);
 
-      const model = attempt === 1 ? 'gpt-4o-mini' : 'gpt-3.5-turbo';
+      const model = attempt === 1 ? 'gpt-4o' : 'gpt-4o-mini';
       modelActuallyUsed = model;
 
       const body: any = {
@@ -1250,8 +1261,8 @@ async function generateAllAnswers(
 
   // Fixed payload estimation - include question text and stringify context properly
   function calculateOptimalBatchSize(questions: any[], startIndex: number): { batchSize: number; maxTokens: number } {
-    let batchSize = 5; // Default: 5 questions at a time
-    let maxTokens = 3000; // Default token limit
+    let batchSize = 3; // Default: 3 questions at a time  
+let maxTokens = 4000; // Default token limit
     
     while (batchSize >= 2) {
       // Build the actual final prompt components
@@ -1280,7 +1291,7 @@ async function generateAllAnswers(
     // If still too large at batch size 2, bump max_completion_tokens to 4000
     if (batchSize < 2) {
       batchSize = 2;
-      maxTokens = 4000;
+      maxTokens = 6000;
       const testBatch = questions.slice(startIndex, startIndex + batchSize);
       const testQuestions = testBatch.map(q => `Q${q.question_number}: ${q.question_text}`).join('\n\n');
       const payloadChars = charLen(enrichment.companyProfile) + toText(enrichment.documentContext || []).length + 
