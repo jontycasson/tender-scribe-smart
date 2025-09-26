@@ -1005,23 +1005,26 @@ async function generateAnswersForBatch(
   questionBatch: any[],
   enrichment: any,
   openAIApiKey: string,
-  maxCompletionTokens: number = 3000,
-  hasTimeForAnotherCall: () => boolean
-): Promise<any[]> {
+  maxCompletionTokens: number = 2200,
+  hasTimeForAnotherCall: () => boolean,
+  batchIndex: number = 0
+): Promise<{ answers: any[]; modelUsed: string }> {
   const systemPrompt = `You are Proposal.fit, an AI tender response assistant.
-Your job is to answer each question individually and specifically.
-Use the company profile, tender context, and instructions.
-Do not reuse the same answer across questions.
-Always respond in UK English.
-Keep answers concise but specific: 1–3 focused paragraphs.
-If a question is closed (yes/no), give a short answer with explanation.
 
-Return your response in this exact JSON format:
+Return JSON ONLY (no prose). Schema:
 {
   "answers": [
-    { "question": "string", "answer": "string" }
+    { "id": number, "answer": "string" }
   ]
-}`;
+}
+
+Rules:
+- Answer each question individually and specifically.
+- Use company profile, tender context, and any "MANDATORY COMPLIANCE" instructions.
+- Keep UK English.
+- Keep answers concise but specific (1–3 short paragraphs). For Yes/No, be brief with justification.
+- The "id" MUST match the input question's "id". Do not invent, skip, reorder, or paraphrase IDs.
+- Do NOT include the question text in the output; only "id" and "answer".`;
 
   // Create profile summary bullets for concise, focused company info
   const createProfileBullets = (profile: any): string[] => {
@@ -1054,62 +1057,83 @@ Return your response in this exact JSON format:
     return bullets;
   };
 
+  // Build questions payload with stable IDs
+  const qItems = questionBatch.map((q, idx) => ({ id: idx + 1, text: q.question_text }));
+  
   const profileSummaryBullets = createProfileBullets(enrichment.companyProfile);
-  const contextItems = enrichment.documentContext || [];
-  const instructions = enrichment.instructions || [];
-  
-  // Build user prompt with new structure
-  const userPrompt = {
-    questions: questionBatch.map(q => q.question_text),
-    companyProfile: profileSummaryBullets,
-    context: toText(contextItems).slice(0, 800),
-    instructions: toText(instructions)
-  };
+  const contextText = toText(enrichment.documentContext || []).slice(0, 1200);
+  const instructionsText = toText(enrichment.instructions || []).slice(0, 800);
 
-  // Convert to prompt text for OpenAI
-  let promptText = `COMPANY PROFILE:\n${profileSummaryBullets.map(bullet => `• ${bullet}`).join('\n')}`;
-  
-  if (userPrompt.context.length > 0) {
-    promptText += `\n\nTENDER CONTEXT:\n${userPrompt.context}`;
-  }
-  
-  if (userPrompt.instructions.length > 0) {
-    promptText += `\n\nMANDATORY COMPLIANCE:\n${userPrompt.instructions}`;
-  }
-  
-  promptText += `\n\nQUESTIONS TO ANSWER:\n${userPrompt.questions.map((q, i) => `${i + 1}. ${q}`).join('\n\n')}`;
+  const promptText = [
+    `COMPANY PROFILE:\n${profileSummaryBullets.map(b => `• ${b}`).join('\n')}`,
+    contextText ? `\nTENDER CONTEXT:\n${contextText}` : '',
+    instructionsText ? `\nMANDATORY COMPLIANCE:\n${instructionsText}` : '',
+    `\nQUESTIONS (do not paraphrase IDs; answer by id):\n` +
+    qItems.map(q => `${q.id}. ${q.text}`).join('\n')
+  ].join('\n');
 
   // Calculate final payload metrics for logging
   const finalPayloadSize = (systemPrompt + promptText).length;
   const tokenEstimate = estimateTokens(systemPrompt + promptText);
-  console.log(`🔎 Generating answers for ${questionBatch.length} questions - payload size: ${finalPayloadSize} chars, tokens: ${tokenEstimate}`);
+  console.log(`Batch ${batchIndex+1}: payloadChars=${finalPayloadSize}, tokenEstimate=${tokenEstimate}, batchSize=${questionBatch.length}`);
   
   if (finalPayloadSize > 50000) {
     console.warn(`⚠️ Large payload detected: ${finalPayloadSize} chars - may cause API issues`);
   }
 
+  let modelActuallyUsed = 'gpt-4o-mini'; // Start with 4o-mini as primary
   let fallbackAnswersUsed = false;
+
+  // Check if we have time for another call before starting
+  if (!hasTimeForAnotherCall()) {
+    console.log(`⏰ Time budget exceeded, using fallback for batch ${batchIndex + 1}`);
+    
+    // Per-question contextual fallback
+    const validatedAnswers: {question: string; answer: string}[] = [];
+    let individualFallbackCount = 0;
+
+    for (let i = 0; i < questionBatch.length; i++) {
+      const q = questionBatch[i];
+      individualFallbackCount++;
+      validatedAnswers.push({
+        question: q.question_text,
+        answer: `We will provide a concise, evidenced response during clarifications related to: "${q.question_text}". Certain details depend on project-specific scope and will be confirmed as required.`
+      });
+    }
+
+    console.log(`Validated answers: ${validatedAnswers.length}; individual fallbacks: ${individualFallbackCount}`);
+    return { answers: validatedAnswers, modelUsed: modelActuallyUsed };
+  }
 
   // Try generating answers with retry logic and timeout
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      console.log(`Generating answers for batch (attempt ${attempt})`);
-      
-      // Check if we have time for another call before starting
-      if (!hasTimeForAnotherCall()) {
-        console.log(`⏰ Time budget exceeded, using batch fallback for all ${questionBatch.length} questions`);
-        fallbackAnswersUsed = true;
-        const fallbackAnswers = questionBatch.map(q => ({
-          question: q.question_text,
-          answer: "We will provide a concise, fully evidenced response during clarifications. Certain details depend on project-specific scope and will be confirmed as required."
-        }));
-        console.log(`🔎 Batch fallback used for all questions (individual fallbacks: 0, batch fallback: true)`);
-        return fallbackAnswers;
-      }
+      console.log(`Generating answers for batch ${batchIndex + 1} (attempt ${attempt})`);
       
       // Create AbortController for timeout (25-30s)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
+      
+      // Primary model: gpt-4o-mini (attempt 1)
+      // Fallback model: gpt-5-mini-2025-08-07 (if primary fails JSON twice)
+      const model = attempt === 1 ? 'gpt-4o-mini' : 'gpt-5-mini-2025-08-07';
+      const useMaxTokens = model === 'gpt-4o-mini'; // 4o-mini uses max_tokens, not max_completion_tokens
+      modelActuallyUsed = model;
+      
+      const body: any = {
+        model: model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: promptText }
+        ],
+        response_format: { type: "json_object" }
+      };
+      
+      if (useMaxTokens) {
+        body.max_tokens = maxCompletionTokens;
+      } else {
+        body.max_completion_tokens = maxCompletionTokens;
+      }
       
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -1117,15 +1141,7 @@ Return your response in this exact JSON format:
           'Authorization': `Bearer ${openAIApiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: 'gpt-5-mini-2025-08-07',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: promptText }
-          ],
-          max_completion_tokens: maxCompletionTokens,
-          response_format: { type: "json_object" }
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal
       });
 
@@ -1143,173 +1159,75 @@ Return your response in this exact JSON format:
       // Better logging - OpenAI response metadata
       const usage = data.usage;
       const finishReason = data.choices[0]?.finish_reason;
-      console.log(`finish_reason=${finishReason}, prompt_tokens=${usage?.prompt_tokens || 0}, completion_tokens=${usage?.completion_tokens || 0}, total_tokens=${usage?.total_tokens || 0}`);
-      console.log(`Raw OpenAI content: ${content?.substring(0, 500)}${content?.length > 500 ? '...' : ''}`);
       
-      // Try fallback model if JSON parsing fails
+      console.log('OpenAI finish_reason:', finishReason);
+      console.log('usage:', usage);
+      console.log('OpenAI raw (first 400):', (content || '').slice(0, 400));
+      
       if (!content) {
-        if (attempt === 1) {
-          console.log('No content from gpt-5-mini-2025-08-07, trying gpt-4o-mini fallback');
-          
-          const fallbackResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${openAIApiKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o-mini',
-              messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: promptText }
-              ],
-              max_tokens: maxCompletionTokens,
-              response_format: { type: "json_object" }
-            }),
-            signal: controller.signal
-          });
-          
-          if (fallbackResponse.ok) {
-            const fallbackData = await fallbackResponse.json();
-            const fallbackContent = fallbackData.choices[0]?.message?.content;
-            console.log(`Fallback model response: ${fallbackContent?.substring(0, 200)}...`);
-            
-            if (fallbackContent) {
-              try {
-                const fallbackParsed = JSON.parse(fallbackContent);
-                if (fallbackParsed?.answers?.length) {
-                  console.log('Successfully using gpt-4o-mini fallback answers');
-                  const validatedAnswers = [];
-                  let individualFallbackCount = 0;
-                  
-                  for (let i = 0; i < questionBatch.length; i++) {
-                    const question = questionBatch[i];
-                    const aiAnswer = fallbackParsed.answers.find((a: any) => a.question === question.question_text || i < fallbackParsed.answers.length);
-                    
-                    if (aiAnswer && aiAnswer.answer && aiAnswer.answer.trim().length > 0) {
-                      validatedAnswers.push({
-                        question: question.question_text,
-                        answer: aiAnswer.answer
-                      });
-                    } else {
-                      individualFallbackCount++;
-                      console.log(`Individual fallback for question ${i + 1}: "${question.question_text.substring(0, 50)}..."`);
-                      validatedAnswers.push({
-                        question: question.question_text,
-                        answer: "We will provide a concise, fully evidenced response during clarifications. Certain details depend on project-specific scope and will be confirmed as required."
-                      });
-                    }
-                  }
-                  
-                  console.log(`Fallback model success: ${validatedAnswers.length} answers (individual fallbacks: ${individualFallbackCount})`);
-                  return validatedAnswers;
-                }
-              } catch (fallbackParseError) {
-                console.log('Fallback model also failed JSON parsing, continuing to throw error');
-              }
-            }
-          }
-        }
         throw new Error("Empty content from OpenAI");
       }
 
-      let parsed;
-      try {
-        parsed = JSON.parse(content);
-      } catch (parseError) {
-        if (attempt === 1) {
-          console.log('JSON parsing failed for gpt-5-mini-2025-08-07, trying gpt-4o-mini fallback');
-          
-          const fallbackResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${openAIApiKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o-mini',
-              messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: promptText }
-              ],
-              max_tokens: maxCompletionTokens,
-              response_format: { type: "json_object" }
-            }),
-            signal: controller.signal
-          });
-          
-          if (fallbackResponse.ok) {
-            const fallbackData = await fallbackResponse.json();
-            const fallbackContent = fallbackData.choices[0]?.message?.content;
-            
-            if (fallbackContent) {
-              try {
-                const fallbackParsed = JSON.parse(fallbackContent);
-                if (fallbackParsed?.answers?.length) {
-                  console.log('Successfully using gpt-4o-mini fallback after JSON parsing failure');
-                  parsed = fallbackParsed;
-                }
-              } catch (fallbackParseError) {
-                throw new Error("Invalid JSON from both models");
-              }
-            }
-          }
-        }
-        
-        if (!parsed) {
-          throw new Error("Invalid JSON from OpenAI");
-        }
-      }
-      
-      if (!parsed?.answers?.length) {
-        throw new Error("No answers generated");
+      let parsed: any;
+      try { 
+        parsed = JSON.parse(content); 
+      } catch { 
+        parsed = null; 
       }
 
-      // Validate and ensure all questions have answers, fill gaps with fallback if needed
-      const validatedAnswers = [];
+      const result = Array.isArray(parsed?.answers) ? parsed.answers : [];
+      console.log('IDs received:', Array.isArray(parsed?.answers) ? parsed.answers.map((a:any)=>a.id) : []);
+
+      // Per-answer mapping by id
+      const validatedAnswers: {question: string; answer: string}[] = [];
       let individualFallbackCount = 0;
-      
+
       for (let i = 0; i < questionBatch.length; i++) {
-        const question = questionBatch[i];
-        const aiAnswer = parsed.answers.find((a: any) => a.question === question.question_text);
-        
-        if (aiAnswer && aiAnswer.answer && aiAnswer.answer.trim().length > 0) {
-          validatedAnswers.push(aiAnswer);
+        const id = i + 1; // matches qItems id
+        const q = questionBatch[i];
+        const found = result.find((a: any) => Number(a?.id) === id);
+
+        if (found?.answer && typeof found.answer === 'string' && found.answer.trim().length > 0) {
+          validatedAnswers.push({ question: q.question_text, answer: found.answer.trim() });
         } else {
-          // Individual question fallback - only for missing/empty answers
           individualFallbackCount++;
-          console.log(`🔎 Individual fallback used for question ${i + 1}: "${question.question_text.substring(0, 50)}..."`);
-          fallbackAnswersUsed = true;
           validatedAnswers.push({
-            question: question.question_text,
-            answer: "We will provide a concise, fully evidenced response during clarifications. Certain details depend on project-specific scope and will be confirmed as required."
+            question: q.question_text,
+            answer: `We will provide a concise, evidenced response during clarifications related to: "${q.question_text}". Certain details depend on project-specific scope and will be confirmed as required.`
           });
         }
       }
 
-      console.log(`Successfully generated ${validatedAnswers.length} answers (individual fallbacks: ${individualFallbackCount}, batch fallback: false)`);
-      return validatedAnswers;
+      console.log(`Validated answers: ${validatedAnswers.length}; individual fallbacks: ${individualFallbackCount}`);
+      return { answers: validatedAnswers, modelUsed: modelActuallyUsed };
 
     } catch (error) {
       console.error(`Answer generation attempt ${attempt} failed:`, error);
       
-      // Check if we should retry or use fallback
+      // Check if we should retry or use per-question fallback
       if (attempt === 2 || !hasTimeForAnotherCall()) {
-        // Final attempt failed or no time left, return fallback answers
-        console.log(`🔎 Using batch fallback for failed attempt ${attempt} (all ${questionBatch.length} questions)`);
-        fallbackAnswersUsed = true;
-        const fallbackAnswers = questionBatch.map(q => ({
-          question: q.question_text,
-          answer: "We will provide a concise, fully evidenced response during clarifications. Certain details depend on project-specific scope and will be confirmed as required."
-        }));
+        // Final attempt failed or no time left, return per-question contextual fallback
+        console.log(`Using per-question fallback for failed attempt ${attempt}`);
         
-        console.log(`🔎 Batch fallback used after failure (individual fallbacks: 0, batch fallback: true)`);
-        return fallbackAnswers;
+        const validatedAnswers: {question: string; answer: string}[] = [];
+        let individualFallbackCount = 0;
+
+        for (let i = 0; i < questionBatch.length; i++) {
+          const q = questionBatch[i];
+          individualFallbackCount++;
+          validatedAnswers.push({
+            question: q.question_text,
+            answer: `We will provide a concise, evidenced response during clarifications related to: "${q.question_text}". Certain details depend on project-specific scope and will be confirmed as required.`
+          });
+        }
+        
+        console.log(`Validated answers: ${validatedAnswers.length}; individual fallbacks: ${individualFallbackCount}`);
+        return { answers: validatedAnswers, modelUsed: modelActuallyUsed };
       }
     }
   }
 
-  return [];
+  return { answers: [], modelUsed: modelActuallyUsed };
 }
 
 // Progressive save to tender_responses table with normalized return shape
@@ -1318,7 +1236,8 @@ async function saveAnswerBatch(
   questionBatch: any[],
   tenderId: string,
   companyProfileId: string,
-  supabaseClient: any
+  supabaseClient: any,
+  modelUsed: string = 'gpt-4o-mini'
 ): Promise<{ data: any[] | null; error?: any }> {
   const batchAnswers = [];
   
@@ -1333,7 +1252,7 @@ async function saveAnswerBatch(
       question_index: question.question_number,
       ai_generated_answer: answer.answer,
       is_approved: false,
-      model_used: 'gpt-5-mini-2025-08-07',
+      model_used: modelUsed,
       question_type: 'standard',
       response_length: answer.answer.length,
       processing_time_ms: 0
@@ -1447,11 +1366,11 @@ async function generateAllAnswers(
     if (!hasTimeForAnotherCall()) {
       console.log(`⏰ Time budget exceeded, using fallback for remaining ${batches.length - batchIndex} batches`);
       
-      // Generate fallback answers for all remaining questions
+      // Generate per-question contextual fallback answers for all remaining questions
       const remainingQuestions = batches.slice(batchIndex).flat();
       const fallbackAnswers = remainingQuestions.map(q => ({
         question: q.question_text,
-        answer: "We will provide a concise, fully evidenced response during clarifications. Certain details depend on project-specific scope and will be confirmed as required."
+        answer: `We will provide a concise, evidenced response during clarifications related to: "${q.question_text}". Certain details depend on project-specific scope and will be confirmed as required.`
       }));
       
       // Save fallback answers
@@ -1459,7 +1378,7 @@ async function generateAllAnswers(
         const remainingBatch = batches[i];
         const batchFallbacks = fallbackAnswers.slice((i - batchIndex) * remainingBatch.length, (i - batchIndex + 1) * remainingBatch.length);
         
-        const saveResult = await saveAnswerBatch(batchFallbacks, remainingBatch, tenderId, companyProfileId, supabaseClient);
+        const saveResult = await saveAnswerBatch(batchFallbacks, remainingBatch, tenderId, companyProfileId, supabaseClient, 'gpt-4o-mini');
         console.log(`🔎 Fallback batch ${i + 1} saveResult: { hasData: ${!!saveResult.data}, hasError: ${!!saveResult.error} }`);
         
         if (saveResult && !saveResult.error && saveResult.data) {
@@ -1486,30 +1405,30 @@ async function generateAllAnswers(
     
     try {
       // Generate answers for this batch
-      const answers = await generateAnswersForBatch(batch, enrichment, openAIApiKey, maxTokens, hasTimeForAnotherCall);
+      const answerResult = await generateAnswersForBatch(batch, enrichment, openAIApiKey, maxTokens, hasTimeForAnotherCall, batchIndex);
       
       // Check if we got valid answers
-      if (answers && answers.length > 0) {
+      if (answerResult && answerResult.answers && answerResult.answers.length > 0) {
         // Save answers to database
-        const saveResult = await saveAnswerBatch(answers, batch, tenderId, companyProfileId, supabaseClient);
+        const saveResult = await saveAnswerBatch(answerResult.answers, batch, tenderId, companyProfileId, supabaseClient, answerResult.modelUsed);
         
         // Better logging - save result
         console.log(`🔎 Save result for batch ${batchIndex + 1}: { hasData: ${!!saveResult.data}, hasError: ${!!saveResult.error} }`);
         
         if (saveResult && !saveResult.error && saveResult.data) {
           // Collect answers for response envelope
-          for (let i = 0; i < answers.length && i < batch.length; i++) {
+          for (let i = 0; i < answerResult.answers.length && i < batch.length; i++) {
             allAnswers.push({
               question: batch[i].question_text,
               question_number: batch[i].question_number,
-              answer: answers[i].answer,
+              answer: answerResult.answers[i].answer,
               fallbackUsed: false
             });
           }
           
-          totalAnswers += answers.length;
+          totalAnswers += answerResult.answers.length;
           batchesProcessed++;
-          console.log(`✅ Answer batch ${batchIndex + 1} saved (count: ${answers.length})`);
+          console.log(`✅ Answer batch ${batchIndex + 1} saved (count: ${answerResult.answers.length})`);
         } else {
           console.error(`❌ Batch ${batchIndex + 1} save failed, continuing...`, saveResult?.error);
           failedBatches++;
