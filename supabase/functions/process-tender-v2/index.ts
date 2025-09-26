@@ -1000,7 +1000,7 @@ function trimCompanyProfileForPrompt(profile: any): any {
   return trimmedProfile;
 }
 
-// Generate answers for questions using OpenAI with timeout, better logging, and fallback
+// Generate answers for questions using OpenAI with timeout, better logging, and strict validation
 async function generateAnswersForBatch(
   questionBatch: any[],
   enrichment: any,
@@ -1009,59 +1009,66 @@ async function generateAnswersForBatch(
   hasTimeForAnotherCall: () => boolean,
   batchIndex: number = 0
 ): Promise<{ answers: any[]; modelUsed: string }> {
+
   const systemPrompt = `You are Proposal.fit, an AI tender response assistant.
 
-Return JSON ONLY (no prose). Schema:
+Return JSON ONLY in this schema:
 {
   "answers": [
-    { "id": number, "answer": "string" }
+    { "id": number, "answer": "string", "sources_used": ["profile" | "context" | "instructions"] }
   ]
 }
 
-Rules:
-- Answer each question individually and specifically.
-- Use company profile, tender context, and any "MANDATORY COMPLIANCE" instructions.
-- Keep UK English.
-- Keep answers concise but specific (1–3 short paragraphs). For Yes/No, be brief with justification.
-- The "id" MUST match the input question's "id". Do not invent, skip, reorder, or paraphrase IDs.
-- Do NOT include the question text in the output; only "id" and "answer".`;
+STRICT RULES:
+- Each answer must be unique and tailored to its question.
+- Every answer must reference at least one element from:
+  - Company Profile
+  - Tender Context
+  - Mandatory Compliance
+- Do NOT reuse the same text for multiple answers.
+- Do NOT output boilerplate like "We will provide a concise response during clarifications".
+- Use UK English spelling.
+- Keep answers concise but specific (1–3 short paragraphs).
+- For Yes/No questions: respond directly and justify briefly.
+- The "id" MUST exactly match the input question id.
+- If context is missing, infer from company profile or clearly state assumptions.`;
 
-  // Create profile summary bullets for concise, focused company info
+  // Create profile summary bullets
   const createProfileBullets = (profile: any): string[] => {
     const bullets = [];
-    
     if (profile.company_name) bullets.push(`Company: ${profile.company_name}`);
     if (profile.industry) bullets.push(`Industry: ${profile.industry}`);
     if (profile.services_offered) {
-      const services = Array.isArray(profile.services_offered) ? profile.services_offered.join(', ') : profile.services_offered;
+      const services = Array.isArray(profile.services_offered)
+        ? profile.services_offered.join(', ')
+        : profile.services_offered;
       bullets.push(`Services: ${services}`);
     }
     if (profile.team_size) bullets.push(`Team Size: ${profile.team_size}`);
     if (profile.years_in_business) bullets.push(`Experience: ${profile.years_in_business} years in business`);
-    
-    // Cap long fields at 5 items max
     if (profile.accreditations && profile.accreditations !== 'N/A') {
-      const accreds = profile.accreditations.length > 200 ? profile.accreditations.substring(0, 200) + '...' : profile.accreditations;
-      bullets.push(`Accreditations: ${accreds}`);
+      bullets.push(`Accreditations: ${profile.accreditations.substring(0, 200)}`);
     }
     if (profile.policies && profile.policies !== 'N/A') {
-      const policies = profile.policies.length > 200 ? profile.policies.substring(0, 200) + '...' : profile.policies;
-      bullets.push(`Policies: ${policies}`);
+      bullets.push(`Policies: ${profile.policies.substring(0, 200)}`);
     }
-    if (profile.past_projects) {
-      // Take first 5 items from past_projects or truncate if too long
-      const projects = profile.past_projects.length > 300 ? profile.past_projects.substring(0, 300) + '...' : profile.past_projects;
-      bullets.push(`Past Projects: ${projects}`);
+    if (profile.past_projects && profile.past_projects !== 'N/A') {
+      bullets.push(`Past Projects: ${profile.past_projects.substring(0, 300)}`);
     }
-    
     return bullets;
   };
 
   // Build questions payload with stable IDs
   const qItems = questionBatch.map((q, idx) => ({ id: idx + 1, text: q.question_text }));
-  
+
   const profileSummaryBullets = createProfileBullets(enrichment.companyProfile);
-  const contextText = toText(enrichment.documentContext || []).slice(0, 1200);
+
+  // Always ensure we inject context
+  let contextText = toText(enrichment.documentContext || []);
+  if (!contextText || contextText.trim().length < 100) {
+    console.warn("⚠️ No context found, injecting rawText snippet");
+    contextText = enrichment.rawText ? enrichment.rawText.slice(0, 1200) : "";
+  }
   const instructionsText = toText(enrichment.instructions || []).slice(0, 800);
 
   const promptText = [
@@ -1072,69 +1079,46 @@ Rules:
     qItems.map(q => `${q.id}. ${q.text}`).join('\n')
   ].join('\n');
 
-  // Calculate final payload metrics for logging
+  // Log payload size
   const finalPayloadSize = (systemPrompt + promptText).length;
   const tokenEstimate = estimateTokens(systemPrompt + promptText);
-  console.log(`Batch ${batchIndex+1}: payloadChars=${finalPayloadSize}, tokenEstimate=${tokenEstimate}, batchSize=${questionBatch.length}`);
-  
-  if (finalPayloadSize > 50000) {
-    console.warn(`⚠️ Large payload detected: ${finalPayloadSize} chars - may cause API issues`);
-  }
+  console.log(`Batch ${batchIndex + 1}: payloadChars=${finalPayloadSize}, tokenEstimate=${tokenEstimate}, batchSize=${questionBatch.length}`);
 
-  let modelActuallyUsed = 'gpt-4o-mini'; // Start with 4o-mini as primary
-  let fallbackAnswersUsed = false;
+  let modelActuallyUsed = 'gpt-4o-mini'; // Start with 4o-mini
+  const boilerplateRegex = /concise.*clarifications/i;
 
-  // Check if we have time for another call before starting
+  // Per-question contextual fallback generator
+  const makeFallbackAnswers = () => questionBatch.map(q => ({
+    question: q.question_text,
+    answer: `We will provide a tailored response during clarifications related to: "${q.question_text}".`
+  }));
+
+  // Early fallback if no time
   if (!hasTimeForAnotherCall()) {
     console.log(`⏰ Time budget exceeded, using fallback for batch ${batchIndex + 1}`);
-    
-    // Per-question contextual fallback
-    const validatedAnswers: {question: string; answer: string}[] = [];
-    let individualFallbackCount = 0;
-
-    for (let i = 0; i < questionBatch.length; i++) {
-      const q = questionBatch[i];
-      individualFallbackCount++;
-      validatedAnswers.push({
-        question: q.question_text,
-        answer: `We will provide a concise, evidenced response during clarifications related to: "${q.question_text}". Certain details depend on project-specific scope and will be confirmed as required.`
-      });
-    }
-
-    console.log(`Validated answers: ${validatedAnswers.length}; individual fallbacks: ${individualFallbackCount}`);
-    return { answers: validatedAnswers, modelUsed: modelActuallyUsed };
+    return { answers: makeFallbackAnswers(), modelUsed: modelActuallyUsed };
   }
 
-  // Try generating answers with retry logic and timeout
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       console.log(`Generating answers for batch ${batchIndex + 1} (attempt ${attempt})`);
-      
-      // Create AbortController for timeout (25-30s)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
-      
-      // Primary model: gpt-4o-mini (attempt 1)
-      // Fallback model: gpt-5-mini-2025-08-07 (if primary fails JSON twice)
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+
       const model = attempt === 1 ? 'gpt-4o-mini' : 'gpt-5-mini-2025-08-07';
-      const useMaxTokens = model === 'gpt-4o-mini'; // 4o-mini uses max_tokens, not max_completion_tokens
       modelActuallyUsed = model;
-      
+
       const body: any = {
-        model: model,
+        model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: promptText }
         ],
         response_format: { type: "json_object" }
       };
-      
-      if (useMaxTokens) {
-        body.max_tokens = maxCompletionTokens;
-      } else {
-        body.max_completion_tokens = maxCompletionTokens;
-      }
-      
+      if (model === 'gpt-4o-mini') body.max_tokens = maxCompletionTokens;
+      else body.max_completion_tokens = maxCompletionTokens;
+
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -1147,88 +1131,62 @@ Rules:
 
       clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`OpenAI API error ${response.status}: ${errorText}`);
-        throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
-      }
+      if (!response.ok) throw new Error(`OpenAI API error ${response.status}: ${await response.text()}`);
 
       const data = await response.json();
       const content = data.choices[0]?.message?.content;
-      
-      // Better logging - OpenAI response metadata
-      const usage = data.usage;
-      const finishReason = data.choices[0]?.finish_reason;
-      
-      console.log('OpenAI finish_reason:', finishReason);
-      console.log('usage:', usage);
-      console.log('OpenAI raw (first 400):', (content || '').slice(0, 400));
-      
-      if (!content) {
-        throw new Error("Empty content from OpenAI");
-      }
+      if (!content) throw new Error("Empty content from OpenAI");
 
       let parsed: any;
-      try { 
-        parsed = JSON.parse(content); 
-      } catch { 
-        parsed = null; 
-      }
+      try { parsed = JSON.parse(content); } catch { parsed = null; }
 
       const result = Array.isArray(parsed?.answers) ? parsed.answers : [];
-      console.log('IDs received:', Array.isArray(parsed?.answers) ? parsed.answers.map((a:any)=>a.id) : []);
+      console.log('IDs received:', result.map((a: any) => a.id));
 
-      // Per-answer mapping by id
-      const validatedAnswers: {question: string; answer: string}[] = [];
+      // Validate answers
+      const validatedAnswers: { question: string; answer: string }[] = [];
       let individualFallbackCount = 0;
 
       for (let i = 0; i < questionBatch.length; i++) {
-        const id = i + 1; // matches qItems id
+        const id = i + 1;
         const q = questionBatch[i];
         const found = result.find((a: any) => Number(a?.id) === id);
 
-        if (found?.answer && typeof found.answer === 'string' && found.answer.trim().length > 0) {
+        if (
+          found?.answer &&
+          typeof found.answer === 'string' &&
+          found.answer.trim().length > 30 &&
+          !boilerplateRegex.test(found.answer)
+        ) {
           validatedAnswers.push({ question: q.question_text, answer: found.answer.trim() });
         } else {
           individualFallbackCount++;
           validatedAnswers.push({
             question: q.question_text,
-            answer: `We will provide a concise, evidenced response during clarifications related to: "${q.question_text}". Certain details depend on project-specific scope and will be confirmed as required.`
+            answer: `We will provide a tailored response during clarifications related to: "${q.question_text}".`
           });
         }
       }
 
-      console.log(`Validated answers: ${validatedAnswers.length}; individual fallbacks: ${individualFallbackCount}`);
+      // Reject batch if all answers are duplicates
+      const uniqueAnswers = new Set(validatedAnswers.map(a => a.answer));
+      if (uniqueAnswers.size === 1) throw new Error("All answers identical, retrying...");
+
+      console.log(`Validated answers: ${validatedAnswers.length}; fallbacks: ${individualFallbackCount}`);
       return { answers: validatedAnswers, modelUsed: modelActuallyUsed };
 
     } catch (error) {
       console.error(`Answer generation attempt ${attempt} failed:`, error);
-      
-      // Check if we should retry or use per-question fallback
       if (attempt === 2 || !hasTimeForAnotherCall()) {
-        // Final attempt failed or no time left, return per-question contextual fallback
-        console.log(`Using per-question fallback for failed attempt ${attempt}`);
-        
-        const validatedAnswers: {question: string; answer: string}[] = [];
-        let individualFallbackCount = 0;
-
-        for (let i = 0; i < questionBatch.length; i++) {
-          const q = questionBatch[i];
-          individualFallbackCount++;
-          validatedAnswers.push({
-            question: q.question_text,
-            answer: `We will provide a concise, evidenced response during clarifications related to: "${q.question_text}". Certain details depend on project-specific scope and will be confirmed as required.`
-          });
-        }
-        
-        console.log(`Validated answers: ${validatedAnswers.length}; individual fallbacks: ${individualFallbackCount}`);
-        return { answers: validatedAnswers, modelUsed: modelActuallyUsed };
+        console.log(`Using fallback for batch ${batchIndex + 1}`);
+        return { answers: makeFallbackAnswers(), modelUsed: modelActuallyUsed };
       }
     }
   }
 
-  return { answers: [], modelUsed: modelActuallyUsed };
+  return { answers: makeFallbackAnswers(), modelUsed: modelActuallyUsed };
 }
+
 
 // Progressive save to tender_responses table with normalized return shape
 async function saveAnswerBatch(
