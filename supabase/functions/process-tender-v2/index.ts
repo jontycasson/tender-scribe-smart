@@ -1110,7 +1110,7 @@ STRICT RULES:
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 25000);
 
-      const model = attempt === 1 ? 'gpt-4o' : 'gpt-4o-mini';
+      const model = attempt === 1 ? 'gpt-4o-mini' : 'gpt-3.5-turbo';
       modelActuallyUsed = model;
 
       const body: any = {
@@ -1445,8 +1445,8 @@ const estimateTokens = (s: string) => Math.floor(s.length / 4); // rough
 async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTenderResponse> {
   // Global execution budget - hard stop with graceful degrade
   const START = Date.now();
-  const BUDGET_MS = 85_000;                 // adjust to platform limit minus safety margin
-  const SAFETY_MS = 15_000;                 // leave time to finalise + DB writes
+  const BUDGET_MS = 120_000;                 // adjust to platform limit minus safety margin
+  const SAFETY_MS = 20_000;                 // leave time to finalise + DB writes
   const timeLeft = () => BUDGET_MS - (Date.now() - START);
   const hasTimeForAnotherCall = () => timeLeft() > SAFETY_MS;
 
