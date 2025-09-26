@@ -436,11 +436,11 @@ const TenderDetails = () => {
           ) : (
             <div className="grid gap-4">
               {responses?.map((response) => (
-                <Card key={response.id}>
-                  <CardHeader>
-                    <CardTitle>Question {response.question_index !== null ? response.question_index + 1 : ''}</CardTitle>
-                    <CardDescription>{response.question}</CardDescription>
-                  </CardHeader>
+                  <Card key={response.id}>
+                    <CardHeader>
+                      <CardTitle>Question {response.question_index}</CardTitle>
+                      <CardDescription>{response.question}</CardDescription>
+                    </CardHeader>
                   <CardContent>
                     <div className="mb-4">
                       <Textarea

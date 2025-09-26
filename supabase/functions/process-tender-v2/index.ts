@@ -1008,15 +1008,20 @@ async function generateAnswersForBatch(
   maxCompletionTokens: number = 3000,
   hasTimeForAnotherCall: () => boolean
 ): Promise<any[]> {
-  const systemPrompt = `
-You are Proposal.fit, an AI tender response assistant.
+  const systemPrompt = `You are Proposal.fit, an AI tender response assistant.
 Your job is to answer each question individually and specifically.
 Use the company profile, tender context, and instructions.
 Do not reuse the same answer across questions.
 Always respond in UK English.
 Keep answers concise but specific: 1–3 focused paragraphs.
 If a question is closed (yes/no), give a short answer with explanation.
-`;
+
+Return your response in this exact JSON format:
+{
+  "answers": [
+    { "question": "string", "answer": "string" }
+  ]
+}`;
 
   // Create profile summary bullets for concise, focused company info
   const createProfileBullets = (profile: any): string[] => {
@@ -1139,17 +1144,121 @@ If a question is closed (yes/no), give a short answer with explanation.
       const usage = data.usage;
       const finishReason = data.choices[0]?.finish_reason;
       console.log(`finish_reason=${finishReason}, prompt_tokens=${usage?.prompt_tokens || 0}, completion_tokens=${usage?.completion_tokens || 0}, total_tokens=${usage?.total_tokens || 0}`);
+      console.log(`Raw OpenAI content: ${content?.substring(0, 500)}${content?.length > 500 ? '...' : ''}`);
       
-      // Harden empty/invalid JSON path - force retry/fallback
+      // Try fallback model if JSON parsing fails
       if (!content) {
-        throw new Error("Empty content");
+        if (attempt === 1) {
+          console.log('No content from gpt-5-mini-2025-08-07, trying gpt-4o-mini fallback');
+          
+          const fallbackResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${openAIApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: promptText }
+              ],
+              max_tokens: maxCompletionTokens,
+              response_format: { type: "json_object" }
+            }),
+            signal: controller.signal
+          });
+          
+          if (fallbackResponse.ok) {
+            const fallbackData = await fallbackResponse.json();
+            const fallbackContent = fallbackData.choices[0]?.message?.content;
+            console.log(`Fallback model response: ${fallbackContent?.substring(0, 200)}...`);
+            
+            if (fallbackContent) {
+              try {
+                const fallbackParsed = JSON.parse(fallbackContent);
+                if (fallbackParsed?.answers?.length) {
+                  console.log('Successfully using gpt-4o-mini fallback answers');
+                  const validatedAnswers = [];
+                  let individualFallbackCount = 0;
+                  
+                  for (let i = 0; i < questionBatch.length; i++) {
+                    const question = questionBatch[i];
+                    const aiAnswer = fallbackParsed.answers.find((a: any) => a.question === question.question_text || i < fallbackParsed.answers.length);
+                    
+                    if (aiAnswer && aiAnswer.answer && aiAnswer.answer.trim().length > 0) {
+                      validatedAnswers.push({
+                        question: question.question_text,
+                        answer: aiAnswer.answer
+                      });
+                    } else {
+                      individualFallbackCount++;
+                      console.log(`Individual fallback for question ${i + 1}: "${question.question_text.substring(0, 50)}..."`);
+                      validatedAnswers.push({
+                        question: question.question_text,
+                        answer: "We will provide a concise, fully evidenced response during clarifications. Certain details depend on project-specific scope and will be confirmed as required."
+                      });
+                    }
+                  }
+                  
+                  console.log(`Fallback model success: ${validatedAnswers.length} answers (individual fallbacks: ${individualFallbackCount})`);
+                  return validatedAnswers;
+                }
+              } catch (fallbackParseError) {
+                console.log('Fallback model also failed JSON parsing, continuing to throw error');
+              }
+            }
+          }
+        }
+        throw new Error("Empty content from OpenAI");
       }
 
       let parsed;
       try {
         parsed = JSON.parse(content);
-      } catch (e) {
-        throw new Error("Invalid JSON from OpenAI");
+      } catch (parseError) {
+        if (attempt === 1) {
+          console.log('JSON parsing failed for gpt-5-mini-2025-08-07, trying gpt-4o-mini fallback');
+          
+          const fallbackResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${openAIApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: promptText }
+              ],
+              max_tokens: maxCompletionTokens,
+              response_format: { type: "json_object" }
+            }),
+            signal: controller.signal
+          });
+          
+          if (fallbackResponse.ok) {
+            const fallbackData = await fallbackResponse.json();
+            const fallbackContent = fallbackData.choices[0]?.message?.content;
+            
+            if (fallbackContent) {
+              try {
+                const fallbackParsed = JSON.parse(fallbackContent);
+                if (fallbackParsed?.answers?.length) {
+                  console.log('Successfully using gpt-4o-mini fallback after JSON parsing failure');
+                  parsed = fallbackParsed;
+                }
+              } catch (fallbackParseError) {
+                throw new Error("Invalid JSON from both models");
+              }
+            }
+          }
+        }
+        
+        if (!parsed) {
+          throw new Error("Invalid JSON from OpenAI");
+        }
       }
       
       if (!parsed?.answers?.length) {
