@@ -16,6 +16,7 @@ import Privacy from "./pages/Privacy";
 import AcceptableUse from "./pages/AcceptableUse";
 import Try from "./pages/Try";
 import Contact from "./pages/Contact";
+import Pricing from "./pages/Pricing";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminCompanies from "./pages/admin/AdminCompanies";
@@ -49,6 +50,7 @@ const App = () => (
               <Route path="/acceptable-use" element={<AcceptableUse />} />
               <Route path="/try" element={<Try />} />
               <Route path="/contact" element={<Contact />} />
+              <Route path="/pricing" element={<Pricing />} />
               
               {/* Admin Routes */}
               <Route path="/admin" element={<AdminDashboard />} />
