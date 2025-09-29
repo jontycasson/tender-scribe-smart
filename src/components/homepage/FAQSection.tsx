@@ -24,7 +24,7 @@ export const FAQSection = () => {
     },
     {
       question: "Do you integrate with existing CRM systems?",
-      answer: "Yes, we integrate with major CRM platforms including Salesforce, HubSpot, and Pipedrive (Gold plan and above). We also offer API access for custom integrations on our Platinum plan."
+      answer: "CRM integrations are not currently available but are a key priority on our product roadmap. We're actively developing integrations with major platforms including Salesforce, HubSpot, and Pipedrive, with planned release in early 2025. API access for custom integrations will also be available on our Enterprise plan."
     },
     {
       question: "What support do you provide?",
