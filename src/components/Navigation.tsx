@@ -34,8 +34,16 @@ export const Navigation = ({ showNewTenderButton = false }: NavigationProps) => 
     return user.email.substring(0, 2).toUpperCase();
   };
 
+  const navigationLinks = [
+    { name: "How It Works", href: "#how-it-works" },
+    { name: "Benefits", href: "#benefits" },
+    { name: "Testimonials", href: "#testimonials" },
+    { name: "Pricing", href: "/pricing" },
+    { name: "FAQ", href: "#faq" }
+  ];
+
   return (
-    <header className="border-b bg-card">
+    <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="max-w-7xl mx-auto px-6 lg:px-12 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center">
@@ -43,11 +51,23 @@ export const Navigation = ({ showNewTenderButton = false }: NavigationProps) => 
               <img 
                 src="/lovable-uploads/730698ea-a3a2-4ade-b2a7-2b63eb99bdf2.png" 
                 alt="Proposal.fit" 
-                className="h-16"
+                className="h-12"
               />
             </Link>
-            
           </div>
+
+          {/* Navigation Links - Hidden on mobile, shown on desktop */}
+          <nav className="hidden md:flex items-center space-x-8">
+            {navigationLinks.map((link) => (
+              <Link
+                key={link.name}
+                to={link.href}
+                className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {link.name}
+              </Link>
+            ))}
+          </nav>
 
           <div className="flex items-center space-x-4">
             {user && showNewTenderButton && (
@@ -88,9 +108,14 @@ export const Navigation = ({ showNewTenderButton = false }: NavigationProps) => 
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Button asChild>
-                <Link to="/auth">Log In / Sign Up</Link>
-              </Button>
+              <div className="flex items-center space-x-3">
+                <Button variant="ghost" asChild>
+                  <Link to="/auth">Log In</Link>
+                </Button>
+                <Button asChild>
+                  <Link to="/auth">Start Free Trial</Link>
+                </Button>
+              </div>
             )}
           </div>
         </div>

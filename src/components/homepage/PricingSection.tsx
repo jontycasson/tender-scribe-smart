@@ -6,11 +6,11 @@ import { Link } from "react-router-dom";
 
 const featuredPlans = [
   {
-    name: "Silver",
+    name: "Starter",
     price: "£113.99",
     period: "annually",
     seats: 2,
-    bestFor: "Small SMEs",
+    bestFor: "Small Teams",
     features: [
       "Unlimited tender responses",
       "AI-assisted drafting",
@@ -20,29 +20,29 @@ const featuredPlans = [
     highlight: false
   },
   {
-    name: "Gold",
+    name: "Pro",
     price: "£136.79",
     period: "annually",
     seats: 5,
-    bestFor: "Growing SMEs",
+    bestFor: "Growing Teams",
     features: [
-      "Everything in Silver",
+      "Everything in Starter",
       "Advanced AI matching",
       "CRM integrations",
-      "Workflow tools"
+      "Team collaboration"
     ],
     highlight: true
   },
   {
-    name: "Platinum",
+    name: "Enterprise",
     price: "£164.15",
     period: "annually",
     seats: 10,
-    bestFor: "Scale-ups",
+    bestFor: "Large Teams",
     features: [
-      "Everything in Gold",
+      "Everything in Pro",
       "API access",
-      "Dedicated success manager",
+      "Dedicated support",
       "SLA included"
     ],
     highlight: false
