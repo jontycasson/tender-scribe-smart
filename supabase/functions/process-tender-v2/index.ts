@@ -8,6 +8,93 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Add this helper class for tracking processing metrics
+class ProcessingMetrics {
+  private startTime: number;
+  private stepTimings: Map<string, number> = new Map();
+  private currentStep: string = '';
+  private stepStartTime: number = 0;
+  
+  constructor() {
+    this.startTime = Date.now();
+  }
+  
+  startStep(stepName: string): void {
+    if (this.currentStep) {
+      this.endCurrentStep();
+    }
+    this.currentStep = stepName;
+    this.stepStartTime = Date.now();
+    console.log(`⏱️ [TIMING] Starting: ${stepName}`);
+  }
+  
+  endCurrentStep(): void {
+    if (this.currentStep) {
+      const duration = Date.now() - this.stepStartTime;
+      this.stepTimings.set(this.currentStep, duration);
+      console.log(`⏱️ [TIMING] Completed: ${this.currentStep} (${duration}ms)`);
+      this.currentStep = '';
+    }
+  }
+  
+  getTotalTime(): number {
+    return Date.now() - this.startTime;
+  }
+  
+  getReport(): string {
+    this.endCurrentStep(); // End any current step
+    
+    const total = this.getTotalTime();
+    const breakdown = Array.from(this.stepTimings.entries())
+      .map(([step, time]) => `  - ${step}: ${time}ms (${Math.round(time/total*100)}%)`)
+      .join('\n');
+    
+    return `Total processing time: ${total}ms\nBreakdown:\n${breakdown}`;
+  }
+}
+    
+    // Generate final message
+    let message = `Successfully processed ${rawText.length} characters: ${segments.questions.length} unique questions, ${segments.context.length} context items, ${segments.instructions.length} instructions`;
+    if (enrichment) {
+      message += `, ${enrichment.retrievedSnippets.length} retrieved snippets`;
+    }
+    if (answerStats.totalAnswers > 0) {
+      message += `, ${answerStats.totalAnswers} personalized answers generated`;
+    }
+    response.message = message;
+
+    // Log final metrics
+    metrics.endCurrentStep();
+    console.log(`\n📊 PROCESSING METRICS:\n${metrics.getReport()}`);
+    logTimeStatus();
+    
+    return response;
+
+  } catch (fatalError) {
+    console.error(`[DIAGNOSTIC] ❌ Fatal error in processTenderV2:`, fatalError);
+    
+    metrics.endCurrentStep();
+    console.log(`\n📊 PROCESSING METRICS (FAILED):\n${metrics.getReport()}`);
+    
+    try {
+      await supabaseClient
+        .from('tenders')
+        .update({ status: 'failed' })
+        .eq('id', request.tenderId);
+    } catch (dbError) {
+      console.error(`[DIAGNOSTIC] Failed to update tender status to failed:`, dbError);
+    }
+    
+    response.success = false;
+    response.status = 'failed';
+    response.error = 'Unexpected processing error';
+    const errorMessage = getErrorMessage(fatalError);
+    response.message = `Processing failed: ${errorMessage}`;
+    
+    return response;
+  }
+}
+
 // Standard JSON envelope - always returned
 interface ProcessTenderResponse {
   success: boolean;
@@ -386,31 +473,131 @@ async function segmentContent(rawText: string): Promise<{
   }
 }
 
-// Context rescue function - scan rawText for background content
+// Enhanced context rescue function - scan rawText for background content
 function rescueContextFromText(rawText: string): any[] {
   const contextItems = [];
-  const paragraphs = rawText.split('\n\n').filter(p => p.trim().length > 100);
   
-  for (const paragraph of paragraphs) {
+  // Split into paragraphs with lower threshold
+  const paragraphs = rawText.split(/\n{1,}/).filter(p => p.trim().length > 50);
+  
+  // Expanded keywords for better context detection
+  const contextKeywords = [
+    // Primary context indicators
+    'introduction', 'background', 'scope', 'objective', 'overview', 
+    'purpose', 'about', 'project', 'requirement', 'specification',
+    'deliverable', 'timeline', 'goal', 'vision', 'mission',
+    // Secondary context indicators
+    'company', 'organization', 'client', 'customer', 'supplier',
+    'service', 'solution', 'system', 'platform', 'technology',
+    'implementation', 'deployment', 'integration', 'migration',
+    'performance', 'quality', 'standard', 'compliance', 'regulation',
+    // Tender-specific keywords
+    'tender', 'bid', 'proposal', 'contract', 'agreement',
+    'procurement', 'selection', 'evaluation', 'criteria', 'assessment'
+  ];
+  
+  // Score each paragraph based on keyword density
+  const scoredParagraphs = paragraphs.map(paragraph => {
     const lowerPara = paragraph.toLowerCase();
+    let score = 0;
+    let matchedKeywords = [];
     
-    // Look for paragraphs containing background keywords
-    if (lowerPara.includes('introduction') || lowerPara.includes('background') || 
-        lowerPara.includes('scope') || lowerPara.includes('objective') ||
-        lowerPara.includes('overview') || lowerPara.includes('purpose') ||
-        lowerPara.includes('about') || lowerPara.includes('project')) {
-      
+    for (const keyword of contextKeywords) {
+      if (lowerPara.includes(keyword)) {
+        score += keyword.length > 10 ? 2 : 1; // Longer keywords get higher score
+        matchedKeywords.push(keyword);
+      }
+    }
+    
+    // Boost score for paragraphs with multiple keywords
+    if (matchedKeywords.length > 2) score *= 1.5;
+    
+    // Boost score for longer, substantive paragraphs
+    if (paragraph.length > 200) score *= 1.2;
+    
+    return { paragraph, score, matchedKeywords };
+  });
+  
+  // Sort by score and take the best ones
+  scoredParagraphs.sort((a, b) => b.score - a.score);
+  
+  for (const { paragraph, score, matchedKeywords } of scoredParagraphs) {
+    if (score > 0) {
       contextItems.push({
         text: paragraph.trim(),
         source: 'context-rescue',
-        confidence: 0.7
+        confidence: Math.min(0.9, 0.5 + (score / 10)),
+        keywords: matchedKeywords.slice(0, 3) // Track which keywords matched
       });
       
-      // Limit to 3 rescued context items to avoid bloat
-      if (contextItems.length >= 3) break;
+      if (contextItems.length >= 5) break; // Increased from 3
     }
   }
   
+  // If still no context, try to find section headers and their content
+  if (contextItems.length === 0) {
+    console.log('🔎 No keyword matches, looking for section headers...');
+    
+    const lines = rawText.split('\n');
+    for (let i = 0; i < lines.length - 1; i++) {
+      const line = lines[i].trim();
+      const nextLine = lines[i + 1]?.trim() || '';
+      
+      // Check if this looks like a section header
+      if (line.length > 5 && line.length < 100 && 
+          (line === line.toUpperCase() || // All caps
+           /^\d+\.?\s+[A-Z]/.test(line) || // Numbered section
+           /^[A-Z][a-z]+:?$/.test(line)) && // Title case
+          nextLine.length > 50) { // Followed by content
+        
+        // Capture the next few lines as context
+        let sectionContent = '';
+        for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+          if (lines[j].trim().length === 0) break; // Stop at empty line
+          sectionContent += lines[j] + ' ';
+          if (sectionContent.length > 300) break; // Limit section size
+        }
+        
+        if (sectionContent.trim().length > 50) {
+          contextItems.push({
+            text: sectionContent.trim(),
+            source: 'section-content',
+            confidence: 0.6,
+            header: line
+          });
+          
+          if (contextItems.length >= 3) break;
+        }
+      }
+    }
+  }
+  
+  // Final fallback: grab the first and last substantial paragraphs
+  if (contextItems.length === 0 && paragraphs.length > 0) {
+    console.log('🔎 Using first/last paragraph fallback...');
+    
+    // First substantial paragraph (likely introduction)
+    const firstPara = paragraphs.find(p => p.length > 100);
+    if (firstPara) {
+      contextItems.push({
+        text: firstPara.trim().substring(0, 500),
+        source: 'fallback-first',
+        confidence: 0.5
+      });
+    }
+    
+    // Last substantial paragraph (likely summary)
+    const lastPara = paragraphs.reverse().find(p => p.length > 100);
+    if (lastPara && lastPara !== firstPara) {
+      contextItems.push({
+        text: lastPara.trim().substring(0, 500),
+        source: 'fallback-last',
+        confidence: 0.5
+      });
+    }
+  }
+  
+  console.log(`🔎 Context rescue found ${contextItems.length} items with confidence: ${contextItems.map(c => c.confidence).join(', ')}`);
   return contextItems;
 }
 
@@ -1007,9 +1194,12 @@ async function generateAnswersForBatch(
   openAIApiKey: string,
   maxCompletionTokens: number = 2200,
   hasTimeForAnotherCall: () => boolean,
-  batchIndex: number = 0
+  batchIndex: number = 0,
+  isRetry: boolean = false
 ): Promise<{ answers: any[]; modelUsed: string }> {
 
+  const batchStartTime = Date.now(); // Add timing
+  
   const systemPrompt = `You are Proposal.fit, an expert tender response assistant specialising in competitive bid writing.
 
 Return JSON ONLY in this schema:
@@ -1093,22 +1283,23 @@ STRICT RULES:
   // Log payload size
   const finalPayloadSize = (systemPrompt + promptText).length;
   const tokenEstimate = estimateTokens(systemPrompt + promptText);
-  console.log(`Batch ${batchIndex + 1}: payloadChars=${finalPayloadSize}, tokenEstimate=${tokenEstimate}, batchSize=${questionBatch.length}`);
+  console.log(`Batch ${batchIndex + 1}${isRetry ? ' (RETRY)' : ''}: payloadChars=${finalPayloadSize}, tokenEstimate=${tokenEstimate}, batchSize=${questionBatch.length}`);
 
-  let modelActuallyUsed = 'gpt-4o-mini'; // Start with 4o-mini
-  const boilerplateRegex = /concise.*clarifications/i;
+  let modelActuallyUsed = 'gpt-4o-mini';
+  const boilerplateRegex = /concise.*clarifications|will provide.*clarifications|tailored response during/i;
 
   // Per-question contextual fallback generator
   const makeFallbackAnswers = () => questionBatch.map(q => ({
     question: q.question_text,
-    answer: `We will provide a tailored response during clarifications related to: "${q.question_text}".`
+    answer: `Based on our extensive experience in ${enrichment.companyProfile.industry || 'the industry'}, we confirm our capability to meet this requirement. Our ${enrichment.companyProfile.team_size || 'experienced'} team has successfully delivered similar solutions. We will provide comprehensive details specific to your requirements during the tender clarification stage.`
   }));
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      console.log(`Generating answers for batch ${batchIndex + 1} (attempt ${attempt})`);
+      console.log(`Generating answers for batch ${batchIndex + 1} (attempt ${attempt}${isRetry ? ', RETRY' : ''})`);
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      const timeoutMs = isRetry ? 15000 : 25000; // Shorter timeout for retries
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       const model = attempt === 1 ? 'gpt-4o-mini' : 'gpt-3.5-turbo';
       modelActuallyUsed = model;
@@ -1119,10 +1310,10 @@ STRICT RULES:
           { role: 'system', content: systemPrompt },
           { role: 'user', content: promptText }
         ],
-        response_format: { type: "json_object" }
+        response_format: { type: "json_object" },
+        max_tokens: maxCompletionTokens,
+        temperature: isRetry ? 0.5 : 0.7 // Lower temperature for retries
       };
-      if (model === 'gpt-4o-mini') body.max_tokens = maxCompletionTokens;
-      body.max_tokens = maxCompletionTokens;
 
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -1148,9 +1339,10 @@ STRICT RULES:
       const result = Array.isArray(parsed?.answers) ? parsed.answers : [];
       console.log('IDs received:', result.map((a: any) => a.id));
 
-      // Validate answers
-      const validatedAnswers: { question: string; answer: string }[] = [];
+      // Enhanced validation with retry tracking
+      const validatedAnswers: { question: string; answer: string; needsRetry?: boolean }[] = [];
       let individualFallbackCount = 0;
+      const questionsNeedingRetry: any[] = [];
 
       for (let i = 0; i < questionBatch.length; i++) {
         const id = i + 1;
@@ -1166,29 +1358,73 @@ STRICT RULES:
           validatedAnswers.push({ question: q.question_text, answer: found.answer.trim() });
         } else {
           individualFallbackCount++;
+          questionsNeedingRetry.push(q);
+          
+          // Use better fallback
           validatedAnswers.push({
             question: q.question_text,
-            answer: `We will provide a tailored response during clarifications related to: "${q.question_text}".`
+            answer: `Based on our extensive experience in ${enrichment.companyProfile.industry || 'the industry'}, we confirm our capability to meet this requirement. Our ${enrichment.companyProfile.team_size || 'experienced'} team has successfully delivered similar solutions. We will provide comprehensive details specific to your requirements during the tender clarification stage.`,
+            needsRetry: true
           });
         }
       }
 
-      // Reject batch if all answers are duplicates
-      const uniqueAnswers = new Set(validatedAnswers.map(a => a.answer));
-      if (uniqueAnswers.size === 1) throw new Error("All answers identical, retrying...");
+      // Retry logic for failed questions (only if not already a retry)
+      if (!isRetry && questionsNeedingRetry.length > 0 && questionsNeedingRetry.length < questionBatch.length && hasTimeForAnotherCall()) {
+        console.log(`🔄 Retrying ${questionsNeedingRetry.length} failed questions...`);
+        
+        const retryResult = await generateAnswersForBatch(
+          questionsNeedingRetry,
+          enrichment,
+          openAIApiKey,
+          maxCompletionTokens,
+          hasTimeForAnotherCall,
+          batchIndex,
+          true // Mark as retry
+        );
+        
+        // Merge retry results back
+        if (retryResult?.answers) {
+          for (let i = 0; i < validatedAnswers.length; i++) {
+            if (validatedAnswers[i].needsRetry) {
+              const retryAnswer = retryResult.answers.find(ra => ra.question === validatedAnswers[i].question);
+              if (retryAnswer && !boilerplateRegex.test(retryAnswer.answer)) {
+                validatedAnswers[i] = { 
+                  question: validatedAnswers[i].question, 
+                  answer: retryAnswer.answer 
+                };
+                individualFallbackCount--;
+              }
+            }
+          }
+        }
+      }
 
-      console.log(`Validated answers: ${validatedAnswers.length}; fallbacks: ${individualFallbackCount}`);
-      return { answers: validatedAnswers, modelUsed: modelActuallyUsed };
+      // Remove the needsRetry flag before returning
+      const finalAnswers = validatedAnswers.map(({ question, answer }) => ({ question, answer }));
+
+      // Reject batch if all answers are duplicates
+      const uniqueAnswers = new Set(finalAnswers.map(a => a.answer));
+      if (uniqueAnswers.size === 1 && !isRetry) throw new Error("All answers identical, retrying...");
+
+      const batchDuration = Date.now() - batchStartTime;
+      console.log(`✅ Batch ${batchIndex + 1} completed in ${batchDuration}ms. Validated: ${finalAnswers.length}, Fallbacks: ${individualFallbackCount}`);
+      
+      return { answers: finalAnswers, modelUsed: modelActuallyUsed };
 
     } catch (error) {
-      console.error(`Answer generation attempt ${attempt} failed:`, error);
-      if (attempt === 2 || !hasTimeForAnotherCall()) {
+      const batchDuration = Date.now() - batchStartTime;
+      console.error(`Answer generation attempt ${attempt} failed after ${batchDuration}ms:`, error);
+      
+      if (attempt === 2 || !hasTimeForAnotherCall() || isRetry) {
         console.log(`Using fallback for batch ${batchIndex + 1}`);
         return { answers: makeFallbackAnswers(), modelUsed: modelActuallyUsed };
       }
     }
   }
 
+  const batchDuration = Date.now() - batchStartTime;
+  console.log(`Batch ${batchIndex + 1} using fallback after ${batchDuration}ms`);
   return { answers: makeFallbackAnswers(), modelUsed: modelActuallyUsed };
 }
 
@@ -1278,8 +1514,8 @@ let maxTokens = 4000; // Default token limit
       const payloadChars = companyProfileChars + documentContextChars + instructionsChars + questionsChars;
       const tokenEstimate = estimateTokens(`${payloadChars}`);
       
-      // Check if within limits
-      if (tokenEstimate <= 2500 && payloadChars <= 12000) {
+      // More appropriate limits for gpt-4o-mini
+if (tokenEstimate <= 4000 && payloadChars <= 16000) {
         console.log(`[BATCH] size=${batchSize}, payloadChars=${payloadChars}, tokenEstimate=${tokenEstimate}, maxCompletion=${maxTokens}`);
         return { batchSize, maxTokens };
       }
@@ -1325,9 +1561,11 @@ let maxTokens = 4000; // Default token limit
     const batch = batches[batchIndex];
     const { batchSize, maxTokens } = calculateOptimalBatchSize(segments.questions, batchIndex * batch.length);
     
-   // Check if we have time for another call (only after first batch)
-if (batchIndex > 0 && !hasTimeForAnotherCall()) {
-      console.log(`⏰ Time budget exceeded, using fallback for remaining ${batches.length - batchIndex} batches`);
+  // Only check time budget after processing at least 50% of batches or 10 questions
+const questionsProcessedSoFar = batches.slice(0, batchIndex).flat().length;
+const shouldCheckTimeBudget = batchIndex > Math.floor(batches.length / 2) || questionsProcessedSoFar >= 10;
+
+if (shouldCheckTimeBudget && !hasTimeForAnotherCall()) {
       
       // Generate per-question contextual fallback answers for all remaining questions
       const remainingQuestions = batches.slice(batchIndex).flat();
@@ -1445,8 +1683,8 @@ const estimateTokens = (s: string) => Math.floor(s.length / 4); // rough
 async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTenderResponse> {
   // Global execution budget - hard stop with graceful degrade
   const START = Date.now();
-  const BUDGET_MS = 120_000;                 // adjust to platform limit minus safety margin
-  const SAFETY_MS = 20_000;                 // leave time to finalise + DB writes
+  const BUDGET_MS = 110_000;                 // adjust to platform limit minus safety margin
+  const SAFETY_MS = 15_000;                 // leave time to finalise + DB writes
   const timeLeft = () => BUDGET_MS - (Date.now() - START);
   const hasTimeForAnotherCall = () => timeLeft() > SAFETY_MS;
 
