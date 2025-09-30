@@ -113,7 +113,7 @@ export const Navigation = ({ showNewTenderButton = false }: NavigationProps) => 
                   <Link to="/auth">Log In</Link>
                 </Button>
                 <Button asChild>
-                  <Link to="/auth">Start Free Trial</Link>
+                  <Link to="/try">Try Now</Link>
                 </Button>
               </div>
             )}
