@@ -59,13 +59,24 @@ export const Navigation = ({ showNewTenderButton = false }: NavigationProps) => 
           {/* Navigation Links - Hidden on mobile, shown on desktop */}
           <nav className="hidden md:flex items-center space-x-8">
             {navigationLinks.map((link) => (
-              <Link
-                key={link.name}
-                to={link.href}
-                className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {link.name}
-              </Link>
+              link.href.startsWith('#') ? (
+                <a
+                  key={link.name}
+                  href={link.href}
+                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                  style={{ scrollBehavior: 'smooth' }}
+                >
+                  {link.name}
+                </a>
+              ) : (
+                <Link
+                  key={link.name}
+                  to={link.href}
+                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {link.name}
+                </Link>
+              )
             ))}
           </nav>
 
