@@ -7,62 +7,66 @@ import { Badge } from "@/components/ui/badge";
 
 const pricingPlans = [
   {
-    name: "Bronze",
+    name: "Solo",
     price: "£94.99",
-    period: "annually",
+    period: "year",
     seats: 1,
-    bestFor: "Freelancers & micro-SMEs",
+    bestFor: "Freelancers & Micro-SMEs",
     features: [
-      "Unlimited tender responses",
-      "AI-assisted drafting", 
-      "Templates & compliance checks",
-      "Export (Word/PDF)",
+      "Unlimited AI-powered tender responses",
+      "AI-assisted drafting for faster bids",
+      "Document ingestion (Word, PDF, TXT, RTF)",
+      "Smart segmentation (questions vs. context)",
+      "Export responses (Word/PDF)",
       "Onboarding included"
     ],
     highlight: false
   },
   {
-    name: "Silver", 
+    name: "Starter", 
     price: "£113.99",
-    period: "annually",
+    period: "year",
     seats: 2,
-    bestFor: "Small SMEs with light collaboration",
+    bestFor: "Small Teams",
     features: [
-      "All Bronze features",
-      "Shared workspace",
-      "Document library", 
-      "Basic analytics",
-      "Onboarding training included"
+      "Everything in Solo, plus:",
+      "Shared workspace for collaboration",
+      "Document library for storing responses",
+      "Company profile auto-fill",
+      "Response memory (reuse approved answers)",
+      "Basic training included"
     ],
     highlight: false
   },
   {
-    name: "Gold",
+    name: "Pro",
     price: "£136.79", 
-    period: "annually",
+    period: "year",
     seats: 5,
-    bestFor: "Growing SMEs with bid teams",
+    bestFor: "Growing Teams",
     features: [
-      "All Silver features",
-      "Advanced AI (auto Q&A matching, tone customisation)",
-      "CRM integrations",
-      "Workflow tools"
-    ],
-    highlight: false
-  },
-  {
-    name: "Platinum",
-    price: "£164.15",
-    period: "annually", 
-    seats: 10,
-    bestFor: "Larger SMEs & scale-ups",
-    features: [
-      "All Gold features",
-      "API access",
-      "Dedicated success manager & SLA",
-      "Onboarding training included"
+      "Everything in Starter, plus:",
+      "Advanced AI drafting (tone optimisation, contextual matching)",
+      "Workflow & approval routing",
+      "Team collaboration tools",
+      "Priority support"
     ],
     highlight: true
+  },
+  {
+    name: "Enterprise",
+    price: "£164.15",
+    period: "year", 
+    seats: 10,
+    bestFor: "Scale-ups & Larger Teams",
+    features: [
+      "Everything in Pro, plus:",
+      "API access for integrations",
+      "SLA included",
+      "Dedicated support manager",
+      "Onboarding training for teams"
+    ],
+    highlight: false
   }
 ];
 
@@ -79,7 +83,7 @@ const Pricing = () => {
               Simple, Transparent Pricing
             </h1>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-16">
-              Choose the perfect plan for your team. All plans include our core AI-powered tender response features.
+              Choose the perfect plan for your team. All plans include unlimited AI-powered tender responses and smart document processing.
             </p>
 
             {/* Pricing Grid */}

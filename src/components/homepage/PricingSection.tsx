@@ -8,42 +8,46 @@ const featuredPlans = [
   {
     name: "Starter",
     price: "£113.99",
-    period: "annually",
+    period: "year",
     seats: 2,
     bestFor: "Small Teams",
     features: [
-      "Unlimited tender responses",
-      "AI-assisted drafting",
-      "Shared workspace",
-      "Document library"
+      "Unlimited AI-powered tender responses",
+      "AI-assisted drafting for faster bids",
+      "Document ingestion (Word, PDF, TXT, RTF)",
+      "Shared workspace & document library",
+      "Company profile auto-fill",
+      "Response memory (reuse approved answers)"
     ],
     highlight: false
   },
   {
     name: "Pro",
     price: "£136.79",
-    period: "annually",
+    period: "year",
     seats: 5,
     bestFor: "Growing Teams",
     features: [
-      "Everything in Starter",
-      "Advanced AI matching",
-      "CRM integrations",
-      "Team collaboration"
+      "Everything in Starter, plus:",
+      "Advanced AI drafting (tone optimisation)",
+      "Workflow & approval routing",
+      "Team collaboration tools",
+      "Priority support"
     ],
     highlight: true
   },
   {
     name: "Enterprise",
     price: "£164.15",
-    period: "annually",
+    period: "year",
     seats: 10,
-    bestFor: "Large Teams",
+    bestFor: "Larger Teams & Scale-ups",
     features: [
-      "Everything in Pro",
-      "API access",
-      "Dedicated support",
-      "SLA included"
+      "Everything in Pro, plus:",
+      "API access for integrations",
+      "SLA included",
+      "Dedicated support manager",
+      "Team onboarding training"
     ],
     highlight: false
   }
@@ -111,7 +115,7 @@ export const PricingSection = () => {
         {/* CTA Section */}
         <div className="text-center">
           <p className="text-muted-foreground mb-4">
-            Need a custom solution? We also offer Bronze (£94.99) for freelancers.
+            Need a Solo plan for freelancers? We also offer a 1-seat plan at £94.99/year.
           </p>
           <Button variant="ghost" asChild>
             <Link to="/pricing" className="inline-flex items-center gap-2">
