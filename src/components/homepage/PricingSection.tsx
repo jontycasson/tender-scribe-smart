@@ -8,7 +8,7 @@ const featuredPlans = [
   {
     name: "Starter",
     price: "£113.99",
-    period: "year",
+    period: "month",
     seats: 2,
     bestFor: "Small Teams",
     features: [
@@ -23,8 +23,8 @@ const featuredPlans = [
   },
   {
     name: "Pro",
-    price: "£136.79",
-    period: "year",
+    price: "£136.99",
+    period: "month",
     seats: 5,
     bestFor: "Growing Teams",
     features: [
@@ -38,8 +38,8 @@ const featuredPlans = [
   },
   {
     name: "Enterprise",
-    price: "£164.15",
-    period: "year",
+    price: "£164.99",
+    period: "month",
     seats: 10,
     bestFor: "Larger Teams & Scale-ups",
     features: [
@@ -83,7 +83,7 @@ export const PricingSection = () => {
                 <CardTitle className="text-xl font-bold mb-2">{plan.name}</CardTitle>
                 <div className="mb-2">
                   <span className="text-3xl font-bold text-primary">{plan.price}</span>
-                  <span className="text-muted-foreground text-sm"> / year</span>
+                  <span className="text-muted-foreground text-sm"> / month</span>
                 </div>
                 <div className="text-sm text-muted-foreground">
                   {plan.seats} seat{plan.seats > 1 ? 's' : ''} • {plan.bestFor}
@@ -115,7 +115,7 @@ export const PricingSection = () => {
         {/* CTA Section */}
         <div className="text-center">
           <p className="text-muted-foreground mb-4">
-            Need a Solo plan for freelancers? We also offer a 1-seat plan at £94.99/year.
+            Need a Solo plan for freelancers? We also offer a 1-seat plan at £94.99/month.
           </p>
           <Button variant="ghost" asChild>
             <Link to="/pricing" className="inline-flex items-center gap-2">

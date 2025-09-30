@@ -9,7 +9,7 @@ const pricingPlans = [
   {
     name: "Solo",
     price: "£94.99",
-    period: "year",
+    period: "month",
     seats: 1,
     bestFor: "Freelancers & Micro-SMEs",
     features: [
@@ -25,7 +25,7 @@ const pricingPlans = [
   {
     name: "Starter", 
     price: "£113.99",
-    period: "year",
+    period: "month",
     seats: 2,
     bestFor: "Small Teams",
     features: [
@@ -40,8 +40,8 @@ const pricingPlans = [
   },
   {
     name: "Pro",
-    price: "£136.79", 
-    period: "year",
+    price: "£136.99", 
+    period: "month",
     seats: 5,
     bestFor: "Growing Teams",
     features: [
@@ -55,8 +55,8 @@ const pricingPlans = [
   },
   {
     name: "Enterprise",
-    price: "£164.15",
-    period: "year", 
+    price: "£164.99",
+    period: "month", 
     seats: 10,
     bestFor: "Scale-ups & Larger Teams",
     features: [
