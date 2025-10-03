@@ -55,45 +55,24 @@ const AdminCompanies = () => {
 
   const fetchCompanies = async () => {
     try {
-      // Fetch companies with tender statistics
-      const { data: companiesData, error: companiesError } = await supabase
-        .from('company_profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      setLoading(true);
 
-      if (companiesError) throw companiesError;
+      const { data: companiesData, error } = await supabase
+        .rpc('get_admin_companies_with_stats');
 
-      // Fetch tender counts and project counts for each company
-      const companiesWithStats = await Promise.all(
-        (companiesData || []).map(async (company) => {
-          // Get tender count
-          const { count: tenderCount } = await supabase
-            .from('tenders')
-            .select('*', { count: 'exact', head: true })
-            .eq('company_profile_id', company.id);
+      if (error) throw error;
 
-          // Get last tender date
-          const { data: lastTender } = await supabase
-            .from('tenders')
-            .select('created_at')
-            .eq('company_profile_id', company.id)
-            .order('created_at', { ascending: false })
-            .limit(1);
-
-          // Get project count
-          const { count: projectCount } = await supabase
-            .from('projects')
-            .select('*', { count: 'exact', head: true })
-            .eq('company_profile_id', company.id);
-
-          return {
-            ...company,
-            tenderCount: tenderCount || 0,
-            lastTenderDate: lastTender?.[0]?.created_at,
-            activeProjects: projectCount || 0,
-          };
-        })
-      );
+      const companiesWithStats = (companiesData || []).map((company: any) => ({
+        id: company.id,
+        company_name: company.company_name,
+        industry: company.industry,
+        team_size: company.team_size,
+        created_at: company.created_at,
+        updated_at: company.updated_at,
+        tenderCount: Number(company.tender_count) || 0,
+        lastTenderDate: company.last_tender_date,
+        activeProjects: Number(company.project_count) || 0,
+      })) as CompanyWithStats[];
 
       setCompanies(companiesWithStats);
     } catch (error) {

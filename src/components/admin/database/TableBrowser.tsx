@@ -27,13 +27,15 @@ export const TableBrowser = () => {
     queryKey: ["admin-table-data", selectedTable],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from(selectedTable as any)
-        .select("*")
-        .limit(10)
-        .order("created_at", { ascending: false });
+        .rpc('get_admin_table_data', {
+          p_table_name: selectedTable,
+          p_limit: 10
+        });
       
       if (error) throw error;
-      return data;
+      // Parse jsonb result to array
+      const parsedData = Array.isArray(data) ? data : [];
+      return parsedData as any[];
     },
     enabled: !!selectedTable,
   });

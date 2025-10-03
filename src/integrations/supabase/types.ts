@@ -507,6 +507,21 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
+      get_admin_companies_with_stats: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          company_name: string
+          created_at: string
+          id: string
+          industry: string
+          last_tender_date: string
+          project_count: number
+          team_size: string
+          tender_count: number
+          updated_at: string
+          user_count: number
+        }[]
+      }
       get_admin_dashboard_stats: {
         Args: Record<PropertyKey, never>
         Returns: {
@@ -514,6 +529,27 @@ export type Database = {
           total_companies: number
           total_tenders: number
           total_users: number
+        }[]
+      }
+      get_admin_file_upload_stats: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          failed_uploads: number
+          recent_uploads: Json
+          successful_uploads: number
+          total_size: number
+          total_uploads: number
+        }[]
+      }
+      get_admin_table_data: {
+        Args: { p_limit?: number; p_table_name: string }
+        Returns: Json
+      }
+      get_admin_table_stats: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          row_count: number
+          table_name: string
         }[]
       }
       get_admin_tender_stats: {

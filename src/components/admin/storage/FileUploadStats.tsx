@@ -46,32 +46,25 @@ export const FileUploadStats = () => {
 
   const fetchUploadStats = async () => {
     try {
-      // Get all upload logs
-      const { data: uploads, error } = await supabase
-        .from('file_upload_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(10);
+      setLoading(true);
+      
+      const { data: statsData, error } = await supabase
+        .rpc('get_admin_file_upload_stats');
 
       if (error) throw error;
 
-      // Calculate stats
-      const { data: allUploads } = await supabase
-        .from('file_upload_logs')
-        .select('file_size, upload_success');
-
-      const totalSize = allUploads?.reduce((sum, u) => sum + (u.file_size || 0), 0) || 0;
-      const successful = allUploads?.filter(u => u.upload_success).length || 0;
-      const failed = allUploads?.filter(u => !u.upload_success).length || 0;
-
+      const result = statsData?.[0];
+      
       setStats({
-        totalUploads: allUploads?.length || 0,
-        successfulUploads: successful,
-        failedUploads: failed,
-        totalSize,
+        totalUploads: Number(result?.total_uploads) || 0,
+        successfulUploads: Number(result?.successful_uploads) || 0,
+        failedUploads: Number(result?.failed_uploads) || 0,
+        totalSize: Number(result?.total_size) || 0,
       });
 
-      setRecentUploads(uploads || []);
+      // Parse recent uploads from JSONB
+      const uploads = (result?.recent_uploads as any) || [];
+      setRecentUploads(Array.isArray(uploads) ? uploads : []);
     } catch (error: any) {
       console.error('Error fetching upload stats:', error);
       toast({

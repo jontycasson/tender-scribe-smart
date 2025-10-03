@@ -19,20 +19,20 @@ export const TableStats = () => {
   const { data: stats, isLoading } = useQuery({
     queryKey: ["admin-table-stats"],
     queryFn: async () => {
-      const statsPromises = TABLE_INFO.map(async (table) => {
-        const { count, error } = await supabase
-          .from(table.name as any)
-          .select("*", { count: "exact", head: true });
-        
+      const { data: statsData, error } = await supabase
+        .rpc('get_admin_table_stats');
+
+      if (error) throw error;
+
+      return TABLE_INFO.map(table => {
+        const stat = statsData?.find((s: any) => s.table_name === table.name);
         return {
           name: table.name,
           label: table.label,
           icon: table.icon,
-          count: error ? 0 : count || 0,
+          count: Number(stat?.row_count) || 0,
         };
       });
-
-      return await Promise.all(statsPromises);
     },
   });
 
