@@ -18,6 +18,13 @@ interface DashboardStats {
   activeCompanies: number;
 }
 
+interface AdminStats {
+  total_users: number;
+  total_companies: number;
+  total_tenders: number;
+  active_companies_30d: number;
+}
+
 const AdminDashboard = () => {
   const [stats, setStats] = useState<DashboardStats>({
     totalUsers: 0,
@@ -42,20 +49,21 @@ const AdminDashboard = () => {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        // Get user count from auth.users via a simple company_profiles count (proxy)
-        const { count: userCount } = await supabase
-          .from('company_profiles')
-          .select('*', { count: 'exact', head: true });
+        // Get dashboard stats using admin function
+        const { data: dashboardStats, error: statsError } = await supabase
+          .rpc('get_admin_dashboard_stats');
 
-        // Get company count
-        const { count: companyCount } = await supabase
-          .from('company_profiles')
-          .select('*', { count: 'exact', head: true });
+        if (statsError) {
+          console.error('Error fetching dashboard stats:', statsError);
+          throw statsError;
+        }
 
-        // Get tender count
-        const { count: tenderCount } = await supabase
-          .from('tenders')
-          .select('*', { count: 'exact', head: true });
+        const stats = (dashboardStats?.[0] || {
+          total_users: 0,
+          total_companies: 0,
+          total_tenders: 0,
+          active_companies_30d: 0
+        }) as AdminStats;
 
         // Get demo submissions count (secured function)
         const { data: demoStats, error: demoStatsError } = await supabase
@@ -66,89 +74,40 @@ const AdminDashboard = () => {
           // Continue without demo stats if access denied
         }
 
-        // Get recent companies (active ones)
-        const { count: activeCompaniesCount } = await supabase
-          .from('company_profiles')
-          .select('*', { count: 'exact', head: true })
-          .gte('updated_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
-
-        // Get recent activity (recent tenders)
-        const { data: recentTenders } = await supabase
-          .from('tenders')
-          .select(`
-            id,
-            title,
-            created_at,
-            status,
-            company_profiles!inner(company_name)
-          `)
-          .order('created_at', { ascending: false })
-          .limit(5);
-
         const statsData = Array.isArray(demoStats) ? demoStats[0] : demoStats;
 
         setStats({
-          totalUsers: userCount || 0,
-          totalCompanies: companyCount || 0,
-          totalTenders: tenderCount || 0,
+          totalUsers: stats.total_users || 0,
+          totalCompanies: stats.total_companies || 0,
+          totalTenders: stats.total_tenders || 0,
           demoSubmissions: statsData?.total_submissions || 0,
           todaySignups: statsData?.submissions_last_24h || 0,
-          activeCompanies: activeCompaniesCount || 0,
+          activeCompanies: stats.active_companies_30d || 0,
         });
 
-        // Fetch usage trends (last 30 days)
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        
-        const { data: tendersByDay } = await supabase
-          .from('tenders')
-          .select('created_at')
-          .gte('created_at', thirtyDaysAgo.toISOString());
+        // Fetch usage trends using admin function
+        const { data: tenderStats } = await supabase
+          .rpc('get_admin_tender_stats', { days_back: 30 });
 
-        const { data: responsesByDay } = await supabase
-          .from('tender_responses')
-          .select('created_at')
-          .gte('created_at', thirtyDaysAgo.toISOString());
+        const usageArray = tenderStats?.map(stat => ({
+          date: stat.date,
+          tenders: Number(stat.tender_count),
+          responses: Number(stat.response_count),
+          users: 0 // Can enhance this later
+        })) || [];
 
-        // Group by day for usage chart
-        const usageMap = new Map();
-        for (let i = 0; i < 30; i++) {
-          const date = new Date();
-          date.setDate(date.getDate() - i);
-          const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-          usageMap.set(dateStr, { date: dateStr, tenders: 0, responses: 0, users: 0 });
-        }
-
-        tendersByDay?.forEach(tender => {
-          const dateStr = new Date(tender.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-          if (usageMap.has(dateStr)) {
-            usageMap.get(dateStr).tenders++;
-          }
-        });
-
-        responsesByDay?.forEach(response => {
-          const dateStr = new Date(response.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-          if (usageMap.has(dateStr)) {
-            usageMap.get(dateStr).responses++;
-          }
-        });
-
-        const usageArray = Array.from(usageMap.values()).reverse();
-        setUsageData(usageArray);
+        setUsageData(usageArray.reverse());
 
         // Calculate user journey metrics
-        const { data: allCompanies } = await supabase
-          .from('company_profiles')
-          .select('id, created_at');
-
+        const onboardingComplete = stats.total_companies || 0;
+        
+        // Count companies with at least one tender
         const { data: companiesWithTenders } = await supabase
           .from('tenders')
           .select('company_profile_id')
           .not('company_profile_id', 'is', null);
 
         const uniqueCompaniesWithTenders = new Set(companiesWithTenders?.map(t => t.company_profile_id));
-        
-        const onboardingComplete = allCompanies?.length || 0;
         const firstTenderComplete = uniqueCompaniesWithTenders.size;
 
         setJourneyMetrics([
@@ -166,9 +125,9 @@ const AdminDashboard = () => {
           },
           {
             metric: 'Active Users (30d)',
-            value: activeCompaniesCount || 0,
+            value: stats.active_companies_30d || 0,
             total: onboardingComplete,
-            percentage: onboardingComplete > 0 ? Math.round(((activeCompaniesCount || 0) / onboardingComplete) * 100) : 0,
+            percentage: onboardingComplete > 0 ? Math.round(((stats.active_companies_30d || 0) / onboardingComplete) * 100) : 0,
           },
         ]);
 
@@ -183,7 +142,7 @@ const AdminDashboard = () => {
           .select('id')
           .eq('status', 'failed');
 
-        const totalProcessed = tenderCount || 0;
+        const totalProcessed = stats.total_tenders || 0;
         const failed = failedTenders?.length || 0;
         const processing = tendersProcessing?.length || 0;
 
@@ -204,26 +163,11 @@ const AdminDashboard = () => {
         }
         setHeatmapData(heatmap);
 
-        // Get top companies by activity
-        const { data: companiesActivity } = await supabase
-          .from('company_profiles')
-          .select(`
-            company_name,
-            updated_at,
-            tenders(count),
-            tender_responses(count)
-          `)
-          .order('updated_at', { ascending: false })
-          .limit(5);
+        // Get top companies using admin function
+        const { data: topCompaniesList } = await supabase
+          .rpc('get_admin_top_companies', { limit_count: 5 });
 
-        const topCompaniesList = companiesActivity?.map(company => ({
-          company_name: company.company_name,
-          tender_count: company.tenders?.[0]?.count || 0,
-          response_count: company.tender_responses?.[0]?.count || 0,
-          last_active: company.updated_at,
-        })) || [];
-
-        setTopCompanies(topCompaniesList);
+        setTopCompanies(topCompaniesList || []);
 
       } catch (error) {
         console.error('Error fetching dashboard data:', error);

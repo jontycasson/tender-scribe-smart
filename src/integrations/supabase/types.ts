@@ -507,6 +507,32 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
+      get_admin_dashboard_stats: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          active_companies_30d: number
+          total_companies: number
+          total_tenders: number
+          total_users: number
+        }[]
+      }
+      get_admin_tender_stats: {
+        Args: { days_back?: number }
+        Returns: {
+          date: string
+          response_count: number
+          tender_count: number
+        }[]
+      }
+      get_admin_top_companies: {
+        Args: { limit_count?: number }
+        Returns: {
+          company_name: string
+          last_active: string
+          response_count: number
+          tender_count: number
+        }[]
+      }
       get_admin_users: {
         Args: Record<PropertyKey, never>
         Returns: {
