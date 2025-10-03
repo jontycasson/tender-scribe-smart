@@ -23,6 +23,7 @@ import AdminCompanies from "./pages/admin/AdminCompanies";
 import AdminDemoUsage from "./pages/admin/AdminDemoUsage";
 import AdminSecurity from "./pages/admin/AdminSecurity";
 import AdminEdgeFunctions from "./pages/admin/AdminEdgeFunctions";
+import AdminDatabase from "./pages/admin/AdminDatabase";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AnalyticsProvider } from "@/components/AnalyticsProvider";
@@ -57,9 +58,10 @@ const App = () => (
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/admin/users" element={<AdminUsers />} />
               <Route path="/admin/companies" element={<AdminCompanies />} />
-              <Route path="/admin/edge-functions" element={<AdminEdgeFunctions />} />
-              <Route path="/admin/demo-usage" element={<AdminDemoUsage />} />
-              <Route path="/admin/security" element={<AdminSecurity />} />
+          <Route path="/admin/database" element={<AdminDatabase />} />
+          <Route path="/admin/edge-functions" element={<AdminEdgeFunctions />} />
+          <Route path="/admin/demo-usage" element={<AdminDemoUsage />} />
+          <Route path="/admin/security" element={<AdminSecurity />} />
               
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
