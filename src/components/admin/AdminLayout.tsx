@@ -3,7 +3,7 @@ import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { LogOut, Settings, Users, Building, TestTube, BarChart3, Shield, Zap, Database } from "lucide-react";
+import { LogOut, Settings, Users, Building, TestTube, BarChart3, Shield, Zap, Database, HardDrive } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -19,9 +19,11 @@ const navigation = [
   { name: 'Users', href: '/admin/users', icon: Users, current: false },
   { name: 'Companies', href: '/admin/companies', icon: Building, current: false },
   { name: 'Database', href: '/admin/database', icon: Database, current: false },
+  { name: 'Storage', href: '/admin/storage', icon: HardDrive, current: false },
   { name: 'Edge Functions', href: '/admin/edge-functions', icon: Zap, current: false },
-  { name: 'Demo Usage', href: '/admin/demo-usage', icon: TestTube, current: false },
   { name: 'Security', href: '/admin/security', icon: Shield, current: false },
+  { name: 'Demo Usage', href: '/admin/demo-usage', icon: TestTube, current: false },
+  { name: 'System', href: '/admin/system', icon: Settings, current: false },
 ];
 
 export const AdminLayout = ({ children }: AdminLayoutProps) => {
