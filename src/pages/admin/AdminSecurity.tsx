@@ -2,10 +2,12 @@ import { useState, useEffect } from "react";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
-import { Shield, AlertTriangle, CheckCircle, Users, Database, RefreshCw } from "lucide-react";
+import { Shield, RefreshCw, Activity } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { UserRoleManagement } from "@/components/admin/security/UserRoleManagement";
+import { AuthActivityMonitor } from "@/components/admin/security/AuthActivityMonitor";
+import { SecurityAlertsPanel } from "@/components/admin/security/SecurityAlertsPanel";
 
 interface SecurityMetrics {
   totalFailedLogins: number;
@@ -109,190 +111,54 @@ const AdminSecurity = () => {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Security Center</h1>
+            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+              <Shield className="h-8 w-8" />
+              Security & Authentication
+            </h1>
             <p className="text-muted-foreground">
-              Monitor security status and manage access controls
+              Manage user authentication, roles, and monitor security
             </p>
           </div>
           <Button onClick={runSecurityScan} disabled={loading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Run Security Scan
+            Refresh Data
           </Button>
         </div>
 
-        {/* Security Metrics */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Admin Users</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{metrics.adminUsers}</div>
-              <p className="text-xs text-muted-foreground">
-                Active administrators
-              </p>
-            </CardContent>
-          </Card>
+        {/* Authentication Activity Monitor */}
+        <AuthActivityMonitor />
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Failed Logins</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-yellow-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{metrics.totalFailedLogins}</div>
-              <p className="text-xs text-muted-foreground">
-                Last 24 hours
-              </p>
-            </CardContent>
-          </Card>
+        {/* User Role Management */}
+        <UserRoleManagement />
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Security Status</CardTitle>
-              <CheckCircle className="h-4 w-4 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">Secure</div>
-              <p className="text-xs text-muted-foreground">
-                All systems operational
-              </p>
-            </CardContent>
-          </Card>
+        {/* Security Status Panel */}
+        <SecurityAlertsPanel />
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Last Scan</CardTitle>
-              <Shield className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-lg font-bold">
-                {formatDate(metrics.lastSecurityScan).split(',')[1]}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {formatDate(metrics.lastSecurityScan).split(',')[0]}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Security Recommendations */}
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Security Recommendations</CardTitle>
-              <CardDescription>
-                Suggested improvements for better security
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <AlertTriangle className="h-4 w-4 text-yellow-500" />
-                  <span className="text-sm">Enable Leaked Password Protection</span>
-                </div>
-                <Badge variant="outline" className="text-yellow-600 border-yellow-600">
-                  Recommended
-                </Badge>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                  <span className="text-sm">Row Level Security Enabled</span>
-                </div>
-                <Badge variant="outline" className="text-green-600 border-green-600">
-                  Active
-                </Badge>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                  <span className="text-sm">Admin Role Management</span>
-                </div>
-                <Badge variant="outline" className="text-green-600 border-green-600">
-                  Active
-                </Badge>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Database className="h-4 w-4 text-blue-500" />
-                  <span className="text-sm">Audit Logging</span>
-                </div>
-                <Badge variant="outline" className="text-blue-600 border-blue-600">
-                  Monitoring
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Access Control</CardTitle>
-              <CardDescription>
-                Manage user permissions and admin access
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Admin Users</span>
-                  <span className="text-sm text-muted-foreground">{metrics.adminUsers} users</span>
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">RLS Policies</span>
-                  <Badge variant="outline" className="text-green-600 border-green-600">
-                    Active
-                  </Badge>
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">JWT Validation</span>
-                  <Badge variant="outline" className="text-green-600 border-green-600">
-                    Enabled
-                  </Badge>
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">API Rate Limiting</span>
-                  <Badge variant="outline" className="text-blue-600 border-blue-600">
-                    Active
-                  </Badge>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Security Alerts */}
+        {/* Quick Actions */}
         <Card>
           <CardHeader>
-            <CardTitle>Recent Security Events</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5" />
+              Security Actions
+            </CardTitle>
             <CardDescription>
-              Latest security-related activities and alerts
+              Quick access to common security and support tasks
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              <div className="flex items-center space-x-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                <CheckCircle className="h-5 w-5 text-green-600" />
-                <div>
-                  <p className="text-sm font-medium text-green-800">Security scan completed</p>
-                  <p className="text-xs text-green-600">No critical issues found - {formatDate(metrics.lastSecurityScan)}</p>
-                </div>
-              </div>
-              
-              <div className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <Shield className="h-5 w-5 text-blue-600" />
-                <div>
-                  <p className="text-sm font-medium text-blue-800">Admin panel accessed</p>
-                  <p className="text-xs text-blue-600">Authorized admin login detected</p>
-                </div>
-              </div>
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              <Button variant="outline" className="justify-start">
+                <Shield className="mr-2 h-4 w-4" />
+                View Security Logs
+              </Button>
+              <Button variant="outline" className="justify-start">
+                <Activity className="mr-2 h-4 w-4" />
+                Export Audit Trail
+              </Button>
+              <Button variant="outline" className="justify-start">
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Run Compliance Check
+              </Button>
             </div>
           </CardContent>
         </Card>
