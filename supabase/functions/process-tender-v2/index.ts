@@ -733,8 +733,7 @@ function deduplicateQuestions(questions: any[]): any[] {
  const dedupeKey = cleanText
     .toLowerCase()
     // Remove common filler words but keep important context
-    .replace(/\b(the|a|an|your|our|this|that|these|those|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|could|should|ma
-  y|might)\b/g, '')
+    .replace(/\b(the|a|an|your|our|this|that|these|those|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|could|should|may|might)\b/g, '')
     .replace(/[^a-z0-9\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
