@@ -341,39 +341,35 @@ async function segmentContent(rawText: string): Promise<{
     const chunksToProcess = Math.min(chunks.length, maxChunksToProcess);
     console.log(`Split text into ${chunks.length} chunks, will process ${chunksToProcess} chunks with AI`);
 
-    // Step 5: Process each chunk with AI (with resilient error handling)
-    let successfulChunks = 0;
-    let failedChunks = 0;
-
-    Use Promise.allSettled():
-  const chunkPromises = chunks.slice(0, chunksToProcess).map(chunk =>
-    classifyChunkWithAI(chunk, openAIApiKey).catch(err => {
-      console.error('Chunk failed:', err);
-      return null;
-    })
+  // Step 5: Process chunks in parallel with Promise.allSettled
+  const chunkPromises = chunks.slice(0, chunksToProcess).map((chunk, index) =>
+    classifyChunkWithAI(chunk, openAIApiKey)
+      .then(result => ({ success: true, result, index }))
+      .catch(err => {
+        console.error(`Chunk ${index + 1} failed:`, err instanceof Error ? err.message : err);
+        return { success: false, result: null, index };
+      })
   );
-  const results = await Promise.allSettled(chunkPromises);
-  const chunkSegments = results
-    .filter(r => r.status === 'fulfilled' && r.value)
-    .map(r => r.value);
-        
-        // Merge results if classification succeeded
-        if (chunkSegments) {
-          allSegments.questions.push(...(chunkSegments.questions || []));
-          allSegments.context.push(...(chunkSegments.context || []));
-          allSegments.instructions.push(...(chunkSegments.instructions || []));
-          successfulChunks++;
-        }
-        
-      } catch (chunkError) {
-        const errorMsg = chunkError instanceof Error ? chunkError.message : 'Unknown error';
-        console.error(`Error processing chunk ${i + 1}:`, errorMsg);
-        failedChunks++;
-        // Continue with other chunks - don't fail entire segmentation
-      }
-    }
 
-    console.log(`Chunk processing complete: ${successfulChunks} successful, ${failedChunks} failed`);
+  const results = await Promise.allSettled(chunkPromises);
+
+  let successfulChunks = 0;
+  let failedChunks = 0;
+
+  results.forEach((promiseResult) => {
+    if (promiseResult.status === 'fulfilled' && promiseResult.value.success && promiseResult.value.result) {
+      const chunkSegment = promiseResult.value.result;
+      allSegments.questions.push(...(chunkSegment.questions || []));
+      allSegments.context.push(...(chunkSegment.context || []));
+      allSegments.instructions.push(...(chunkSegment.instructions || []));
+      successfulChunks++;
+    } else {
+      failedChunks++;
+    }
+  });
+
+  console.log(`Chunk processing complete: ${successfulChunks} successful, ${failedChunks} failed`);
+
 
     // Step 6: Deduplicate and clean up results
     const rawQuestionCount = allSegments.questions.length;
