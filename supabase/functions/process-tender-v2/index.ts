@@ -1539,128 +1539,115 @@ if (tokenEstimate <= 4000 && payloadChars <= 16000) {
     return { batchSize, maxTokens };
   }
 
-  const batches = [];
-  let currentIndex = 0;
-  
-  // Split questions into adaptive batches
-  while (currentIndex < segments.questions.length) {
-    const { batchSize } = calculateOptimalBatchSize(segments.questions, currentIndex);
-    const batch = segments.questions.slice(currentIndex, currentIndex + batchSize);
-    batches.push(batch);
-    currentIndex += batchSize;
-  }
+  // Pre-calculate batch metadata BEFORE the loop
+    const batchMetadata: Array<{ batch: any[]; maxTokens: number; startIndex: number }> = [];
+    let currentIndex = 0;
 
-  console.log(`🔎 Processing ${segments.questions.length} questions in ${batches.length} adaptive batches`);
-  
-  let totalAnswers = 0;
-  let batchesProcessed = 0;
-  let failedBatches = 0;
-  let allAnswers: any[] = [];
+    while (currentIndex < segments.questions.length) {
+      const { batchSize, maxTokens } = calculateOptimalBatchSize(segments.questions, currentIndex);
+      const batch = segments.questions.slice(currentIndex, currentIndex + batchSize);
+      batchMetadata.push({ batch, maxTokens, startIndex: currentIndex });
+      currentIndex += batchSize;
+    }
 
-  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-    const batch = batches[batchIndex];
-    // Pre-calculate batch metadata BEFORE the loop (around line 247)
-  const batchMetadata: Array<{ batch: any[]; maxTokens: number; startIndex: number }> = [];
-  let currentIndex = 0;
+    console.log(`🔎 Processing ${segments.questions.length} questions in ${batchMetadata.length} adaptive batches`);
 
-  while (currentIndex < segments.questions.length) {
-    const { batchSize, maxTokens } = calculateOptimalBatchSize(segments.questions, currentIndex);
-    const batch = segments.questions.slice(currentIndex, currentIndex + batchSize);
-    batchMetadata.push({ batch, maxTokens, startIndex: currentIndex });
-    currentIndex += batchSize;
-  }
+    let totalAnswers = 0;
+    let batchesProcessed = 0;
+    let failedBatches = 0;
+    let allAnswers: any[] = [];
 
-  console.log(`🔎 Processing ${segments.questions.length} questions in ${batchMetadata.length} adaptive batches`);
+    for (let batchIndex = 0; batchIndex < batchMetadata.length; batchIndex++) {
+      const { batch, maxTokens, startIndex } = batchMetadata[batchIndex];
 
-  // Then change the loop (line 265)
-  for (let batchIndex = 0; batchIndex < batchMetadata.length; batchIndex++) {
-    const { batch, maxTokens, startIndex } = batchMetadata[batchIndex];
-    // Remove line 267 entirely - maxTokens is already in the metadata
-    
-  // Only check time budget after processing at least 50% of batches or 10 questions
-const questionsProcessedSoFar = batches.slice(0, batchIndex).flat().length;
-const shouldCheckTimeBudget = batchIndex > Math.floor(batches.length / 2) || questionsProcessedSoFar >= 10;
+      // Only check time budget after processing at least 50% of batches or 10 questions
+      const questionsProcessedSoFar = batchMetadata.slice(0, batchIndex).flatMap(m => m.batch).length;
+      const shouldCheckTimeBudget = batchIndex > Math.floor(batchMetadata.length / 2) || questionsProcessedSoFar >= 10;
 
-if (shouldCheckTimeBudget && !hasTimeForAnotherCall()) {
-      
-      // Generate per-question contextual fallback answers for all remaining questions
-      const remainingQuestions = batches.slice(batchIndex).flat();
-      const fallbackAnswers = remainingQuestions.map(q => ({
-        question: q.question_text,
-        answer: `We will provide a concise, evidenced response during clarifications related to: "${q.question_text}". Certain details depend on project-specific scope and will be confirmed as required.`
-      }));
-      
-      // Save fallback answers
-      for (let i = batchIndex; i < batches.length; i++) {
-        const remainingBatch = batches[i];
-        const batchFallbacks = fallbackAnswers.slice((i - batchIndex) * remainingBatch.length, (i - batchIndex + 1) * remainingBatch.length);
-        
-        const saveResult = await saveAnswerBatch(batchFallbacks, remainingBatch, tenderId, companyProfileId, supabaseClient, 'gpt-4o-mini');
-        console.log(`🔎 Fallback batch ${i + 1} saveResult: { hasData: ${!!saveResult.data}, hasError: ${!!saveResult.error} }`);
-        
-        if (saveResult && !saveResult.error && saveResult.data) {
-          totalAnswers += batchFallbacks.length;
-          batchesProcessed++;
-          
-          // Add to allAnswers for response
-          for (let j = 0; j < batchFallbacks.length && j < remainingBatch.length; j++) {
-            allAnswers.push({
-              question: remainingBatch[j].question_text,
-              question_number: remainingBatch[j].question_number,
-              answer: batchFallbacks[j].answer,
-              fallbackUsed: true
-            });
+      if (shouldCheckTimeBudget && !hasTimeForAnotherCall()) {
+
+        // Generate per-question contextual fallback answers for all remaining questions
+        const remainingQuestions = batchMetadata.slice(batchIndex).flatMap(m => m.batch);
+        const fallbackAnswers = remainingQuestions.map(q => ({
+          question: q.question_text,
+          answer: `We will provide a concise, evidenced response during clarifications related to: "${q.question_text}". Certain details 
+  depend on project-specific scope and will be confirmed as required.`
+        }));
+
+        // Save fallback answers
+        for (let i = batchIndex; i < batchMetadata.length; i++) {
+          const remainingBatch = batchMetadata[i].batch;
+          const batchFallbacks = fallbackAnswers.slice((i - batchIndex) * remainingBatch.length, (i - batchIndex + 1) *
+  remainingBatch.length);
+
+          const saveResult = await saveAnswerBatch(batchFallbacks, remainingBatch, tenderId, companyProfileId, supabaseClient,
+  'gpt-4o-mini');
+          console.log(`🔎 Fallback batch ${i + 1} saveResult: { hasData: ${!!saveResult.data}, hasError: ${!!saveResult.error} }`);
+
+          if (saveResult && !saveResult.error && saveResult.data) {
+            totalAnswers += batchFallbacks.length;
+            batchesProcessed++;
+
+            // Add to allAnswers for response
+            for (let j = 0; j < batchFallbacks.length && j < remainingBatch.length; j++) {
+              allAnswers.push({
+                question: remainingBatch[j].question_text,
+                question_number: remainingBatch[j].question_number,
+                answer: batchFallbacks[j].answer,
+                fallbackUsed: true
+              });
+            }
           }
         }
+
+        break; // Exit the main loop
       }
-      
-      break; // Exit the main loop
-    }
-    
-    const timeLeftMs = hasTimeForAnotherCall() ? Math.max(0, 55000 - (Date.now() - START)) : 0;
-    console.log(`🔎 Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} questions), timeLeftMs=${timeLeftMs}`);
-    
-    try {
-      // Generate answers for this batch
-      const answerResult = await generateAnswersForBatch(batch, enrichment, openAIApiKey, maxTokens, hasTimeForAnotherCall, batchIndex);
-      
-      // Check if we got valid answers
-      if (answerResult && answerResult.answers && answerResult.answers.length > 0) {
-        // Save answers to database
-        const saveResult = await saveAnswerBatch(answerResult.answers, batch, tenderId, companyProfileId, supabaseClient, answerResult.modelUsed);
-        
-        // Better logging - save result
-        console.log(`🔎 Save result for batch ${batchIndex + 1}: { hasData: ${!!saveResult.data}, hasError: ${!!saveResult.error} }`);
-        
-        if (saveResult && !saveResult.error && saveResult.data) {
-          // Collect answers for response envelope
-          for (let i = 0; i < answerResult.answers.length && i < batch.length; i++) {
-            allAnswers.push({
-              question: batch[i].question_text,
-              question_number: batch[i].question_number,
-              answer: answerResult.answers[i].answer,
-              fallbackUsed: false
-            });
+
+      const timeLeftMs = hasTimeForAnotherCall() ? Math.max(0, 55000 - (Date.now() - START)) : 0;
+      console.log(`🔎 Processing batch ${batchIndex + 1}/${batchMetadata.length} (${batch.length} questions), timeLeftMs=${timeLeftMs}`);
+
+      try {
+        // Generate answers for this batch
+        const answerResult = await generateAnswersForBatch(batch, enrichment, openAIApiKey, maxTokens, hasTimeForAnotherCall, batchIndex);
+
+        // Check if we got valid answers
+        if (answerResult && answerResult.answers && answerResult.answers.length > 0) {
+          // Save answers to database
+          const saveResult = await saveAnswerBatch(answerResult.answers, batch, tenderId, companyProfileId, supabaseClient,
+  answerResult.modelUsed);
+
+          // Better logging - save result
+          console.log(`🔎 Save result for batch ${batchIndex + 1}: { hasData: ${!!saveResult.data}, hasError: ${!!saveResult.error} }`);
+
+          if (saveResult && !saveResult.error && saveResult.data) {
+            // Collect answers for response envelope
+            for (let i = 0; i < answerResult.answers.length && i < batch.length; i++) {
+              allAnswers.push({
+                question: batch[i].question_text,
+                question_number: batch[i].question_number,
+                answer: answerResult.answers[i].answer,
+                fallbackUsed: false
+              });
+            }
+
+            totalAnswers += answerResult.answers.length;
+            batchesProcessed++;
+            console.log(`✅ Answer batch ${batchIndex + 1} saved (count: ${answerResult.answers.length})`);
+          } else {
+            console.error(`❌ Batch ${batchIndex + 1} save failed, continuing...`, saveResult?.error);
+            failedBatches++;
           }
-          
-          totalAnswers += answerResult.answers.length;
-          batchesProcessed++;
-          console.log(`✅ Answer batch ${batchIndex + 1} saved (count: ${answerResult.answers.length})`);
         } else {
-          console.error(`❌ Batch ${batchIndex + 1} save failed, continuing...`, saveResult?.error);
+          console.error(`❌ Batch ${batchIndex + 1} generated no valid answers, continuing...`);
           failedBatches++;
         }
-      } else {
-        console.error(`❌ Batch ${batchIndex + 1} generated no valid answers, continuing...`);
+
+      } catch (batchError) {
+        console.error(`❌ Batch ${batchIndex + 1} failed, continuing...`, getErrorMessage(batchError));
         failedBatches++;
+        // Continue with next batch rather than failing completely
       }
-      
-    } catch (batchError) {
-      console.error(`❌ Batch ${batchIndex + 1} failed, continuing...`, getErrorMessage(batchError));
-      failedBatches++;
-      // Continue with next batch rather than failing completely
     }
-  }
 
   // Final status safety net - if at least one answer was saved, set status to draft
   let finalStatus = 'failed';
