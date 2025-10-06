@@ -1559,7 +1559,7 @@ if (shouldCheckTimeBudget && !hasTimeForAnotherCall()) {
       break; // Exit the main loop
     }
     
-    const timeLeftMs = hasTimeForAnotherCall() ? Math.max(0, 55000 - (Date.now() - Date.now())) : 0;
+    const timeLeftMs = hasTimeForAnotherCall() ? Math.max(0, 55000 - (Date.now() - START)) : 0;
     console.log(`🔎 Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} questions), timeLeftMs=${timeLeftMs}`);
     
     try {
