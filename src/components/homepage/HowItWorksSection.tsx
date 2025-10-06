@@ -11,7 +11,7 @@ export const HowItWorksSection = () => {
     {
       icon: Cpu,
       title: "AI Drafts Responses",
-      description: "Our AI analyzes your company profile and generates tailored responses that match your brand voice and capabilities.",
+      description: "Our AI analyses your company profile and generates tailored responses that match your brand voice and capabilities.",
       features: ["Uses your company data", "Industry-specific knowledge", "Compliance aware"]
     },
     {
