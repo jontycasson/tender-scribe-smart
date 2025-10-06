@@ -885,7 +885,7 @@ const NewTender = () => {
     }
   };
 
-  const finalizeTender = async () => {
+  const finaliseTender = async () => {
     if (!tenderId) return;
 
     try {
@@ -899,10 +899,10 @@ const NewTender = () => {
       setCurrentStep('complete');
       toast({
         title: "Tender completed",
-        description: "Your tender response has been finalized.",
+        description: "Your tender response has been finalised.",
       });
     } catch (error) {
-      console.error('Finalize error:', error);
+      console.error('Finalise error:', error);
     }
   };
 
@@ -1164,9 +1164,9 @@ const NewTender = () => {
                   <Download className="h-4 w-4 mr-2" />
                   Export CSV
                 </Button>
-                <Button onClick={finalizeTender} disabled={questions.some(q => !q.is_approved)}>
+                <Button onClick={finaliseTender} disabled={questions.some(q => !q.is_approved)}>
                   <Save className="h-4 w-4 mr-2" />
-                  Finalize Tender
+                  Finalise Tender
                 </Button>
               </div>
             </div>
@@ -1315,7 +1315,7 @@ const NewTender = () => {
                 <Check className="h-16 w-16 text-green-500 mx-auto mb-4" />
                 <h2 className="text-2xl font-bold mb-2">Tender Response Complete!</h2>
                 <p className="text-muted-foreground mb-6">
-                  Your tender response has been finalized and is ready for submission.
+                  Your tender response has been finalised and is ready for submission.
                 </p>
                 <div className="flex justify-center space-x-4">
                   <Button onClick={() => navigate('/dashboard')}>
