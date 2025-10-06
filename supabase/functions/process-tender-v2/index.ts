@@ -576,7 +576,9 @@ function extractObviousQuestions(text: string): any[] {
     // Regex patterns for obvious questions
     const isDirectQuestion = cleanLine.endsWith('?');
     const isNumberedQuestion = /^(question\s*\d+|q\d+|q\.\d+)/i.test(line);
-    const isImperative = /^(describe|provide|explain|tell|list|outline|detail|specify|identify|confirm|state|indicate|demonstrate|show|what|when|where|why|how|which|do you|can you|will you|have you|are you)/i.test(cleanLine);
+   const isImperative = /^(please\s+)?(describe|provide|explain|tell|list|outline|detail|specify|identify|confirm|state|indicate|demonstrat
+  e|show|what|when|where|why|how|which|do you|can you|will you|have you|are you|would you|could 
+  you|give|submit|attach|include|evidence|address)/i.test(cleanLine);
     const isBulletQuestion = /^[\*\•\-]\s*(what|when|where|why|how|which|describe|provide|explain|tell|list|do you|can you)/i.test(line);
     
     if (isDirectQuestion || isNumberedQuestion || isImperative || isBulletQuestion) {
@@ -730,11 +732,15 @@ function deduplicateQuestions(questions: any[]): any[] {
     }
     
     // Step 3: Create deduplication key (lowercase, no punctuation)
-    const dedupeKey = cleanText
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ') // Remove all punctuation
-      .replace(/\s+/g, ' ') // Normalize spaces again
-      .trim();
+ const dedupeKey = cleanText
+    .toLowerCase()
+    // Remove common filler words but keep important context
+    .replace(/\b(the|a|an|your|our|this|that|these|those|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|could|should|ma
+  y|might)\b/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
     
     // Skip if deduplication key is too short
     if (dedupeKey.length < 10) {
@@ -1231,10 +1237,17 @@ STRICT RULES:
 
   // Always ensure we inject context
   let contextText = toText(enrichment.documentContext || []);
-  if (!contextText || contextText.trim().length < 100) {
-    console.warn("⚠️ No context found, injecting rawText snippet");
-    contextText = enrichment.rawText ? enrichment.rawText.slice(0, 1200) : "";
+ if (!contextText || contextText.trim().length < 100) {
+    console.warn("⚠️ No context found, sampling document sections");
+    const raw = enrichment.rawText || "";
+    const samples = [
+      raw.slice(0, 400),                                    // Beginning
+      raw.slice(Math.floor(raw.length * 0.4), Math.floor(raw.length * 0.4) + 400),  // ~40% through
+      raw.slice(-400)                                       // End
+    ].filter(s => s.length > 50);
+    contextText = samples.join('\n\n[...]\n\n');
   }
+
   const instructionsText = toText(enrichment.instructions || []).slice(0, 800);
 
   const promptText = [
@@ -1254,10 +1267,33 @@ STRICT RULES:
   const boilerplateRegex = /concise.*clarifications|will provide.*clarifications|tailored response during/i;
 
   // Per-question contextual fallback generator
-  const makeFallbackAnswers = () => questionBatch.map(q => ({
-    question: q.question_text,
-    answer: `Based on our extensive experience in ${enrichment.companyProfile.industry || 'the industry'}, we confirm our capability to meet this requirement. Our ${enrichment.companyProfile.team_size || 'experienced'} team has successfully delivered similar solutions. We will provide comprehensive details specific to your requirements during the tender clarification stage.`
-  }));
+const makeFallbackAnswers = () => questionBatch.map(q => {
+    const questionLower = q.question_text.toLowerCase();
+    const profile = enrichment.companyProfile;
+
+    // Detect question type and customize fallback
+    let answer = '';
+
+    if (/\b(iso|certification|accreditation|accredited)\b/i.test(q.question_text)) {
+      answer = `Our certifications and accreditations include: ${profile.accreditations || 'Various industry-standard certifications'}. We
+   maintain strict compliance with all relevant standards in ${profile.industry || 'our sector'}.`;
+    } else if (/\b(experience|past|previous|similar|projects)\b/i.test(q.question_text)) {
+      answer = `With ${profile.years_in_business || 'substantial'} years of experience, our team has delivered numerous projects in this 
+  area. ${profile.past_projects ? 'Recent examples include: ' + profile.past_projects.substring(0, 200) : 'We can provide detailed case 
+  studies upon request.'} Our ${profile.team_size || 'experienced'} team brings proven expertise to this requirement.`;
+    } else if (/\b(yes|no|confirm|whether|do you)\b/i.test(q.question_text)) {
+      answer = `Yes, we confirm our capability in this area. ${profile.company_name || 'Our organisation'} has established processes and 
+  expertise to meet this requirement. We will provide comprehensive supporting evidence during the clarification stage.`;
+    } else {
+      // Generic fallback
+      answer = `Based on our extensive experience in ${profile.industry || 'the industry'}, ${profile.company_name || 'our team'} confirms
+   capability to address this requirement. Our ${profile.team_size || 'experienced'} team will provide comprehensive details specific to 
+  your needs during tender clarifications.`;
+    }
+
+    return { question: q.question_text, answer };
+  });
+
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -1266,7 +1302,10 @@ STRICT RULES:
       const timeoutMs = isRetry ? 15000 : 25000; // Shorter timeout for retries
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-      const model = attempt === 1 ? 'gpt-4o-mini' : 'gpt-3.5-turbo';
+      const model = 'gpt-4o-mini'; // Always use latest model
+       // Adjust temperature instead of downgrading model
+  const temperature = attempt === 1 ? 0.7 : 0.3; // Second attempt: more deterministic
+
       modelActuallyUsed = model;
 
       const body: any = {
