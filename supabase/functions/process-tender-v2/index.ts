@@ -52,48 +52,6 @@ class ProcessingMetrics {
     return `Total processing time: ${total}ms\nBreakdown:\n${breakdown}`;
   }
 }
-    
-    // Generate final message
-    let message = `Successfully processed ${rawText.length} characters: ${segments.questions.length} unique questions, ${segments.context.length} context items, ${segments.instructions.length} instructions`;
-    if (enrichment) {
-      message += `, ${enrichment.retrievedSnippets.length} retrieved snippets`;
-    }
-    if (answerStats.totalAnswers > 0) {
-      message += `, ${answerStats.totalAnswers} personalized answers generated`;
-    }
-    response.message = message;
-
-    // Log final metrics
-    metrics.endCurrentStep();
-    console.log(`\n📊 PROCESSING METRICS:\n${metrics.getReport()}`);
-    logTimeStatus();
-    
-    return response;
-
-  } catch (fatalError) {
-    console.error(`[DIAGNOSTIC] ❌ Fatal error in processTenderV2:`, fatalError);
-    
-    metrics.endCurrentStep();
-    console.log(`\n📊 PROCESSING METRICS (FAILED):\n${metrics.getReport()}`);
-    
-    try {
-      await supabaseClient
-        .from('tenders')
-        .update({ status: 'failed' })
-        .eq('id', request.tenderId);
-    } catch (dbError) {
-      console.error(`[DIAGNOSTIC] Failed to update tender status to failed:`, dbError);
-    }
-    
-    response.success = false;
-    response.status = 'failed';
-    response.error = 'Unexpected processing error';
-    const errorMessage = getErrorMessage(fatalError);
-    response.message = `Processing failed: ${errorMessage}`;
-    
-    return response;
-  }
-}
 
 // Standard JSON envelope - always returned
 interface ProcessTenderResponse {
