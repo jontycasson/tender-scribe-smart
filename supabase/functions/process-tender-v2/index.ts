@@ -345,11 +345,17 @@ async function segmentContent(rawText: string): Promise<{
     let successfulChunks = 0;
     let failedChunks = 0;
 
-    for (let i = 0; i < chunksToProcess; i++) {
-      console.log(`Processing chunk ${i + 1}/${chunksToProcess}`);
-      
-      try {
-        const chunkSegments = await classifyChunkWithAI(chunks[i], openAIApiKey);
+    Use Promise.allSettled():
+  const chunkPromises = chunks.slice(0, chunksToProcess).map(chunk =>
+    classifyChunkWithAI(chunk, openAIApiKey).catch(err => {
+      console.error('Chunk failed:', err);
+      return null;
+    })
+  );
+  const results = await Promise.allSettled(chunkPromises);
+  const chunkSegments = results
+    .filter(r => r.status === 'fulfilled' && r.value)
+    .map(r => r.value);
         
         // Merge results if classification succeeded
         if (chunkSegments) {
@@ -1037,7 +1043,12 @@ async function performVectorSearch(questions: any[], companyProfileId: string, s
   }
 
   const allSnippets = [];
-  const questionsToSearch = questions.slice(0, 5); // Limit to first 5 questions for performance
+  // Prioritize questions that look like standard compliance/capability questions
+  const priorityQuestions = questions.filter(q =>
+    /\b(iso|certification|accreditation|compliance|experience|capability)\b/i.test(q.question_text)
+  ).slice(0, 8);
+  const remainingQuestions = questions.filter(q => !priorityQuestions.includes(q)).slice(0, 3);
+  const questionsToSearch = [...priorityQuestions, ...remainingQuestions];
   
   if (questionsToSearch.length < questions.length) {
     console.log(`🔎 Limiting vector search to ${questionsToSearch.length} questions (from ${questions.length} total)`);
