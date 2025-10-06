@@ -1275,17 +1275,12 @@ const makeFallbackAnswers = () => questionBatch.map(q => {
     if (/\b(iso|certification|accreditation|accredited)\b/i.test(q.question_text)) {
       answer = `Our certifications and accreditations include: ${profile.accreditations || 'Various industry-standard certifications'}. We maintain strict compliance with all relevant standards in ${profile.industry || 'our sector'}.`;
     } else if (/\b(experience|past|previous|similar|projects)\b/i.test(q.question_text)) {
-      answer = `With ${profile.years_in_business || 'substantial'} years of experience, our team has delivered numerous projects in this 
-  area. ${profile.past_projects ? 'Recent examples include: ' + profile.past_projects.substring(0, 200) : 'We can provide detailed case 
-  studies upon request.'} Our ${profile.team_size || 'experienced'} team brings proven expertise to this requirement.`;
+      answer = `With ${profile.years_in_business || 'substantial'} years of experience, our team has delivered numerous projects in this area. ${profile.past_projects ? 'Recent examples include: ' + profile.past_projects.substring(0, 200) : 'We can provide detailed case studies upon request.'} Our ${profile.team_size || 'experienced'} team brings proven expertise to this requirement.`;
     } else if (/\b(yes|no|confirm|whether|do you)\b/i.test(q.question_text)) {
-      answer = `Yes, we confirm our capability in this area. ${profile.company_name || 'Our organisation'} has established processes and 
-  expertise to meet this requirement. We will provide comprehensive supporting evidence during the clarification stage.`;
+      answer = `Yes, we confirm our capability in this area. ${profile.company_name || 'Our organisation'} has established processes and expertise to meet this requirement. We will provide comprehensive supporting evidence during the clarification stage.`;
     } else {
       // Generic fallback
-      answer = `Based on our extensive experience in ${profile.industry || 'the industry'}, ${profile.company_name || 'our team'} confirms
-   capability to address this requirement. Our ${profile.team_size || 'experienced'} team will provide comprehensive details specific to 
-  your needs during tender clarifications.`;
+      answer = `Based on our extensive experience in ${profile.industry || 'the industry'}, ${profile.company_name || 'our team'} confirms capability to address this requirement. Our ${profile.team_size || 'experienced'} team will provide comprehensive details specific to your needs during tender clarifications.`;
     }
 
     return { question: q.question_text, answer };
@@ -1570,8 +1565,7 @@ if (tokenEstimate <= 4000 && payloadChars <= 16000) {
         const remainingQuestions = batchMetadata.slice(batchIndex).flatMap(m => m.batch);
         const fallbackAnswers = remainingQuestions.map(q => ({
           question: q.question_text,
-          answer: `We will provide a concise, evidenced response during clarifications related to: "${q.question_text}". Certain details 
-  depend on project-specific scope and will be confirmed as required.`
+          answer: `We will provide a concise, evidenced response during clarifications related to: "${q.question_text}". Certain details depend on project-specific scope and will be confirmed as required.`
         }));
 
         // Save fallback answers
@@ -1580,12 +1574,11 @@ if (tokenEstimate <= 4000 && payloadChars <= 16000) {
           const batchFallbacks = fallbackAnswers.slice((i - batchIndex) * remainingBatch.length, (i - batchIndex + 1) *
   remainingBatch.length);
 
-          const saveResult = await saveAnswerBatch(batchFallbacks, remainingBatch, tenderId, companyProfileId, supabaseClient,
-  'gpt-4o-mini');
+          const saveResult = await saveAnswerBatch(batchFallbacks, remainingBatch, tenderId, companyProfileId, supabaseClient, 'gpt-4o-mini');
           console.log(`🔎 Fallback batch ${i + 1} saveResult: { hasData: ${!!saveResult.data}, hasError: ${!!saveResult.error} }`);
 
           if (saveResult && !saveResult.error && saveResult.data) {
-            totalAnswers += batchFallbacks.length;
+            totalAnswers += batchFallbacks.length; 
             batchesProcessed++;
 
             // Add to allAnswers for response
@@ -1613,8 +1606,7 @@ if (tokenEstimate <= 4000 && payloadChars <= 16000) {
         // Check if we got valid answers
         if (answerResult && answerResult.answers && answerResult.answers.length > 0) {
           // Save answers to database
-          const saveResult = await saveAnswerBatch(answerResult.answers, batch, tenderId, companyProfileId, supabaseClient,
-  answerResult.modelUsed);
+          const saveResult = await saveAnswerBatch(answerResult.answers, batch, tenderId, companyProfileId, supabaseClient, answerResult.modelUsed);
 
           // Better logging - save result
           console.log(`🔎 Save result for batch ${batchIndex + 1}: { hasData: ${!!saveResult.data}, hasError: ${!!saveResult.error} }`);
