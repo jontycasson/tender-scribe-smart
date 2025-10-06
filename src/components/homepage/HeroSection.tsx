@@ -19,7 +19,7 @@ export const HeroSection = () => {
               </h1>
               <p className="text-xl text-muted-foreground leading-relaxed">
                 Transform complex tender documents into winning responses in minutes, not days. 
-                Proposal.fit's AI analyzes requirements and generates tailored answers using your company profile.
+                Proposal.fit's AI analyses requirements and generates tailored answers using your company profile.
               </p>
             </div>
 
