@@ -576,9 +576,7 @@ function extractObviousQuestions(text: string): any[] {
     // Regex patterns for obvious questions
     const isDirectQuestion = cleanLine.endsWith('?');
     const isNumberedQuestion = /^(question\s*\d+|q\d+|q\.\d+)/i.test(line);
-   const isImperative = /^(please\s+)?(describe|provide|explain|tell|list|outline|detail|specify|identify|confirm|state|indicate|demonstrat
-  e|show|what|when|where|why|how|which|do you|can you|will you|have you|are you|would you|could 
-  you|give|submit|attach|include|evidence|address)/i.test(cleanLine);
+   const isImperative = /^(please\s+)?(describe|provide|explain|tell|list|outline|detail|specify|identify|confirm|state|indicate|demonstrate|show|what|when|where|why|how|which|do you|can you|will you|have you|are you|would you|could you|give|submit|attach|include|evidence|address)/i.test(cleanLine);
     const isBulletQuestion = /^[\*\•\-]\s*(what|when|where|why|how|which|describe|provide|explain|tell|list|do you|can you)/i.test(line);
     
     if (isDirectQuestion || isNumberedQuestion || isImperative || isBulletQuestion) {
@@ -1275,8 +1273,7 @@ const makeFallbackAnswers = () => questionBatch.map(q => {
     let answer = '';
 
     if (/\b(iso|certification|accreditation|accredited)\b/i.test(q.question_text)) {
-      answer = `Our certifications and accreditations include: ${profile.accreditations || 'Various industry-standard certifications'}. We
-   maintain strict compliance with all relevant standards in ${profile.industry || 'our sector'}.`;
+      answer = `Our certifications and accreditations include: ${profile.accreditations || 'Various industry-standard certifications'}. We maintain strict compliance with all relevant standards in ${profile.industry || 'our sector'}.`;
     } else if (/\b(experience|past|previous|similar|projects)\b/i.test(q.question_text)) {
       answer = `With ${profile.years_in_business || 'substantial'} years of experience, our team has delivered numerous projects in this 
   area. ${profile.past_projects ? 'Recent examples include: ' + profile.past_projects.substring(0, 200) : 'We can provide detailed case 
@@ -1304,7 +1301,6 @@ const makeFallbackAnswers = () => questionBatch.map(q => {
 
       const model = 'gpt-4o-mini'; // Always use latest model
        // Adjust temperature instead of downgrading model
-  const temperature = attempt === 1 ? 0.7 : 0.3; // Second attempt: more deterministic
 
       modelActuallyUsed = model;
 
@@ -1536,7 +1532,7 @@ if (tokenEstimate <= 4000 && payloadChars <= 16000) {
       const testQuestions = testBatch.map(q => `Q${q.question_number}: ${q.question_text}`).join('\n\n');
       const payloadChars = charLen(enrichment.companyProfile) + toText(enrichment.documentContext || []).length + 
                           toText(enrichment.instructions || []).length + testQuestions.length;
-      const tokenEstimate = estimateTokens(`${payloadChars}`);
+       const tokenEstimate = Math.ceil(payloadChars / 4); // Direct calculation, same as line 220
       console.log(`[BATCH] size=${batchSize}, payloadChars=${payloadChars}, tokenEstimate=${tokenEstimate}, maxCompletion=${maxTokens} (increased for heavy batch)`);
     }
     
@@ -1563,7 +1559,23 @@ if (tokenEstimate <= 4000 && payloadChars <= 16000) {
 
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
     const batch = batches[batchIndex];
-    const { batchSize, maxTokens } = calculateOptimalBatchSize(segments.questions, batchIndex * batch.length);
+    // Pre-calculate batch metadata BEFORE the loop (around line 247)
+  const batchMetadata: Array<{ batch: any[]; maxTokens: number; startIndex: number }> = [];
+  let currentIndex = 0;
+
+  while (currentIndex < segments.questions.length) {
+    const { batchSize, maxTokens } = calculateOptimalBatchSize(segments.questions, currentIndex);
+    const batch = segments.questions.slice(currentIndex, currentIndex + batchSize);
+    batchMetadata.push({ batch, maxTokens, startIndex: currentIndex });
+    currentIndex += batchSize;
+  }
+
+  console.log(`🔎 Processing ${segments.questions.length} questions in ${batchMetadata.length} adaptive batches`);
+
+  // Then change the loop (line 265)
+  for (let batchIndex = 0; batchIndex < batchMetadata.length; batchIndex++) {
+    const { batch, maxTokens, startIndex } = batchMetadata[batchIndex];
+    // Remove line 267 entirely - maxTokens is already in the metadata
     
   // Only check time budget after processing at least 50% of batches or 10 questions
 const questionsProcessedSoFar = batches.slice(0, batchIndex).flat().length;
