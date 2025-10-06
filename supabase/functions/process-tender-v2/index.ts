@@ -1568,8 +1568,7 @@ if (tokenEstimate <= 4000 && payloadChars <= 16000) {
     if (/\b(iso|certification|accreditation|accredited)\b/i.test(q.question_text)) {
       return {
         question: q.question_text,
-        answer: `Our certifications and accreditations include: ${profile.accreditations || 'Various industry-standard certifications'}. 
-  We maintain strict compliance with all relevant standards in ${profile.industry || 'our sector'}.`
+        answer: `Our certifications and accreditations include: ${profile.accreditations || 'Various industry-standard certifications'}. We maintain strict compliance with all relevant standards in ${profile.industry || 'our sector'}.`
       };
     } else if (/\b(experience|past|previous|similar|projects)\b/i.test(q.question_text)) {
       return {
@@ -1591,8 +1590,7 @@ if (tokenEstimate <= 4000 && payloadChars <= 16000) {
     } else {
       return {
         question: q.question_text,
-        answer: `Based on our extensive experience in ${profile.industry || 'the industry'}, ${profile.company_name || 'our team'} 
-  confirms capability to address this requirement. Our ${profile.team_size || 'experienced'} team will provide comprehensive details specific to your needs during tender clarifications.`
+        answer: `Based on our extensive experience in ${profile.industry || 'the industry'}, ${profile.company_name || 'our team'} confirms capability to address this requirement. Our ${profile.team_size || 'experienced'} team will provide comprehensive details specific to your needs during tender clarifications.`
       };
     }
   });
@@ -1600,8 +1598,7 @@ if (tokenEstimate <= 4000 && payloadChars <= 16000) {
         // Save fallback answers
         for (let i = batchIndex; i < batchMetadata.length; i++) {
           const remainingBatch = batchMetadata[i].batch;
-          const batchFallbacks = fallbackAnswers.slice((i - batchIndex) * remainingBatch.length, (i - batchIndex + 1) *
-  remainingBatch.length);
+          const batchFallbacks = fallbackAnswers.slice((i - batchIndex) * remainingBatch.length, (i - batchIndex + 1) * remainingBatch.length);
 
           const saveResult = await saveAnswerBatch(batchFallbacks, remainingBatch, tenderId, companyProfileId, supabaseClient, 'gpt-4o-mini');
           console.log(`🔎 Fallback batch ${i + 1} saveResult: { hasData: ${!!saveResult.data}, hasError: ${!!saveResult.error} }`);
