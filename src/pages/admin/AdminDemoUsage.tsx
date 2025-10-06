@@ -156,7 +156,7 @@ const AdminDemoUsage = () => {
         <div className="space-y-6">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Demo Usage Analytics</h1>
-            <p className="text-muted-foreground">Monitor and analyze demo submissions</p>
+            <p className="text-muted-foreground">Monitor and analyse demo submissions</p>
           </div>
           <div className="grid gap-4 md:grid-cols-4">
             {[...Array(4)].map((_, i) => (
