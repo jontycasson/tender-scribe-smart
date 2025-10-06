@@ -1470,7 +1470,7 @@ let maxTokens = 4000; // Default token limit
       const questionsChars = testQuestions.length;
       
       const payloadChars = companyProfileChars + documentContextChars + instructionsChars + questionsChars;
-      const tokenEstimate = estimateTokens(`${payloadChars}`);
+      const tokenEstimate = Math.ceil(payloadChars / 4); // Direct calculation
       
       // More appropriate limits for gpt-4o-mini
 if (tokenEstimate <= 4000 && payloadChars <= 16000) {
