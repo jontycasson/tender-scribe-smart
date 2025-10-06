@@ -30,12 +30,12 @@ const securityFeatures = [
   {
     icon: Users,
     title: "Role-based Access Control",
-    description: "Members of organizations can be granted access to specific resources based on their role and responsibilities within your organization.",
+    description: "Members of organisations can be granted access to specific resources based on their role and responsibilities within your organisation.",
   },
   {
     icon: RefreshCw,
     title: "Automated Backups",
-    description: "All customer databases are backed up every day with Point in Time Recovery allowing restoring the database to any point in time.",
+    description: "All customer databases are backed up every day with Point in Time Recovery, allowing restoring the database to any point in time.",
   },
   {
     icon: CreditCard,
