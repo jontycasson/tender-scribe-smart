@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
-import { Search, Mail, Calendar, Building, MoreHorizontal, UserPlus, CheckCircle, XCircle, Clock } from "lucide-react";
+import { Search, Mail, Calendar, Building, MoreHorizontal, UserPlus, CheckCircle, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { AssignUserDialog } from "@/components/admin/users/AssignUserDialog";
+import { UserTendersDialog } from "@/components/admin/users/UserTendersDialog";
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
@@ -42,6 +44,10 @@ const AdminUsers = () => {
   const [filteredUsers, setFilteredUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [selectedUserEmail, setSelectedUserEmail] = useState("");
+  const [tendersDialogOpen, setTendersDialogOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -158,9 +164,9 @@ const AdminUsers = () => {
               {users.length} total users • {completedUsers} completed onboarding • {pendingUsers} pending
             </p>
           </div>
-          <Button>
+          <Button onClick={() => { setSelectedUserEmail(""); setAssignDialogOpen(true); }}>
             <UserPlus className="mr-2 h-4 w-4" />
-            Add User
+            Assign User to Company
           </Button>
         </div>
 
@@ -276,24 +282,30 @@ const AdminUsers = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem>
-                              View Profile
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelectedUserEmail(user.email);
+                                setAssignDialogOpen(true);
+                              }}
+                            >
+                              Assign to Company
                             </DropdownMenuItem>
                             {user.has_company_profile && (
-                              <DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setSelectedUser(user);
+                                  setTendersDialogOpen(true);
+                                }}
+                              >
                                 View Tenders
                               </DropdownMenuItem>
                             )}
-                            <DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                window.location.href = `mailto:${user.email}`;
+                              }}
+                            >
                               Send Email
-                            </DropdownMenuItem>
-                            {!user.has_company_profile && (
-                              <DropdownMenuItem>
-                                Send Onboarding Reminder
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem className="text-destructive">
-                              Suspend User
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -306,6 +318,22 @@ const AdminUsers = () => {
           </CardContent>
         </Card>
       </div>
+
+      <AssignUserDialog
+        open={assignDialogOpen}
+        onOpenChange={setAssignDialogOpen}
+        userEmail={selectedUserEmail}
+        onSuccess={fetchUsers}
+      />
+
+      {selectedUser && (
+        <UserTendersDialog
+          open={tendersDialogOpen}
+          onOpenChange={setTendersDialogOpen}
+          userId={selectedUser.user_id}
+          userEmail={selectedUser.email}
+        />
+      )}
     </AdminLayout>
   );
 };

@@ -1573,14 +1573,12 @@ if (tokenEstimate <= 4000 && payloadChars <= 16000) {
     } else if (/\b(experience|past|previous|similar|projects)\b/i.test(q.question_text)) {
       return {
         question: q.question_text,
-        answer: `With ${profile.years_in_business || 'substantial'} years of experience, our team has delivered numerous projects in this area. ${profile.past_projects ? 'Recent examples include: ' + profile.past_projects.substring(0, 200) : 'We can provide detailed case 
-  studies upon request.'} Our ${profile.team_size || 'experienced'} team brings proven expertise to this requirement.`
+        answer: `With ${profile.years_in_business || 'substantial'} years of experience, our team has delivered numerous projects in this area. ${profile.past_projects ? 'Recent examples include: ' + profile.past_projects.substring(0, 200) : 'We can provide detailed case studies upon request.'} Our ${profile.team_size || 'experienced'} team brings proven expertise to this requirement.`
       };
     } else if (/\b(cybersecurity|security|protection|safeguard)\b/i.test(q.question_text)) {
       return {
         question: q.question_text,
-        answer: `${profile.company_name || 'Our organisation'} implements comprehensive cybersecurity measures including encryption, access controls, and regular security audits. We maintain compliance with industry-standard security frameworks and data protection 
-  regulations. Full technical specifications can be provided during clarifications.`
+        answer: `${profile.company_name || 'Our organisation'} implements comprehensive cybersecurity measures including encryption, access controls, and regular security audits. We maintain compliance with industry-standard security frameworks and data protection regulations. Full technical specifications can be provided during clarifications.`
       };
     } else if (/\b(yes|no|confirm|whether|do you)\b/i.test(q.question_text)) {
       return {

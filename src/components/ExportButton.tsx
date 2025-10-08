@@ -41,7 +41,7 @@ export const ExportButton: React.FC<ExportButtonProps> = ({ tenderId }) => {
     });
 
     const buffer = await Packer.toBuffer(doc);
-    return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    return new Blob([new Uint8Array(buffer)], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
   };
 
   const generatePDF = (exportData: any) => {

@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { Search, Building, FileText, Calendar, TrendingUp, MoreHorizontal } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { CompanyMembersDialog } from "@/components/admin/companies/CompanyMembersDialog";
+import { UserTendersDialog } from "@/components/admin/users/UserTendersDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,6 +41,9 @@ const AdminCompanies = () => {
   const [filteredCompanies, setFilteredCompanies] = useState<CompanyWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [membersDialogOpen, setMembersDialogOpen] = useState(false);
+  const [tendersDialogOpen, setTendersDialogOpen] = useState(false);
+  const [selectedCompany, setSelectedCompany] = useState<CompanyWithStats | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -308,17 +313,21 @@ const AdminCompanies = () => {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem>
-                                View Details
-                              </DropdownMenuItem>
-                              <DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setSelectedCompany(company);
+                                  setTendersDialogOpen(true);
+                                }}
+                              >
                                 View Tenders
                               </DropdownMenuItem>
-                              <DropdownMenuItem>
-                                View Projects
-                              </DropdownMenuItem>
-                              <DropdownMenuItem>
-                                Contact Company
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setSelectedCompany(company);
+                                  setMembersDialogOpen(true);
+                                }}
+                              >
+                                Manage Members
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -332,6 +341,23 @@ const AdminCompanies = () => {
           </CardContent>
         </Card>
       </div>
+
+      {selectedCompany && (
+        <>
+          <CompanyMembersDialog
+            open={membersDialogOpen}
+            onOpenChange={setMembersDialogOpen}
+            companyId={selectedCompany.id}
+            companyName={selectedCompany.company_name}
+          />
+          <UserTendersDialog
+            open={tendersDialogOpen}
+            onOpenChange={setTendersDialogOpen}
+            userId=""
+            userEmail={selectedCompany.company_name}
+          />
+        </>
+      )}
     </AdminLayout>
   );
 };

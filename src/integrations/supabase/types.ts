@@ -487,6 +487,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      assign_user_to_company: {
+        Args: { company_id: string; member_role?: string; user_email: string }
+        Returns: Json
+      }
       auto_cleanup_demo_uses: {
         Args: Record<PropertyKey, never>
         Returns: undefined
@@ -628,6 +632,16 @@ export type Database = {
           user_id: string
         }[]
       }
+      get_company_members: {
+        Args: { company_id: string }
+        Returns: {
+          email: string
+          joined_at: string
+          last_sign_in: string
+          role: string
+          user_id: string
+        }[]
+      }
       get_demo_usage_stats: {
         Args: Record<PropertyKey, never>
         Returns: {
@@ -640,6 +654,18 @@ export type Database = {
       get_user_company_profile_id: {
         Args: Record<PropertyKey, never>
         Returns: string
+      }
+      get_user_tenders_for_admin: {
+        Args: { target_company_id?: string; target_user_id: string }
+        Returns: {
+          company_name: string
+          created_at: string
+          id: string
+          processed_questions: number
+          status: string
+          title: string
+          total_questions: number
+        }[]
       }
       halfvec_avg: {
         Args: { "": number[] }
@@ -726,6 +752,10 @@ export type Database = {
           source_tender_id: string
           usage_count: number
         }[]
+      }
+      remove_user_from_company: {
+        Args: { company_id: string; target_user_id: string }
+        Returns: Json
       }
       sanitize_filename: {
         Args: { original_name: string }
