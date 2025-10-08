@@ -358,17 +358,17 @@ const handleResetPassword = async (email: string) => {
                               }}
                             >
                               Assign to Company
-                              <DropdownMenuItem
-    onClick={() => handleResetPassword(user.email)}
-  >
-    Reset Password
-  </DropdownMenuItem>
-  <DropdownMenuItem
-    onClick={() => handleDeleteUser(user.email)}
-    className="text-destructive"
-  >
-    Delete User
-  </DropdownMenuItem>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleResetPassword(user.email)}
+                            >
+                              Reset Password
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteUser(user.email)}
+                              className="text-destructive"
+                            >
+                              Delete User
                             </DropdownMenuItem>
                             {user.has_company_profile && (
                               <DropdownMenuItem
