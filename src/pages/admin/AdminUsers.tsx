@@ -98,6 +98,75 @@ const AdminUsers = () => {
       day: 'numeric',
     });
   };
+const handleResetPassword = async (email: string) => {
+    try {
+      // First validate admin access and user existence
+      const { data, error } = await supabase.rpc('admin_reset_user_password', {
+        target_user_email: email
+      });
+
+      if (error) throw error;
+
+      const result = data as { success: boolean; error?: string };
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to initiate password reset');
+      }
+
+      // Now trigger actual password reset via Supabase Auth
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+
+      if (resetError) throw resetError;
+
+      toast({
+        title: "Password Reset Email Sent",
+        description: `A password reset link has been sent to ${email}`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteUser = async (email: string) => {
+    // Show confirmation dialog first
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${email}? This action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const { data, error } = await supabase.rpc('admin_delete_user', {
+        target_user_email: email
+      });
+
+      if (error) throw error;
+
+      const result = data as { success: boolean; error?: string; message?: string };
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to delete user');
+      }
+
+      toast({
+        title: "User Deleted",
+        description: result.message || "User has been successfully deleted",
+      });
+
+      // Refresh user list
+      fetchUsers();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
 
   const getTeamSizeBadgeColor = (teamSize: string | null) => {
     if (!teamSize) return 'bg-gray-100 text-gray-800';
