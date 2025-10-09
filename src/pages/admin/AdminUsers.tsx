@@ -244,6 +244,7 @@ const handleResetPassword = async (email: string) => {
       Assign User to Company
     </Button>
   </div>
+        </div>
 
         {/* Search and Filters */}
         <Card>

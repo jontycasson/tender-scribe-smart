@@ -1634,7 +1634,7 @@ if (tokenEstimate <= 4000 && payloadChars <= 16000) {
         break; // Exit the main loop
       }
 
-      const timeLeftMs = hasTimeForAnotherCall() ? Math.max(0, 55000 - (Date.now() - START)) : 0;
+      const timeLeftMs = hasTimeForAnotherCall() ? 1000 : 0;
       console.log(`🔎 Processing batch ${batchIndex + 1}/${batchMetadata.length} (${batch.length} questions), timeLeftMs=${timeLeftMs}`);
 
       try {

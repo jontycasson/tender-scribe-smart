@@ -43,7 +43,7 @@
         setCompanyName(data.company_name || "");
         setIndustry(data.industry || "");
         setTeamSize(data.team_size || "");
-        setDescription(data.description || "");
+        setDescription(data.mission || "");
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
@@ -63,7 +63,7 @@
             company_name: companyName,
             industry,
             team_size: teamSize,
-            description,
+            mission: description,
             updated_at: new Date().toISOString(),
           })
           .eq('id', companyId);

@@ -46,12 +46,20 @@
         // Create company profile
         const { error: companyError } = await supabase
           .from('company_profiles')
-          .insert({
-            user_id: targetUser.user_id,
-            company_name: companyName,
-            industry,
-            team_size: teamSize,
-          });
+          .insert([
+            {
+              user_id: targetUser.user_id,
+              company_name: companyName,
+              industry,
+              team_size: teamSize,
+              mission: "",
+              past_projects: "",
+              specializations: "",
+              values: "",
+              years_in_business: "",
+              services_offered: [],
+            }
+          ]);
 
         if (companyError) throw companyError;
 
