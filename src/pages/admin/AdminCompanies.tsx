@@ -11,6 +11,8 @@ import { CompanyMembersDialog } from "@/components/admin/companies/CompanyMember
 import { UserTendersDialog } from "@/components/admin/users/UserTendersDialog";
 import { CreateCompanyDialog } from "@/components/admin/companies/CreateCompanyDialog";
 import { Building2 } from "lucide-react";
+import { EditCompanyDialog } from "@/components/admin/companies/EditCompanyDialog";
+import { Edit } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,6 +49,8 @@ const AdminCompanies = () => {
   const [tendersDialogOpen, setTendersDialogOpen] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState<CompanyWithStats | null>(null);
   const [createCompanyDialogOpen, setCreateCompanyDialogOpen] = useState(false);
+  const [editCompanyDialogOpen, setEditCompanyDialogOpen] = useState(false);
+  const [companyToEdit, setCompanyToEdit] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -326,6 +330,14 @@ const AdminCompanies = () => {
                                 }}
                               >
                                 View Tenders
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                   setCompanyToEdit(company.id);
+                                   setEditCompanyDialogOpen(true);
+                                    }}
+                                      >
+                                    Edit Company
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => {
@@ -367,6 +379,13 @@ const AdminCompanies = () => {
             onOpenChange={setCreateCompanyDialogOpen}
             onSuccess={fetchCompanies}
           />
+          {companyToEdit && (
+    <EditCompanyDialog
+      open={editCompanyDialogOpen}
+      onOpenChange={setEditCompanyDialogOpen}
+      companyId={companyToEdit}
+      onSuccess={fetchCompanies}
+    />
         </>
       )}
     </AdminLayout>
