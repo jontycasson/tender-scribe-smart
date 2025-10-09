@@ -1,7 +1,21 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import { getErrorMessage, asError } from "../_shared/errors.ts";
+
+// Error helper functions (inlined to avoid cross-folder imports)
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return "Unknown error";
+  }
+}
+
+function asError(err: unknown): Error {
+  return err instanceof Error ? err : new Error(getErrorMessage(err));
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
