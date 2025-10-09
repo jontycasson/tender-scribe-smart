@@ -374,19 +374,22 @@ const AdminCompanies = () => {
             userId=""
             userEmail={selectedCompany.company_name}
           />
-          <CreateCompanyDialog
-            open={createCompanyDialogOpen}
-            onOpenChange={setCreateCompanyDialogOpen}
-            onSuccess={fetchCompanies}
-          />
-          {companyToEdit && (
-    <EditCompanyDialog
-      open={editCompanyDialogOpen}
-      onOpenChange={setEditCompanyDialogOpen}
-      companyId={companyToEdit}
-      onSuccess={fetchCompanies}
-    />
         </>
+      )}
+
+      <CreateCompanyDialog
+        open={createCompanyDialogOpen}
+        onOpenChange={setCreateCompanyDialogOpen}
+        onSuccess={fetchCompanies}
+      />
+
+      {companyToEdit && (
+        <EditCompanyDialog
+          open={editCompanyDialogOpen}
+          onOpenChange={setEditCompanyDialogOpen}
+          companyId={companyToEdit}
+          onSuccess={fetchCompanies}
+        />
       )}
     </AdminLayout>
   );

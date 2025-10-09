@@ -2,9 +2,10 @@ import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileText } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { FileText, Trash2 } from "lucide-react";
 interface UserTendersDialogProps {
   open: boolean;
@@ -126,28 +127,17 @@ const handleDeleteTender = async (tenderId: string, tenderTitle: string) => {
                     {tender.processed_questions}/{tender.total_questions} questions
                   </TableCell>
                   <TableCell>{new Date(tender.created_at).toLocaleDateString()}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDeleteTender(tender.id, tender.title)}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
-    {tenders.map((tender) => (
-      <TableRow key={tender.id}>
-        <TableCell className="font-medium">{tender.title}</TableCell>
-        <TableCell>{tender.company_name}</TableCell>
-        <TableCell>{getStatusBadge(tender.status)}</TableCell>
-        <TableCell>
-          {tender.processed_questions}/{tender.total_questions} questions
-        </TableCell>
-        <TableCell>{new Date(tender.created_at).toLocaleDateString()}</TableCell>
-        <TableCell className="text-right">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleDeleteTender(tender.id, tender.title)}
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
-        </TableCell>
-      </TableRow>
-    ))}
             </TableBody>
           </Table>
         )}

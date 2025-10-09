@@ -30,14 +30,16 @@
 
       setLoading(true);
       try {
-        // Get user ID from email
-        const { data: userData, error: userError } = await supabase
-          .from('auth.users')
-          .select('id')
-          .eq('email', ownerEmail)
-          .single();
+        // Get all users to find the matching email (admin can see all users)
+        const { data: usersData, error: usersError } = await supabase
+          .rpc('get_all_users_for_admin');
 
-        if (userError) {
+        if (usersError) throw usersError;
+
+        // Find user by email
+        const targetUser = usersData?.find((u: any) => u.email === ownerEmail);
+
+        if (!targetUser) {
           throw new Error(`User not found: ${ownerEmail}`);
         }
 
@@ -45,7 +47,7 @@
         const { error: companyError } = await supabase
           .from('company_profiles')
           .insert({
-            user_id: userData.id,
+            user_id: targetUser.user_id,
             company_name: companyName,
             industry,
             team_size: teamSize,

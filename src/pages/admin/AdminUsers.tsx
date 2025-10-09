@@ -419,12 +419,13 @@ const handleResetPassword = async (email: string) => {
           userId={selectedUser.user_id}
           userEmail={selectedUser.email}
         />
-      <CreateUserDialog
-    open={createUserDialogOpen}
-    onOpenChange={setCreateUserDialogOpen}
-    onSuccess={fetchUsers}
-      />
       )}
+
+      <CreateUserDialog
+        open={createUserDialogOpen}
+        onOpenChange={setCreateUserDialogOpen}
+        onSuccess={fetchUsers}
+      />
     </AdminLayout>
   );
 };
