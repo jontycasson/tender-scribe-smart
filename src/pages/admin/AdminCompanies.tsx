@@ -9,6 +9,8 @@ import { Search, Building, FileText, Calendar, TrendingUp, MoreHorizontal } from
 import { useToast } from "@/hooks/use-toast";
 import { CompanyMembersDialog } from "@/components/admin/companies/CompanyMembersDialog";
 import { UserTendersDialog } from "@/components/admin/users/UserTendersDialog";
+import { CreateCompanyDialog } from "@/components/admin/companies/CreateCompanyDialog";
+import { Building2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,6 +46,7 @@ const AdminCompanies = () => {
   const [membersDialogOpen, setMembersDialogOpen] = useState(false);
   const [tendersDialogOpen, setTendersDialogOpen] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState<CompanyWithStats | null>(null);
+  const [createCompanyDialogOpen, setCreateCompanyDialogOpen] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -149,14 +152,17 @@ const AdminCompanies = () => {
     <AdminLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Company Management</h1>
-            <p className="text-muted-foreground">
-              Monitor and manage company accounts ({companies.length} total)
-            </p>
-          </div>
-        </div>
-
+    <div>
+      <h1 className="text-3xl font-bold tracking-tight">Company Management</h1>
+      <p className="text-muted-foreground">
+        Monitor and manage company accounts ({companies.length} total)
+      </p>
+    </div>
+    <Button onClick={() => setCreateCompanyDialogOpen(true)}>
+      <Building2 className="mr-2 h-4 w-4" />
+      Create Company
+    </Button>
+  </div>
         {/* Stats Overview */}
         <div className="grid gap-4 md:grid-cols-4">
           <Card>
@@ -355,6 +361,11 @@ const AdminCompanies = () => {
             onOpenChange={setTendersDialogOpen}
             userId=""
             userEmail={selectedCompany.company_name}
+          />
+          <CreateCompanyDialog
+            open={createCompanyDialogOpen}
+            onOpenChange={setCreateCompanyDialogOpen}
+            onSuccess={fetchCompanies}
           />
         </>
       )}
