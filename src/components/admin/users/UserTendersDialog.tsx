@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileText } from "lucide-react";
-
+import { FileText, Trash2 } from "lucide-react";
 interface UserTendersDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -26,6 +26,7 @@ interface Tender {
 export const UserTendersDialog = ({ open, onOpenChange, userId, userEmail }: UserTendersDialogProps) => {
   const [tenders, setTenders] = useState<Tender[]>([]);
   const [loading, setLoading] = useState(true);
+   const { toast } = useToast();
 
   useEffect(() => {
     if (open) {
@@ -48,7 +49,31 @@ export const UserTendersDialog = ({ open, onOpenChange, userId, userEmail }: Use
       setLoading(false);
     }
   };
+const handleDeleteTender = async (tenderId: string, tenderTitle: string) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${tenderTitle}"? This action cannot be undone.`
+    );
 
+    if (!confirmed) return;
+
+    try {
+      const { data, error } = await supabase.rpc('admin_delete_tender', {
+        tender_id: tenderId
+      });
+
+      if (error) throw error;
+
+      const result = data as { success: boolean; error?: string; message?: string };
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to delete tender');
+      }
+
+      toast({ title: "Success", description: result.message });
+      fetchTenders(); // Refresh list
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
   const getStatusBadge = (status: string) => {
     const variants: Record<string, any> = {
       completed: "default",
@@ -82,14 +107,15 @@ export const UserTendersDialog = ({ open, onOpenChange, userId, userEmail }: Use
         ) : (
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Title</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Progress</TableHead>
-                <TableHead>Created</TableHead>
-              </TableRow>
-            </TableHeader>
+    <TableRow>
+      <TableHead>Title</TableHead>
+      <TableHead>Company</TableHead>
+      <TableHead>Status</TableHead>
+      <TableHead>Progress</TableHead>
+      <TableHead>Created</TableHead>
+      <TableHead className="text-right">Actions</TableHead>
+    </TableRow>
+  </TableHeader>
             <TableBody>
               {tenders.map((tender) => (
                 <TableRow key={tender.id}>
@@ -102,6 +128,26 @@ export const UserTendersDialog = ({ open, onOpenChange, userId, userEmail }: Use
                   <TableCell>{new Date(tender.created_at).toLocaleDateString()}</TableCell>
                 </TableRow>
               ))}
+    {tenders.map((tender) => (
+      <TableRow key={tender.id}>
+        <TableCell className="font-medium">{tender.title}</TableCell>
+        <TableCell>{tender.company_name}</TableCell>
+        <TableCell>{getStatusBadge(tender.status)}</TableCell>
+        <TableCell>
+          {tender.processed_questions}/{tender.total_questions} questions
+        </TableCell>
+        <TableCell>{new Date(tender.created_at).toLocaleDateString()}</TableCell>
+        <TableCell className="text-right">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleDeleteTender(tender.id, tender.title)}
+          >
+            <Trash2 className="h-4 w-4 text-destructive" />
+          </Button>
+        </TableCell>
+      </TableRow>
+    ))}
             </TableBody>
           </Table>
         )}
