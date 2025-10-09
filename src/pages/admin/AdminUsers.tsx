@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Search, Mail, Calendar, Building, MoreHorizontal, UserPlus, CheckCircle, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AssignUserDialog } from "@/components/admin/users/AssignUserDialog";
+import { CreateUserDialog } from "@/components/admin/users/CreateUserDialog";
 import { UserTendersDialog } from "@/components/admin/users/UserTendersDialog";
 import { 
   DropdownMenu, 
@@ -48,6 +49,7 @@ const AdminUsers = () => {
   const [selectedUserEmail, setSelectedUserEmail] = useState("");
   const [tendersDialogOpen, setTendersDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
+  const [createUserDialogOpen, setCreateUserDialogOpen] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -233,11 +235,15 @@ const handleResetPassword = async (email: string) => {
               {users.length} total users • {completedUsers} completed onboarding • {pendingUsers} pending
             </p>
           </div>
-          <Button onClick={() => { setSelectedUserEmail(""); setAssignDialogOpen(true); }}>
-            <UserPlus className="mr-2 h-4 w-4" />
-            Assign User to Company
-          </Button>
-        </div>
+          <div className="flex gap-2">
+    <Button onClick={() => setCreateUserDialogOpen(true)}>
+      <UserPlus className="mr-2 h-4 w-4" />
+      Create User
+    </Button>
+    <Button variant="outline" onClick={() => { setSelectedUserEmail(""); setAssignDialogOpen(true); }}>
+      Assign User to Company
+    </Button>
+  </div>
 
         {/* Search and Filters */}
         <Card>
@@ -413,6 +419,11 @@ const handleResetPassword = async (email: string) => {
           userId={selectedUser.user_id}
           userEmail={selectedUser.email}
         />
+      <CreateUserDialog
+    open={createUserDialogOpen}
+    onOpenChange={setCreateUserDialogOpen}
+    onSuccess={fetchUsers}
+      />
       )}
     </AdminLayout>
   );
