@@ -235,15 +235,10 @@ const handleResetPassword = async (email: string) => {
               {users.length} total users • {completedUsers} completed onboarding • {pendingUsers} pending
             </p>
           </div>
-          <div className="flex gap-2">
-    <Button onClick={() => setCreateUserDialogOpen(true)}>
-      <UserPlus className="mr-2 h-4 w-4" />
-      Create User
-    </Button>
-    <Button variant="outline" onClick={() => { setSelectedUserEmail(""); setAssignDialogOpen(true); }}>
-      Assign User to Company
-    </Button>
-  </div>
+          <Button onClick={() => setCreateUserDialogOpen(true)}>
+            <UserPlus className="mr-2 h-4 w-4" />
+            Create User
+          </Button>
         </div>
 
         {/* Search and Filters */}
