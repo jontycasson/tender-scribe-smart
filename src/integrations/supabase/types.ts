@@ -487,6 +487,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_create_company: {
+        Args: {
+          p_company_name: string
+          p_industry: string
+          p_mission?: string
+          p_past_projects?: string
+          p_services_offered?: string[]
+          p_specializations?: string
+          p_team_size: string
+          p_values?: string
+          p_years_in_business?: string
+          target_user_id: string
+        }
+        Returns: Json
+      }
       admin_create_user: {
         Args: { target_user_email: string; target_user_password: string }
         Returns: Json

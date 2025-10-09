@@ -43,25 +43,27 @@
           throw new Error(`User not found: ${ownerEmail}`);
         }
 
-        // Create company profile
-        const { error: companyError } = await supabase
-          .from('company_profiles')
-          .insert([
-            {
-              user_id: targetUser.user_id,
-              company_name: companyName,
-              industry,
-              team_size: teamSize,
-              mission: "",
-              past_projects: "",
-              specializations: "",
-              values: "",
-              years_in_business: "",
-              services_offered: [],
-            }
-          ]);
+        // Create company profile using admin RPC function
+        const { data, error: companyError } = await supabase
+          .rpc('admin_create_company', {
+            target_user_id: targetUser.user_id,
+            p_company_name: companyName,
+            p_industry: industry,
+            p_team_size: teamSize,
+            p_mission: "",
+            p_past_projects: "",
+            p_specializations: "",
+            p_values: "",
+            p_years_in_business: "",
+            p_services_offered: []
+          });
 
         if (companyError) throw companyError;
+
+        const result = data as { success: boolean; error?: string };
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to create company');
+        }
 
         toast({
           title: "Success",
