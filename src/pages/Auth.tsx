@@ -15,6 +15,7 @@ const Auth = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -76,6 +77,36 @@ const Auth = () => {
     setLoading(false);
   };
 
+  const handleForgotPassword = async () => {
+    if (!email) {
+      toast({
+        title: "Email required",
+        description: "Please enter your email address to reset your password.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setResetLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+
+    if (error) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Password reset email sent",
+        description: "Check your email for a password reset link.",
+      });
+    }
+    setResetLoading(false);
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <div className="flex items-center justify-between p-6 border-b">
@@ -124,7 +155,18 @@ const Auth = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="password">Password</Label>
+                    <div className="flex items-center justify-between mb-2">
+                      <Label htmlFor="password">Password</Label>
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="h-auto p-0 text-sm"
+                        onClick={handleForgotPassword}
+                        disabled={resetLoading}
+                      >
+                        {resetLoading ? "Sending..." : "Forgot password?"}
+                      </Button>
+                    </div>
                     <Input
                       id="password"
                       type="password"
