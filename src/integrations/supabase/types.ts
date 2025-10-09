@@ -495,6 +495,10 @@ export type Database = {
         Args: { target_user_email: string }
         Returns: Json
       }
+      admin_delete_tender: {
+        Args: { tender_id: string }
+        Returns: Json
+      }
       assign_user_to_company: {
         Args: { company_id: string; member_role?: string; user_email: string }
         Returns: Json

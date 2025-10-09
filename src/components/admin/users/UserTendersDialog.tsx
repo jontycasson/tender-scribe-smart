@@ -58,7 +58,7 @@ const handleDeleteTender = async (tenderId: string, tenderTitle: string) => {
     if (!confirmed) return;
 
     try {
-      const { data, error } = await (supabase as any).rpc('admin_delete_tender', {
+      const { data, error } = await supabase.rpc('admin_delete_tender', {
         tender_id: tenderId
       });
 
