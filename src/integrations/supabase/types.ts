@@ -487,16 +487,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_create_user: {
+        Args: { target_user_email: string; target_user_password: string }
+        Returns: Json
+      }
+      admin_delete_tender: {
+        Args: { tender_id: string }
+        Returns: Json
+      }
       admin_delete_user: {
         Args: { target_user_email: string }
         Returns: Json
       }
       admin_reset_user_password: {
         Args: { target_user_email: string }
-        Returns: Json
-      }
-      admin_delete_tender: {
-        Args: { tender_id: string }
         Returns: Json
       }
       assign_user_to_company: {

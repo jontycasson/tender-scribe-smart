@@ -32,14 +32,19 @@ import { useState } from "react";
 
       setLoading(true);
       try {
-        // Create user via Supabase Admin API
-        const { data, error } = await supabase.auth.admin.createUser({
-          email,
-          password,
-          email_confirm: true, // Auto-confirm email
+        // Get auth token
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          throw new Error("Not authenticated");
+        }
+
+        // Call edge function to create user
+        const { data, error } = await supabase.functions.invoke('admin-create-user', {
+          body: { email, password },
         });
 
         if (error) throw error;
+        if (!data.success) throw new Error(data.error || 'Failed to create user');
 
         toast({
           title: "Success",

@@ -69,7 +69,7 @@ const handleDeleteTender = async (tenderId: string, tenderTitle: string) => {
         throw new Error(result.error || 'Failed to delete tender');
       }
 
-      toast({ title: "Success", description: result.message });
+      toast({ title: "Success", description: result.message || "Tender deleted successfully" });
       fetchTenders(); // Refresh list
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
