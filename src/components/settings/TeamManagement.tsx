@@ -42,16 +42,16 @@ export function TeamManagement() {
     setLoading(true);
     try {
       // Get current user's role
-      const { data: roleData, error: roleError } = await supabase.rpc("get_user_company_role");
+      const { data: roleData, error: roleError } = await supabase.rpc("get_user_company_role" as any);
 
       if (roleError) throw roleError;
-      setUserRole(roleData);
+      setUserRole(roleData as string);
 
       // Get team members
-      const { data: membersData, error: membersError } = await supabase.rpc("get_team_members");
+      const { data: membersData, error: membersError } = await supabase.rpc("get_team_members" as any);
 
       if (membersError) throw membersError;
-      setTeamMembers(membersData || []);
+      setTeamMembers((membersData as TeamMember[]) || []);
     } catch (error: any) {
       console.error("Error fetching team data:", error);
       toast({
@@ -76,17 +76,18 @@ export function TeamManagement() {
 
     setAddingMember(true);
     try {
-      const { data, error } = await supabase.rpc("add_team_member", {
+      const { data, error } = await supabase.rpc("add_team_member" as any, {
         member_email: newMemberEmail,
         member_role: newMemberRole,
       });
 
       if (error) throw error;
 
-      if (!data.success) {
+      const result = data as { success: boolean; error?: string };
+      if (!result.success) {
         toast({
           title: "Unable to add member",
-          description: data.error || "Failed to add team member",
+          description: result.error || "Failed to add team member",
           variant: "destructive",
         });
         return;
@@ -121,16 +122,17 @@ export function TeamManagement() {
 
     setRemovingMember(memberToRemove.user_id);
     try {
-      const { data, error } = await supabase.rpc("remove_team_member", {
+      const { data, error } = await supabase.rpc("remove_team_member" as any, {
         member_user_id: memberToRemove.user_id,
       });
 
       if (error) throw error;
 
-      if (!data.success) {
+      const result = data as { success: boolean; error?: string };
+      if (!result.success) {
         toast({
           title: "Unable to remove member",
-          description: data.error || "Failed to remove team member",
+          description: result.error || "Failed to remove team member",
           variant: "destructive",
         });
         return;
@@ -157,17 +159,18 @@ export function TeamManagement() {
 
   const handleUpdateRole = async (memberId: string, newRole: string) => {
     try {
-      const { data, error } = await supabase.rpc("update_team_member_role", {
+      const { data, error } = await supabase.rpc("update_team_member_role" as any, {
         member_user_id: memberId,
         new_role: newRole,
       });
 
       if (error) throw error;
 
-      if (!data.success) {
+      const result = data as { success: boolean; error?: string };
+      if (!result.success) {
         toast({
           title: "Unable to update role",
-          description: data.error || "Failed to update team member role",
+          description: result.error || "Failed to update team member role",
           variant: "destructive",
         });
         return;

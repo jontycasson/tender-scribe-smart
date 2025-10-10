@@ -290,9 +290,11 @@ serve(async (req) => {
     console.log(`Successfully generated ${fieldName} content (${generatedContent.length} characters)`);
 
     // Increment AI generation count (don't block on errors)
-    await supabaseClient
+    supabaseClient
       .rpc('increment_ai_generation_count', { user_id_param: user.id })
-      .catch((err) => console.error('Failed to increment AI count:', err));
+      .then(({ error }) => {
+        if (error) console.error('Failed to increment AI count:', error);
+      });
 
     // Return successful response
     return new Response(JSON.stringify({

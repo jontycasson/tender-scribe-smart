@@ -22,20 +22,37 @@ const ResetPassword = () => {
     // Check if we have a valid recovery token in the URL
     const checkToken = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        // First, try to exchange hash params for session if present
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+        const type = hashParams.get('type');
 
-        if (error) {
-          console.error("Error getting session:", error);
-          setValidToken(false);
-        } else if (session) {
-          setValidToken(true);
+        if (accessToken && type === 'recovery') {
+          // Set the session from the hash params
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken || '',
+          });
+
+          if (error) {
+            console.error("Error setting session:", error);
+            setValidToken(false);
+          } else if (data.session) {
+            setValidToken(true);
+            // Clear the hash from URL for security
+            window.history.replaceState(null, '', window.location.pathname);
+          } else {
+            setValidToken(false);
+          }
         } else {
-          // Try to extract token from URL hash
-          const hashParams = new URLSearchParams(window.location.hash.substring(1));
-          const accessToken = hashParams.get('access_token');
-          const type = hashParams.get('type');
+          // Check for existing session
+          const { data: { session }, error } = await supabase.auth.getSession();
 
-          if (accessToken && type === 'recovery') {
+          if (error) {
+            console.error("Error getting session:", error);
+            setValidToken(false);
+          } else if (session) {
             setValidToken(true);
           } else {
             setValidToken(false);

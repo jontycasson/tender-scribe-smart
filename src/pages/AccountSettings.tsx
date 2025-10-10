@@ -45,8 +45,8 @@ export default function AccountSettings() {
 
       try {
         // Fetch user role
-        const { data: roleData } = await supabase.rpc("get_user_company_role");
-        setUserRole(roleData);
+        const { data: roleData } = await supabase.rpc("get_user_company_role" as any);
+        setUserRole(roleData as string);
 
         // Fetch company profile
         const { data, error } = await supabase
