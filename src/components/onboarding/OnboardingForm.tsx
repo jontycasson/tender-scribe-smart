@@ -44,10 +44,20 @@ export function OnboardingForm({ onComplete, existingData, isSettings = false }:
 
   const generateFieldMutation = useMutation({
     mutationFn: async ({ fieldName, companyData }: { fieldName: string; companyData: any }) => {
+      // Get the current session to ensure we have auth token
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session) {
+        throw new Error("Not authenticated. Please log in again.");
+      }
+
       const { data, error } = await supabase.functions.invoke('generate-profile-field', {
         body: {
           fieldName,
           companyData
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
         }
       });
 
