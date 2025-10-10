@@ -109,6 +109,33 @@ export type Database = {
         }
         Relationships: []
       }
+      demo_access_logs: {
+        Row: {
+          access_type: string
+          admin_user_id: string | null
+          created_at: string | null
+          id: string
+          ip_address: string | null
+          records_accessed: number | null
+        }
+        Insert: {
+          access_type: string
+          admin_user_id?: string | null
+          created_at?: string | null
+          id?: string
+          ip_address?: string | null
+          records_accessed?: number | null
+        }
+        Update: {
+          access_type?: string
+          admin_user_id?: string | null
+          created_at?: string | null
+          id?: string
+          ip_address?: string | null
+          records_accessed?: number | null
+        }
+        Relationships: []
+      }
       demo_uses: {
         Row: {
           company_name: string | null
@@ -264,6 +291,44 @@ export type Database = {
             columns: ["source_tender_id"]
             isOneToOne: false
             referencedRelation: "tenders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      role_change_logs: {
+        Row: {
+          changed_by: string | null
+          company_id: string | null
+          created_at: string | null
+          id: string
+          new_role: string | null
+          old_role: string | null
+          target_user: string | null
+        }
+        Insert: {
+          changed_by?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          id?: string
+          new_role?: string | null
+          old_role?: string | null
+          target_user?: string | null
+        }
+        Update: {
+          changed_by?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          id?: string
+          new_role?: string | null
+          old_role?: string | null
+          target_user?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "role_change_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "company_profiles"
             referencedColumns: ["id"]
           },
         ]
