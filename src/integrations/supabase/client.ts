@@ -2,10 +2,10 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://yfnqnsgggcbkdqhdlocd.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlmbnFuc2dnZ2Nia2RxaGRsb2NkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5NTYyNTksImV4cCI6MjA2OTUzMjI1OX0.twhmjdrW6qIbsUjKqCbJnffsVZJMUuxxHvr_HXcY8dY";
 
-// Validate environment variables
+// Validate that we have credentials (either from env or fallback)
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
   throw new Error(
     'Missing Supabase environment variables. Please check your .env file and ensure ' +
