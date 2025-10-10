@@ -12,7 +12,7 @@ export const FAQSection = () => {
     },
     {
       question: "How secure is my company data?",
-      answer: "Your data security is our top priority. We're SOC2 compliant, use bank-level encryption, and process all documents within the EU. Your tender documents and responses are never used to train our AI models."
+      answer: "Your data security is our top priority. We use Supabase, a SOC 2 Type 2 and ISO 27001 certified platform with enterprise-grade security. All data is encrypted in transit and at rest, stored securely on AWS infrastructure with PostgreSQL Row Level Security policies. Your tender documents and responses are never used to train our AI models and remain completely private to your company."
     },
     {
       question: "Can I cancel my subscription anytime?",
@@ -28,7 +28,7 @@ export const FAQSection = () => {
     },
     {
       question: "What support do you provide?",
-      answer: "All plans include email support and access to our knowledge base. Gold and Platinum plans include priority support, and Platinum customers get a dedicated success manager plus SLA guarantees."
+      answer: "All plans include email support and access to our knowledge base. Pro and Enterprise plans include priority support, and Enterprise customers get a dedicated support manager plus SLA guarantees."
     },
     {
       question: "Can multiple team members collaborate on responses?",
@@ -41,6 +41,30 @@ export const FAQSection = () => {
     {
       question: "What's the difference between owner, admin, and member roles?",
       answer: "Owners are the users who created the company profile and have full control. Admins can manage team members, invite new users, and edit company information. Members have view-only access to company settings but can work on tender responses. This role-based system ensures secure collaboration while maintaining data integrity."
+    },
+    {
+      question: "Can I upgrade or downgrade my plan?",
+      answer: "Yes, you can change your plan at any time. When upgrading, you'll get immediate access to new features and any price difference will be prorated. When downgrading, the change will take effect at the end of your current billing period, and you'll keep access to your current plan's features until then."
+    },
+    {
+      question: "What happens to my data if I cancel?",
+      answer: "If you cancel your subscription, you'll retain access until the end of your billing period. You can export all your tender responses, company profile, and documents at any time. After your subscription ends, your data is retained for 30 days in case you choose to reactivate, after which it's permanently deleted."
+    },
+    {
+      question: "Are there any limits on tender processing?",
+      answer: "All plans include unlimited AI-powered tender responses. You can process as many tenders as you need each month with no hidden fees or per-tender charges. The main difference between plans is the number of team seats included and advanced features like workflow automation and API access."
+    },
+    {
+      question: "Do I need a credit card for the free trial?",
+      answer: "No credit card required! Simply sign up with your email address and you'll get immediate access to the platform for 14 days. You can process up to 3 complete tenders during your trial period to fully experience how Proposal.fit can transform your tender response process."
+    },
+    {
+      question: "What payment methods do you accept?",
+      answer: "We accept all major credit and debit cards including Visa, Mastercard, and American Express. All payments are processed securely through Stripe, and your payment information is never stored on our servers. We also offer invoice billing for Enterprise customers."
+    },
+    {
+      question: "Can I get a refund if I'm not satisfied?",
+      answer: "Yes, we offer a 30-day money-back guarantee. If you're not completely satisfied with Proposal.fit within the first 30 days of your subscription, contact our support team for a full refund, no questions asked."
     }
   ];
 
