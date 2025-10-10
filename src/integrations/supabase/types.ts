@@ -60,7 +60,10 @@ export type Database = {
           industry: string
           mission: string
           past_projects: string
+          plan_name: string | null
+          plan_start_date: string | null
           policies: string | null
+          seat_limit: number | null
           services_offered: string[]
           specializations: string
           team_size: string
@@ -79,7 +82,10 @@ export type Database = {
           industry: string
           mission: string
           past_projects: string
+          plan_name?: string | null
+          plan_start_date?: string | null
           policies?: string | null
+          seat_limit?: number | null
           services_offered?: string[]
           specializations: string
           team_size: string
@@ -98,7 +104,10 @@ export type Database = {
           industry?: string
           mission?: string
           past_projects?: string
+          plan_name?: string | null
+          plan_start_date?: string | null
           policies?: string | null
+          seat_limit?: number | null
           services_offered?: string[]
           specializations?: string
           team_size?: string
@@ -748,6 +757,10 @@ export type Database = {
           user_id: string
         }[]
       }
+      get_company_seat_usage: {
+        Args: { p_company_id: string }
+        Returns: Json
+      }
       get_demo_usage_stats: {
         Args: Record<PropertyKey, never>
         Returns: {
@@ -909,6 +922,10 @@ export type Database = {
         Args: { "": unknown[] }
         Returns: number
       }
+      update_company_plan: {
+        Args: { p_plan_name: string; p_seat_limit: number }
+        Returns: Json
+      }
       update_team_member_role: {
         Args: { member_user_id: string; new_role: string }
         Returns: Json
@@ -940,6 +957,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
+      plan_tier: "Solo" | "Starter" | "Pro" | "Enterprise"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1068,6 +1086,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "moderator", "user"],
+      plan_tier: ["Solo", "Starter", "Pro", "Enterprise"],
     },
   },
 } as const

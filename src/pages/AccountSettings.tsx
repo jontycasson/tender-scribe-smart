@@ -10,9 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, User, Building2, Settings, Users, Shield } from "lucide-react";
+import { Loader2, User, Building2, Settings, Users, Shield, Crown } from "lucide-react";
 import { OnboardingForm } from "@/components/onboarding/OnboardingForm";
 import { TeamManagement } from "@/components/settings/TeamManagement";
+import { PlanManagement } from "@/components/settings/PlanManagement";
 import { CompanyProfileData } from "@/lib/validations/onboarding";
 
 export default function AccountSettings() {
@@ -245,7 +246,7 @@ export default function AccountSettings() {
         </div>
 
         <Tabs defaultValue="account" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="account" className="flex items-center gap-2">
               <User className="h-4 w-4" />
               Account
@@ -257,6 +258,10 @@ export default function AccountSettings() {
             <TabsTrigger value="team" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
               Team
+            </TabsTrigger>
+            <TabsTrigger value="plan" className="flex items-center gap-2">
+              <Crown className="h-4 w-4" />
+              Plan
             </TabsTrigger>
             <TabsTrigger value="preferences" className="flex items-center gap-2">
               <Settings className="h-4 w-4" />
@@ -394,6 +399,10 @@ export default function AccountSettings() {
 
           <TabsContent value="team">
             <TeamManagement />
+          </TabsContent>
+
+          <TabsContent value="plan">
+            <PlanManagement />
           </TabsContent>
 
           <TabsContent value="preferences">

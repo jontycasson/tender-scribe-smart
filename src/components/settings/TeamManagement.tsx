@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, UserPlus, Trash2, Shield, User as UserIcon } from "lucide-react";
+import { SeatAllocationTracker } from "./SeatAllocationTracker";
 
 interface TeamMember {
   user_id: string;
@@ -31,10 +32,15 @@ export function TeamManagement() {
   const [addingMember, setAddingMember] = useState(false);
   const [removingMember, setRemovingMember] = useState<string | null>(null);
   const [memberToRemove, setMemberToRemove] = useState<TeamMember | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     fetchTeamData();
   }, [user]);
+
+  const refreshSeatTracker = () => {
+    setRefreshKey(prev => prev + 1);
+  };
 
   const fetchTeamData = async () => {
     if (!user) return;
@@ -83,23 +89,32 @@ export function TeamManagement() {
 
       if (error) throw error;
 
-      const result = data as { success: boolean; error?: string };
+      const result = data as { success: boolean; error?: string; seat_usage?: any };
       if (!result.success) {
+        // Check if it's a seat limit error
+        const isSeatLimitError = result.error?.includes('Seat limit reached');
+        
         toast({
-          title: "Unable to add member",
+          title: isSeatLimitError ? "Seat limit reached" : "Unable to add member",
           description: result.error || "Failed to add team member",
           variant: "destructive",
         });
         return;
       }
 
+      // Show seat usage in success message if available
+      const seatInfo = result.seat_usage 
+        ? ` (${result.seat_usage.seats_used}/${result.seat_usage.seat_limit} seats used)`
+        : '';
+      
       toast({
         title: "Team member added",
-        description: `${newMemberEmail} has been added as ${newMemberRole}`,
+        description: `${newMemberEmail} has been added as ${newMemberRole}${seatInfo}`,
       });
 
       setNewMemberEmail("");
       setNewMemberRole("member");
+      refreshSeatTracker();
       await fetchTeamData();
     } catch (error: any) {
       console.error("Error adding team member:", error);
@@ -143,6 +158,7 @@ export function TeamManagement() {
         description: `${memberToRemove.email} has been removed from the team`,
       });
 
+      refreshSeatTracker();
       await fetchTeamData();
     } catch (error: any) {
       console.error("Error removing team member:", error);
@@ -226,6 +242,8 @@ export function TeamManagement() {
 
   return (
     <div className="space-y-6">
+      <SeatAllocationTracker key={refreshKey} />
+      
       {isAdmin && (
         <Card>
           <CardHeader>
