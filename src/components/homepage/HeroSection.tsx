@@ -30,7 +30,7 @@ export const HeroSection = () => {
                 <div className="w-8 h-8 bg-secondary rounded-full border-2 border-background"></div>
                 <div className="w-8 h-8 bg-accent rounded-full border-2 border-background"></div>
               </div>
-              <span>Trusted by 500+ SMEs across the UK</span>
+              <span>Join growing businesses streamlining their tender process</span>
             </div>
 
             {/* CTA Buttons */}
@@ -50,16 +50,16 @@ export const HeroSection = () => {
             {/* Key Stats */}
             <div className="grid grid-cols-3 gap-6 pt-8 border-t">
               <div>
-                <div className="text-2xl font-bold text-primary">10x</div>
-                <div className="text-sm text-muted-foreground">Faster responses</div>
+                <div className="text-2xl font-bold text-primary">Minutes</div>
+                <div className="text-sm text-muted-foreground">Not days</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-primary">95%</div>
-                <div className="text-sm text-muted-foreground">Accuracy rate</div>
+                <div className="text-2xl font-bold text-primary">AI-Powered</div>
+                <div className="text-sm text-muted-foreground">Analysis</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-primary">40+</div>
-                <div className="text-sm text-muted-foreground">Hours saved per tender</div>
+                <div className="text-2xl font-bold text-primary">Tailored</div>
+                <div className="text-sm text-muted-foreground">To your company</div>
               </div>
             </div>
           </div>
@@ -104,10 +104,10 @@ export const HeroSection = () => {
             
             {/* Floating Elements */}
             <div className="absolute -top-4 -right-4 bg-background rounded-lg shadow-lg p-3">
-              <div className="text-sm font-medium text-primary">⚡ 40hrs saved</div>
+              <div className="text-sm font-medium text-primary">⚡ Save time</div>
             </div>
             <div className="absolute -bottom-4 -left-4 bg-background rounded-lg shadow-lg p-3">
-              <div className="text-sm font-medium text-primary">🎯 95% accuracy</div>
+              <div className="text-sm font-medium text-primary">🎯 AI-powered</div>
             </div>
           </div>
         </div>

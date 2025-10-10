@@ -4,38 +4,38 @@ export const BenefitsSection = () => {
   const benefits = [
     {
       icon: Clock,
-      title: "Save 40+ Hours Per Tender",
-      description: "Eliminate manual copy-paste work and reduce response time from weeks to hours.",
+      title: "Streamline Response Time",
+      description: "Reduce tender response time from weeks to hours with AI-powered automation.",
       highlight: true
     },
     {
       icon: Target,
-      title: "Increase Win Rate by 30%",
-      description: "AI-generated responses are more consistent, comprehensive, and compelling.",
+      title: "Improve Response Quality",
+      description: "Generate consistent, comprehensive responses tailored to each requirement.",
       highlight: false
     },
     {
       icon: Brain,
-      title: "Learn From Every Response",
-      description: "Our AI builds institutional memory, improving accuracy with each tender.",
+      title: "Build Company Knowledge",
+      description: "Our AI learns your company profile to deliver increasingly relevant responses.",
       highlight: false
     },
     {
       icon: Users,
-      title: "Built for Team Collaboration",
+      title: "Team Collaboration",
       description: "Assign questions, track progress, and maintain quality across your team.",
       highlight: false
     },
     {
       icon: Shield,
-      title: "Enterprise-Grade Security",
-      description: "SOC2 compliant with EU data processing and bank-level encryption.",
+      title: "Enterprise Security",
+      description: "GDPR compliant with EU data hosting and encrypted storage.",
       highlight: false
     },
     {
       icon: Zap,
-      title: "Deploy in Minutes",
-      description: "No complex setup required. Upload your first tender and start winning.",
+      title: "Quick Setup",
+      description: "Simple onboarding process. Upload your first tender and start immediately.",
       highlight: true
     }
   ];
@@ -45,7 +45,7 @@ export const BenefitsSection = () => {
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-16">
           <h2 className="text-3xl lg:text-4xl font-bold mb-4">
-            Why Leading Teams Choose Proposal.fit
+            Why Teams Choose Proposal.fit
           </h2>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
             Transform your tender response process with AI that understands your business
@@ -80,24 +80,24 @@ export const BenefitsSection = () => {
           })}
         </div>
 
-        {/* Bottom Stats */}
+        {/* Bottom Features */}
         <div className="mt-16 text-center">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-4xl mx-auto">
             <div>
-              <div className="text-3xl font-bold text-primary mb-2">500+</div>
-              <div className="text-sm text-muted-foreground">Active Users</div>
+              <div className="text-3xl font-bold text-primary mb-2">AI</div>
+              <div className="text-sm text-muted-foreground">Analysis Engine</div>
             </div>
             <div>
-              <div className="text-3xl font-bold text-primary mb-2">2,000+</div>
-              <div className="text-sm text-muted-foreground">Tenders Processed</div>
+              <div className="text-3xl font-bold text-primary mb-2">Cloud</div>
+              <div className="text-sm text-muted-foreground">Based Platform</div>
             </div>
             <div>
-              <div className="text-3xl font-bold text-primary mb-2">£15M+</div>
-              <div className="text-sm text-muted-foreground">Contract Value Won</div>
+              <div className="text-3xl font-bold text-primary mb-2">Secure</div>
+              <div className="text-sm text-muted-foreground">EU Hosting</div>
             </div>
             <div>
-              <div className="text-3xl font-bold text-primary mb-2">40,000+</div>
-              <div className="text-sm text-muted-foreground">Hours Saved</div>
+              <div className="text-3xl font-bold text-primary mb-2">Modern</div>
+              <div className="text-sm text-muted-foreground">Tech Stack</div>
             </div>
           </div>
         </div>

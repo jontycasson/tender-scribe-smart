@@ -1,30 +1,21 @@
 import { Star, Quote } from "lucide-react";
 
 export const TestimonialsSection = () => {
-  const testimonials = [
+  const features = [
     {
-      name: "Sarah Mitchell",
-      role: "Bid Manager",
-      company: "TechBuild Solutions",
-      content: "Proposal.fit transformed our tender process. We've reduced response time from 2 weeks to 2 days and our win rate has increased by 35%. The AI understands our business better than some of our junior staff!",
-      rating: 5,
-      avatar: "SM"
+      icon: "🚀",
+      title: "Early Access Program",
+      description: "Join forward-thinking businesses testing Proposal.fit's AI-powered tender response system. Get hands-on with features designed to streamline your bidding process."
     },
     {
-      name: "James Thompson",
-      role: "Commercial Director", 
-      company: "Green Infrastructure Ltd",
-      content: "The AI-generated responses are incredibly accurate. It's like having a senior bid writer available 24/7. We've won 3 major contracts this quarter that we wouldn't have had time to bid for before.",
-      rating: 5,
-      avatar: "JT"
+      icon: "🤝",
+      title: "Collaborative Approach",
+      description: "We're building this with you. Early users help shape the product roadmap and get priority access to new features as we develop them together.",
     },
     {
-      name: "Emily Chen",
-      role: "Business Development Manager",
-      company: "DataSync Consulting",
-      content: "As a small team, Proposal.fit levels the playing field. We can now compete with larger firms on major tenders. The collaboration features mean our whole team can contribute without stepping on each other's toes.",
-      rating: 5,
-      avatar: "EC"
+      icon: "💡",
+      title: "Dedicated Onboarding",
+      description: "Our team works directly with early access users to ensure Proposal.fit fits seamlessly into your existing tender workflow and company processes.",
     }
   ];
 
@@ -33,66 +24,48 @@ export const TestimonialsSection = () => {
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-16">
           <h2 className="text-3xl lg:text-4xl font-bold mb-4">
-            Loved by Tender Teams Across the UK
+            Join Our Early Access Program
           </h2>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            See how teams are transforming their tender success with Proposal.fit
+            Be part of shaping the future of tender response automation
           </p>
         </div>
 
         <div className="grid md:grid-cols-3 gap-8">
-          {testimonials.map((testimonial, index) => (
-            <div key={index} className="bg-card rounded-xl p-6 border shadow-sm relative">
-              {/* Quote Icon */}
-              <div className="absolute -top-3 left-6 bg-primary w-6 h-6 rounded-full flex items-center justify-center">
-                <Quote className="h-3 w-3 text-primary-foreground" />
-              </div>
+          {features.map((feature, index) => (
+            <div key={index} className="bg-card rounded-xl p-6 border shadow-sm">
+              {/* Icon */}
+              <div className="text-4xl mb-4">{feature.icon}</div>
 
-              {/* Rating */}
-              <div className="flex items-center gap-1 mb-4 pt-2">
-                {[...Array(testimonial.rating)].map((_, i) => (
-                  <Star key={i} className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                ))}
-              </div>
+              {/* Title */}
+              <h3 className="text-lg font-semibold mb-3">{feature.title}</h3>
 
-              {/* Content */}
-              <p className="text-foreground mb-6 leading-relaxed text-sm">
-                "{testimonial.content}"
+              {/* Description */}
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                {feature.description}
               </p>
-
-              {/* Author */}
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                  <span className="text-sm font-medium text-primary">{testimonial.avatar}</span>
-                </div>
-                <div>
-                  <div className="font-semibold text-sm">{testimonial.name}</div>
-                  <div className="text-xs text-muted-foreground">{testimonial.role}</div>
-                  <div className="text-xs text-muted-foreground">{testimonial.company}</div>
-                </div>
-              </div>
             </div>
           ))}
         </div>
 
-        {/* Bottom Trust Indicators */}
+        {/* Bottom Features */}
         <div className="mt-16 text-center">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-4xl mx-auto">
             <div className="text-center">
-              <div className="text-2xl font-bold text-primary mb-2">4.9/5</div>
-              <div className="text-sm text-muted-foreground">User Rating</div>
+              <div className="text-2xl font-bold text-primary mb-2">Beta</div>
+              <div className="text-sm text-muted-foreground">Early Access</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-primary mb-2">98%</div>
-              <div className="text-sm text-muted-foreground">Customer Satisfaction</div>
+              <div className="text-2xl font-bold text-primary mb-2">Active</div>
+              <div className="text-sm text-muted-foreground">Development</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-primary mb-2">24/7</div>
-              <div className="text-sm text-muted-foreground">Support Available</div>
+              <div className="text-2xl font-bold text-primary mb-2">Direct</div>
+              <div className="text-sm text-muted-foreground">Team Support</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-primary mb-2">99.9%</div>
-              <div className="text-sm text-muted-foreground">Uptime SLA</div>
+              <div className="text-2xl font-bold text-primary mb-2">Cloud</div>
+              <div className="text-sm text-muted-foreground">Based Platform</div>
             </div>
           </div>
         </div>
