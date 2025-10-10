@@ -145,37 +145,34 @@ serve(async (req) => {
   }
 
   try {
-    // Get auth header to extract user
+    // Get auth header
     const authHeader = req.headers.get('authorization');
     if (!authHeader) {
+      console.error('No authorization header');
       return new Response(JSON.stringify({ error: 'Authentication required' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Create Supabase client with service role for full access
+    // Create Supabase client with service role for database operations
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Create a separate client with user's auth to get user info
-    const supabaseAuth = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: {
-          headers: { authorization: authHeader },
-        },
-      }
-    );
-
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+    // Extract JWT token from authorization header
+    const jwt = authHeader.replace('Bearer ', '');
+    
+    // Verify JWT and get user ID using service role client
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(jwt);
+    
     if (authError || !user) {
       console.error('Auth error:', authError);
-      return new Response(JSON.stringify({ error: 'Invalid authentication' }), {
+      return new Response(JSON.stringify({ 
+        error: 'Invalid authentication',
+        details: authError?.message 
+      }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
