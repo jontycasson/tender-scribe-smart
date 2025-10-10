@@ -32,7 +32,15 @@ export const FAQSection = () => {
     },
     {
       question: "Can multiple team members collaborate on responses?",
-      answer: "Absolutely! From our Silver plan onwards, you can invite team members, assign questions to specific experts, track progress in real-time, and maintain version control throughout the response process."
+      answer: "Absolutely! You can invite team members to your company with different permission levels. Company owners and admins can manage the team, edit company profiles, and invite new members. Regular team members have view-only access to company information but can collaborate on tender responses. This ensures your company data stays secure while enabling effective team collaboration."
+    },
+    {
+      question: "How do I manage my account and team members?",
+      answer: "Access your Account Settings from the user menu in the top right corner. Here you can update your email, change your password, edit your company profile, and manage your team. Owners and admins can add or remove team members, assign roles (admin or member), and control who has permission to edit company information."
+    },
+    {
+      question: "What's the difference between owner, admin, and member roles?",
+      answer: "Owners are the users who created the company profile and have full control. Admins can manage team members, invite new users, and edit company information. Members have view-only access to company settings but can work on tender responses. This role-based system ensures secure collaboration while maintaining data integrity."
     }
   ];
 
