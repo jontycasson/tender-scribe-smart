@@ -9,8 +9,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, User, Building2, Settings } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, User, Building2, Settings, Users, Shield } from "lucide-react";
 import { OnboardingForm } from "@/components/onboarding/OnboardingForm";
+import { TeamManagement } from "@/components/settings/TeamManagement";
 import { CompanyProfileData } from "@/lib/validations/onboarding";
 
 export default function AccountSettings() {
@@ -19,6 +21,7 @@ export default function AccountSettings() {
   const { toast } = useToast();
   const [profileLoading, setProfileLoading] = useState(true);
   const [existingProfile, setExistingProfile] = useState<CompanyProfileData | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -41,6 +44,11 @@ export default function AccountSettings() {
       if (!user) return;
 
       try {
+        // Fetch user role
+        const { data: roleData } = await supabase.rpc("get_user_company_role");
+        setUserRole(roleData);
+
+        // Fetch company profile
         const { data, error } = await supabase
           .from("company_profiles")
           .select("*")
@@ -237,7 +245,7 @@ export default function AccountSettings() {
         </div>
 
         <Tabs defaultValue="account" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="account" className="flex items-center gap-2">
               <User className="h-4 w-4" />
               Account
@@ -245,6 +253,10 @@ export default function AccountSettings() {
             <TabsTrigger value="company" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               Company Profile
+            </TabsTrigger>
+            <TabsTrigger value="team" className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Team
             </TabsTrigger>
             <TabsTrigger value="preferences" className="flex items-center gap-2">
               <Settings className="h-4 w-4" />
@@ -344,12 +356,33 @@ export default function AccountSettings() {
           <TabsContent value="company">
             <Card>
               <CardHeader>
-                <CardTitle>Company Profile</CardTitle>
-                <CardDescription>
-                  Manage your company information used in tender responses.
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Company Profile</CardTitle>
+                    <CardDescription>
+                      Manage your company information used in tender responses.
+                    </CardDescription>
+                  </div>
+                  {userRole && (
+                    <Badge
+                      variant={userRole === "owner" ? "default" : userRole === "admin" ? "default" : "secondary"}
+                      className={userRole === "owner" ? "bg-purple-600" : userRole === "admin" ? "bg-blue-600" : ""}
+                    >
+                      <Shield className="h-3 w-3 mr-1" />
+                      {userRole.charAt(0).toUpperCase() + userRole.slice(1)}
+                    </Badge>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
+                {userRole === "member" && (
+                  <div className="mb-6 p-4 border border-amber-300 bg-amber-50 dark:bg-amber-950 dark:border-amber-800 rounded-lg">
+                    <p className="text-sm text-amber-900 dark:text-amber-200">
+                      <strong>View Only:</strong> As a team member, you can view the company profile but cannot make changes.
+                      Contact your company owner or admin to update this information.
+                    </p>
+                  </div>
+                )}
                 <OnboardingForm
                   onComplete={handleCompanyProfileUpdate}
                   existingData={existingProfile}
@@ -357,6 +390,10 @@ export default function AccountSettings() {
                 />
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="team">
+            <TeamManagement />
           </TabsContent>
 
           <TabsContent value="preferences">
