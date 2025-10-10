@@ -356,12 +356,23 @@ async function segmentContent(rawText: string): Promise<{
     console.log(`Split text into ${chunks.length} chunks, will process ${chunksToProcess} chunks with AI`);
 
   // Step 5: Process chunks in parallel with Promise.allSettled
-  const chunkPromises = chunks.slice(0, chunksToProcess).map((chunk, index) =>
+  const chunkPromises = chunks.slice(0, chunksToProcess).map((chunk, chunkIndex) =>
     classifyChunkWithAI(chunk, openAIApiKey)
-      .then(result => ({ success: true, result, index }))
+      .then(result => {
+        if (result) {
+          // Add chunk tracking to questions for proper ordering
+          result.questions = result.questions.map(q => ({
+            ...q,
+            chunk_index: chunkIndex,
+            // Calculate approximate line number based on chunk position
+            approximate_line: Math.floor(chunkIndex * 20) + (q.chunk_position || 0) / 100
+          }));
+        }
+        return { success: true, result, index: chunkIndex };
+      })
       .catch(err => {
-        console.error(`Chunk ${index + 1} failed:`, err instanceof Error ? err.message : err);
-        return { success: false, result: null, index };
+        console.error(`Chunk ${chunkIndex + 1} failed:`, err instanceof Error ? err.message : err);
+        return { success: false, result: null, index: chunkIndex };
       })
   );
 
@@ -579,30 +590,34 @@ function rescueContextFromText(rawText: string): any[] {
 function extractObviousQuestions(text: string): any[] {
   const questions = [];
   const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-  let questionNumber = 1;
+  let lineIndex = 0;
 
   for (const line of lines) {
-    if (line.length < 10) continue; // Skip very short lines
+    lineIndex++;
+    if (line.length < 5) continue; // Reduced from 10 to catch very short questions
     
     const cleanLine = line.replace(/^[\d\.\)\-\*\•\s]+/, '').trim();
-    if (cleanLine.length < 10) continue;
+    if (cleanLine.length < 5) continue; // Reduced threshold
     
     // Regex patterns for obvious questions
     const isDirectQuestion = cleanLine.endsWith('?');
     const isNumberedQuestion = /^(question\s*\d+|q\d+|q\.\d+)/i.test(line);
-   const isImperative = /^(please\s+)?(describe|provide|explain|tell|list|outline|detail|specify|identify|confirm|state|indicate|demonstrate|show|what|when|where|why|how|which|do you|can you|will you|have you|are you|would you|could you|give|submit|attach|include|evidence|address)/i.test(cleanLine);
+    const isImperative = /^(please\s+)?(describe|provide|explain|tell|list|outline|detail|specify|identify|confirm|state|indicate|demonstrate|show|what|when|where|why|how|which|do you|can you|will you|have you|are you|would you|could you|give|submit|attach|include|evidence|address)/i.test(cleanLine);
     const isBulletQuestion = /^[\*\•\-]\s*(what|when|where|why|how|which|describe|provide|explain|tell|list|do you|can you)/i.test(line);
     
     if (isDirectQuestion || isNumberedQuestion || isImperative || isBulletQuestion) {
       questions.push({
-        question_number: questionNumber++,
+        question_number: lineIndex, // Use line index to preserve order
         question_text: cleanLine,
         source: 'regex',
-        confidence: isDirectQuestion ? 0.9 : 0.7
+        confidence: isDirectQuestion ? 0.9 : 0.7,
+        original_line_number: lineIndex // Track original position
       });
+      console.log(`✓ Extracted Q at line ${lineIndex}: "${cleanLine.substring(0, 60)}..."`);
     }
   }
 
+  console.log(`Regex extraction complete: ${questions.length} questions found`);
   return questions;
 }
 
@@ -691,13 +706,20 @@ Return JSON format:
       return null;
     }
     
-    // Normalize and add question numbers
-    const questions = (result.questions || []).map((q: any, index: number) => ({
-      question_number: index + 1,
-      question_text: typeof q === 'string' ? q : q.text,
-      source: 'ai',
-      confidence: typeof q === 'object' ? q.confidence : 0.8
-    }));
+    // Normalize and add question numbers with position tracking
+    const questions = (result.questions || []).map((q: any, index: number) => {
+      const questionText = typeof q === 'string' ? q : q.text;
+      // Try to find position of this question in the original chunk for ordering
+      const position = chunk.indexOf(questionText);
+      
+      return {
+        question_number: index + 1,
+        question_text: questionText,
+        source: 'ai',
+        confidence: typeof q === 'object' ? q.confidence : 0.8,
+        chunk_position: position >= 0 ? position : 9999 // Fallback if not found
+      };
+    });
 
     return {
       questions,
@@ -718,7 +740,17 @@ function deduplicateQuestions(questions: any[]): any[] {
   
   console.log(`Starting deduplication with ${questions.length} raw questions`);
   
-  for (const question of questions) {
+  // Sort by original line number to maintain document order
+  // Prioritize: original_line_number > approximate_line > chunk_index > question_number
+  const sortedQuestions = [...questions].sort((a, b) => {
+    const aPos = a.original_line_number || a.approximate_line || (a.chunk_index * 1000) || a.question_number || 0;
+    const bPos = b.original_line_number || b.approximate_line || (b.chunk_index * 1000) || b.question_number || 0;
+    return aPos - bPos;
+  });
+  
+  console.log(`Questions sorted by document order (${sortedQuestions.length} total)`);
+  
+  for (const question of sortedQuestions) {
     let questionText = question.question_text || '';
     
     // Step 1: Clean and normalize the text
@@ -738,24 +770,32 @@ function deduplicateQuestions(questions: any[]): any[] {
       .trim();
     
     // Skip if text becomes too short after cleaning
-    if (cleanText.length < 10) {
-      console.log(`Skipping short question after cleanup: "${questionText}" -> "${cleanText}"`);
+    if (cleanText.length < 5) { // Reduced from 10
+      console.log(`Skipping very short question after cleanup: "${questionText}" -> "${cleanText}"`);
       continue;
     }
     
     // Step 3: Create deduplication key (lowercase, no punctuation)
- const dedupeKey = cleanText
-    .toLowerCase()
-    // Remove common filler words but keep important context
-    .replace(/\b(the|a|an|your|our|this|that|these|those|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|could|should|may|might)\b/g, '')
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+    // For short questions, keep ALL words to avoid false duplicates
+    const dedupeKey = cleanText.length < 50 
+      ? cleanText
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim()
+      : cleanText
+          .toLowerCase()
+          // Only remove filler words for longer questions
+          .replace(/\b(the|a|an|this|that|these|those)\b/g, '')
+          .replace(/[^a-z0-9\s]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
 
     
-    // Skip if deduplication key is too short
-    if (dedupeKey.length < 10) {
-      console.log(`Skipping question with short deduplication key: "${cleanText}"`);
+    // Skip if deduplication key is too short (but be lenient for very short questions)
+    const minKeyLength = cleanText.length < 30 ? 5 : 10;
+    if (dedupeKey.length < minKeyLength) {
+      console.log(`Skipping question with short deduplication key: "${cleanText}" (key: "${dedupeKey}", length: ${dedupeKey.length})`);
       continue;
     }
     
@@ -771,11 +811,11 @@ function deduplicateQuestions(questions: any[]): any[] {
         dedupe_key: dedupeKey // For debugging
       });
     } else {
-      console.log(`Duplicate detected: "${cleanText}" (key: "${dedupeKey}")`);
+      console.log(`Duplicate detected and skipped: "${cleanText}" (key: "${dedupeKey}")`);
     }
   }
   
-  // Step 5: Re-index questions sequentially starting at 1
+  // Step 5: Re-index questions sequentially starting at 1 (order already preserved from sort)
   const reindexed = deduplicated.map((q, index) => ({
     ...q,
     question_number: index + 1
