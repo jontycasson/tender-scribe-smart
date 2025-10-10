@@ -1,5 +1,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage, FormDescription } from "@/components/ui/form";
@@ -9,6 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { CompanyProfileData, companyProfileSchema, industryOptions, teamSizeOptions, serviceOptions, yearsInBusinessOptions } from "@/lib/validations/onboarding";
+import { AIGenerateButton } from "@/components/onboarding/AIGenerateButton";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 interface OnboardingFormProps {
   onComplete: (data: CompanyProfileData) => void;
@@ -17,6 +22,9 @@ interface OnboardingFormProps {
 }
 
 export function OnboardingForm({ onComplete, existingData, isSettings = false }: OnboardingFormProps) {
+  const { toast } = useToast();
+  const [generatingField, setGeneratingField] = useState<string | null>(null);
+
   const form = useForm<CompanyProfileData>({
     resolver: zodResolver(companyProfileSchema),
     defaultValues: existingData || {
@@ -33,6 +41,72 @@ export function OnboardingForm({ onComplete, existingData, isSettings = false }:
       yearsInBusiness: "",
     },
   });
+
+  const generateFieldMutation = useMutation({
+    mutationFn: async ({ fieldName, companyData }: { fieldName: string; companyData: any }) => {
+      const { data, error } = await supabase.functions.invoke('generate-profile-field', {
+        body: {
+          fieldName,
+          companyData
+        }
+      });
+
+      if (error) throw error;
+      if (!data?.content) throw new Error("No content generated");
+
+      return data.content;
+    },
+    onSuccess: (content, variables) => {
+      // Auto-populate the field with generated content
+      const fieldName = variables.fieldName as keyof CompanyProfileData;
+      form.setValue(fieldName, content);
+
+      toast({
+        title: "Generated successfully",
+        description: `AI has generated ${variables.fieldName} for you. You can edit it before saving.`,
+      });
+
+      setGeneratingField(null);
+    },
+    onError: (error: any) => {
+      console.error("Generation error:", error);
+      toast({
+        title: "Generation failed",
+        description: error.message || "Failed to generate content. Please try again.",
+        variant: "destructive",
+      });
+
+      setGeneratingField(null);
+    }
+  });
+
+  const handleGenerate = (fieldName: string) => {
+    const formValues = form.getValues();
+
+    // Check if required fields are filled
+    if (!formValues.companyName || !formValues.industry) {
+      toast({
+        title: "Missing information",
+        description: "Please fill in your company name and industry before using AI generation.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setGeneratingField(fieldName);
+
+    const companyData = {
+      companyName: formValues.companyName,
+      industry: formValues.industry,
+      teamSize: formValues.teamSize,
+      servicesOffered: formValues.servicesOffered,
+      yearsInBusiness: formValues.yearsInBusiness,
+    };
+
+    generateFieldMutation.mutate({ fieldName, companyData });
+  };
+
+  const canGenerate = !isSettings && !!form.watch("companyName") && !!form.watch("industry");
 
   const handleSubmit = form.handleSubmit((data) => {
     onComplete(data);
@@ -225,7 +299,17 @@ export function OnboardingForm({ onComplete, existingData, isSettings = false }:
                   name="specializations"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Specialisations & Expertise</FormLabel>
+                      <div className="flex items-center justify-between mb-2">
+                        <FormLabel>Specialisations & Expertise</FormLabel>
+                        {!isSettings && (
+                          <AIGenerateButton
+                            fieldName="specializations"
+                            onGenerate={() => handleGenerate("specializations")}
+                            isLoading={generatingField === "specializations"}
+                            disabled={!canGenerate || generatingField !== null}
+                          />
+                        )}
+                      </div>
                       <FormDescription>
                         Describe your key areas of expertise and what makes your company unique
                       </FormDescription>
@@ -254,7 +338,17 @@ export function OnboardingForm({ onComplete, existingData, isSettings = false }:
                   name="mission"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Mission Statement</FormLabel>
+                      <div className="flex items-center justify-between mb-2">
+                        <FormLabel>Mission Statement</FormLabel>
+                        {!isSettings && (
+                          <AIGenerateButton
+                            fieldName="mission statement"
+                            onGenerate={() => handleGenerate("mission")}
+                            isLoading={generatingField === "mission"}
+                            disabled={!canGenerate || generatingField !== null}
+                          />
+                        )}
+                      </div>
                       <FormDescription>
                         What is your company's mission and purpose?
                       </FormDescription>
@@ -274,7 +368,17 @@ export function OnboardingForm({ onComplete, existingData, isSettings = false }:
                   name="values"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Company Values</FormLabel>
+                      <div className="flex items-center justify-between mb-2">
+                        <FormLabel>Company Values</FormLabel>
+                        {!isSettings && (
+                          <AIGenerateButton
+                            fieldName="company values"
+                            onGenerate={() => handleGenerate("values")}
+                            isLoading={generatingField === "values"}
+                            disabled={!canGenerate || generatingField !== null}
+                          />
+                        )}
+                      </div>
                       <FormDescription>
                         What core values guide your company's operations and decisions?
                       </FormDescription>
@@ -294,7 +398,17 @@ export function OnboardingForm({ onComplete, existingData, isSettings = false }:
                   name="policies"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Key Policies (Optional)</FormLabel>
+                      <div className="flex items-center justify-between mb-2">
+                        <FormLabel>Key Policies (Optional)</FormLabel>
+                        {!isSettings && (
+                          <AIGenerateButton
+                            fieldName="key policies"
+                            onGenerate={() => handleGenerate("policies")}
+                            isLoading={generatingField === "policies"}
+                            disabled={!canGenerate || generatingField !== null}
+                          />
+                        )}
+                      </div>
                       <FormDescription>
                         Any important company policies relevant to tender responses (quality, safety, environmental, etc.)
                       </FormDescription>
@@ -323,7 +437,17 @@ export function OnboardingForm({ onComplete, existingData, isSettings = false }:
                   name="pastProjects"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Past Projects & Experience</FormLabel>
+                      <div className="flex items-center justify-between mb-2">
+                        <FormLabel>Past Projects & Experience</FormLabel>
+                        {!isSettings && (
+                          <AIGenerateButton
+                            fieldName="past projects"
+                            onGenerate={() => handleGenerate("pastProjects")}
+                            isLoading={generatingField === "pastProjects"}
+                            disabled={!canGenerate || generatingField !== null}
+                          />
+                        )}
+                      </div>
                       <FormDescription>
                         Describe your most relevant past projects, achievements, and experience
                       </FormDescription>
