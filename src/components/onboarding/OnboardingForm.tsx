@@ -13,9 +13,10 @@ import { CompanyProfileData, companyProfileSchema, industryOptions, teamSizeOpti
 interface OnboardingFormProps {
   onComplete: (data: CompanyProfileData) => void;
   existingData?: CompanyProfileData | null;
+  isSettings?: boolean;
 }
 
-export function OnboardingForm({ onComplete, existingData }: OnboardingFormProps) {
+export function OnboardingForm({ onComplete, existingData, isSettings = false }: OnboardingFormProps) {
   const form = useForm<CompanyProfileData>({
     resolver: zodResolver(companyProfileSchema),
     defaultValues: existingData || {
@@ -38,18 +39,20 @@ export function OnboardingForm({ onComplete, existingData }: OnboardingFormProps
   });
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-center mb-2">
-          {existingData ? "Update Your Profile" : "Welcome to TenderFlow"}
-        </h1>
-        <p className="text-muted-foreground text-center">
-          {existingData 
-            ? "Update your company profile information"
-            : "Let's set up your company profile to get started"
-          }
+    <div className={isSettings ? "" : "max-w-4xl mx-auto p-6"}>
+      {!isSettings && (
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-center mb-2">
+            {existingData ? "Update Your Profile" : "Welcome to TenderFlow"}
+          </h1>
+          <p className="text-muted-foreground text-center">
+            {existingData
+              ? "Update your company profile information"
+              : "Let's set up your company profile to get started"
+            }
         </p>
       </div>
+      )}
 
       <Card>
         <CardHeader>

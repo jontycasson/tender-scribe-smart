@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import Onboarding from "./pages/Onboarding";
+import AccountSettings from "./pages/AccountSettings";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
@@ -48,6 +49,7 @@ const App = () => (
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/onboarding" element={<Onboarding />} />
+              <Route path="/account-settings" element={<AccountSettings />} />
               <Route path="/new-tender" element={<NewTender />} />
               <Route path="/tender/:id" element={<TenderDetails />} />
               <Route path="/security" element={<Security />} />

@@ -107,7 +107,7 @@ export const Navigation = ({ showNewTenderButton = false }: NavigationProps) => 
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link to="/onboarding" className="cursor-pointer">
+                    <Link to="/account-settings" className="cursor-pointer">
                       <Settings className="mr-2 h-4 w-4" />
                       Account Settings
                     </Link>
