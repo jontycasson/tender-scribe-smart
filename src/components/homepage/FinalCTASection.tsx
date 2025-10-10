@@ -7,9 +7,9 @@ export const FinalCTASection = () => {
   const { user } = useAuth();
 
   const benefits = [
-    "14-day free trial",
-    "No credit card required", 
-    "EU data processing",
+    "Early access program",
+    "No credit card required",
+    "EU data hosting",
     "Cancel anytime"
   ];
 
@@ -22,7 +22,7 @@ export const FinalCTASection = () => {
               Start Winning More Tenders Today
             </h2>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-              Join 500+ UK businesses already transforming their tender success with AI-powered responses
+              Join UK businesses transforming their tender process with AI-powered responses
             </p>
           </div>
 
@@ -55,20 +55,20 @@ export const FinalCTASection = () => {
           <div className="pt-8 border-t">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
               <div>
-                <div className="text-2xl font-bold text-primary">500+</div>
-                <div className="text-sm text-muted-foreground">Happy Customers</div>
+                <div className="text-2xl font-bold text-primary">AI</div>
+                <div className="text-sm text-muted-foreground">Powered Analysis</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-primary">£15M+</div>
-                <div className="text-sm text-muted-foreground">Contracts Won</div>
+                <div className="text-2xl font-bold text-primary">Secure</div>
+                <div className="text-sm text-muted-foreground">EU Hosting</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-primary">4.9/5</div>
-                <div className="text-sm text-muted-foreground">Customer Rating</div>
+                <div className="text-2xl font-bold text-primary">Cloud</div>
+                <div className="text-sm text-muted-foreground">Based Platform</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-primary">99.9%</div>
-                <div className="text-sm text-muted-foreground">Uptime SLA</div>
+                <div className="text-2xl font-bold text-primary">GDPR</div>
+                <div className="text-sm text-muted-foreground">Compliant</div>
               </div>
             </div>
           </div>
