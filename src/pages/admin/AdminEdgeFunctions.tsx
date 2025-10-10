@@ -149,8 +149,9 @@ const AdminEdgeFunctions = () => {
   };
 
   const handleViewCode = (functionName: string) => {
+    const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
     window.open(
-      `https://supabase.com/dashboard/project/yfnqnsgggcbkdqhdlocd/functions/${functionName}`,
+      `https://supabase.com/dashboard/project/${projectId}/functions/${functionName}`,
       '_blank'
     );
   };
@@ -199,7 +200,7 @@ const AdminEdgeFunctions = () => {
             </Button>
             <Button variant="outline" asChild>
               <a
-                href="https://supabase.com/dashboard/project/yfnqnsgggcbkdqhdlocd/functions"
+                href={`https://supabase.com/dashboard/project/${import.meta.env.VITE_SUPABASE_PROJECT_ID}/functions`}
                 target="_blank"
                 rel="noopener noreferrer"
               >
