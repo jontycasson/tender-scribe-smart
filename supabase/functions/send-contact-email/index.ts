@@ -16,6 +16,18 @@ interface ContactRequest {
   recaptchaToken: string;
 }
 
+// HTML escape function to prevent XSS
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, m => map[m]);
+}
+
 const handler = async (req: Request): Promise<Response> => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
@@ -29,6 +41,28 @@ const handler = async (req: Request): Promise<Response> => {
     if (!name || !email || !subject || !message) {
       return new Response(
         JSON.stringify({ success: false, error: "All fields are required" }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
+    // Validate input lengths to prevent abuse
+    if (name.length > 100) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Name must be less than 100 characters" }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+    
+    if (subject.length > 200) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Subject must be less than 200 characters" }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+    
+    if (message.length > 2000) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Message must be less than 2000 characters" }),
         { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
@@ -78,11 +112,11 @@ const handler = async (req: Request): Promise<Response> => {
         subject: `Contact Form: ${subject}`,
         html: `
           <h2>New Contact Form Submission</h2>
-          <p><strong>Name:</strong> ${name}</p>
-          <p><strong>Email:</strong> ${email}</p>
-          <p><strong>Subject:</strong> ${subject}</p>
+          <p><strong>Name:</strong> ${escapeHtml(name)}</p>
+          <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+          <p><strong>Subject:</strong> ${escapeHtml(subject)}</p>
           <p><strong>Message:</strong></p>
-          <p>${message.replace(/\n/g, '<br>')}</p>
+          <p>${escapeHtml(message).replace(/\n/g, '<br>')}</p>
         `,
       }),
     });

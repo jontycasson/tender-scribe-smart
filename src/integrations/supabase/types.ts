@@ -52,6 +52,8 @@ export type Database = {
       company_profiles: {
         Row: {
           accreditations: string | null
+          ai_generation_count: number | null
+          ai_generation_last_reset: string | null
           company_name: string
           created_at: string
           id: string
@@ -69,6 +71,8 @@ export type Database = {
         }
         Insert: {
           accreditations?: string | null
+          ai_generation_count?: number | null
+          ai_generation_last_reset?: string | null
           company_name: string
           created_at?: string
           id?: string
@@ -86,6 +90,8 @@ export type Database = {
         }
         Update: {
           accreditations?: string | null
+          ai_generation_count?: number | null
+          ai_generation_last_reset?: string | null
           company_name?: string
           created_at?: string
           id?: string
@@ -261,6 +267,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      security_audit_log: {
+        Row: {
+          created_at: string | null
+          details: Json | null
+          event_type: string
+          id: string
+          ip_address: string | null
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          details?: Json | null
+          event_type: string
+          id?: string
+          ip_address?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          details?: Json | null
+          event_type?: string
+          id?: string
+          ip_address?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
       }
       tender_responses: {
         Row: {
@@ -487,6 +523,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_team_member: {
+        Args: { member_email: string; member_role?: string }
+        Returns: Json
+      }
       admin_create_company: {
         Args: {
           p_company_name: string
@@ -529,6 +569,10 @@ export type Database = {
       binary_quantize: {
         Args: { "": string } | { "": unknown }
         Returns: unknown
+      }
+      check_ai_generation_limit: {
+        Args: { user_id_param: string }
+        Returns: Json
       }
       check_demo_rate_limit: {
         Args: { email_param: string; ip_param: string }
@@ -629,40 +673,6 @@ export type Database = {
           user_id: string
         }[]
       }
-      get_all_users_for_admin_bypass: {
-        Args: Record<PropertyKey, never>
-        Returns: {
-          company_created_at: string
-          company_name: string
-          company_profile_id: string
-          company_updated_at: string
-          created_at: string
-          email: string
-          email_confirmed_at: string
-          has_company_profile: boolean
-          industry: string
-          last_sign_in_at: string
-          team_size: string
-          user_id: string
-        }[]
-      }
-      get_all_users_for_admin_test: {
-        Args: Record<PropertyKey, never>
-        Returns: {
-          company_created_at: string
-          company_name: string
-          company_profile_id: string
-          company_updated_at: string
-          created_at: string
-          email: string
-          email_confirmed_at: string
-          has_company_profile: boolean
-          industry: string
-          last_sign_in_at: string
-          team_size: string
-          user_id: string
-        }[]
-      }
       get_company_members: {
         Args: { company_id: string }
         Returns: {
@@ -682,7 +692,21 @@ export type Database = {
           unique_companies: number
         }[]
       }
+      get_team_members: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          email: string
+          joined_at: string
+          last_sign_in: string
+          role: string
+          user_id: string
+        }[]
+      }
       get_user_company_profile_id: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      get_user_company_role: {
         Args: Record<PropertyKey, never>
         Returns: string
       }
@@ -730,8 +754,20 @@ export type Database = {
         Args: { "": unknown }
         Returns: unknown
       }
+      increment_ai_generation_count: {
+        Args: { user_id_param: string }
+        Returns: undefined
+      }
       is_admin: {
         Args: { check_user_id?: string }
+        Returns: boolean
+      }
+      is_company_admin: {
+        Args: { company_id?: string }
+        Returns: boolean
+      }
+      is_company_owner: {
+        Args: { company_id?: string }
         Returns: boolean
       }
       ivfflat_bit_support: {
@@ -759,7 +795,7 @@ export type Database = {
         Returns: undefined
       }
       log_security_event: {
-        Args: { details?: Json; event_type: string }
+        Args: { details_param?: Json; event_type_param: string }
         Returns: undefined
       }
       make_user_admin: {
@@ -784,6 +820,10 @@ export type Database = {
           usage_count: number
         }[]
       }
+      remove_team_member: {
+        Args: { member_user_id: string }
+        Returns: Json
+      }
       remove_user_from_company: {
         Args: { company_id: string; target_user_id: string }
         Returns: Json
@@ -803,6 +843,10 @@ export type Database = {
       sparsevec_typmod_in: {
         Args: { "": unknown[] }
         Returns: number
+      }
+      update_team_member_role: {
+        Args: { member_user_id: string; new_role: string }
+        Returns: Json
       }
       vector_avg: {
         Args: { "": number[] }
