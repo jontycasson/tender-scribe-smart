@@ -145,7 +145,7 @@ serve(async (req) => {
   }
 
   try {
-    // Check authentication
+    // Get auth header to extract user
     const authHeader = req.headers.get('authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Authentication required' }), {
@@ -154,7 +154,14 @@ serve(async (req) => {
       });
     }
 
+    // Create Supabase client with service role for full access
     const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
+    // Create a separate client with user's auth to get user info
+    const supabaseAuth = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
       {
@@ -165,15 +172,18 @@ serve(async (req) => {
     );
 
     // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
     if (authError || !user) {
+      console.error('Auth error:', authError);
       return new Response(JSON.stringify({ error: 'Invalid authentication' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Check rate limit
+    console.log(`Authenticated user: ${user.id}`);
+
+    // Check rate limit using service role client
     const { data: rateLimitData, error: rateLimitError } = await supabaseClient
       .rpc('check_ai_generation_limit', { user_id_param: user.id });
 
