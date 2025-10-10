@@ -99,7 +99,7 @@ export function OnboardingForm({ onComplete, existingData, isSettings = false }:
       companyName: formValues.companyName,
       industry: formValues.industry,
       teamSize: formValues.teamSize,
-      servicesOffered: formValues.servicesOffered,
+      servicesOffered: formValues.servicesOffered.join(", "), // Convert array to string
       yearsInBusiness: formValues.yearsInBusiness,
     };
 
