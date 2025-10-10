@@ -22,9 +22,8 @@ const Index = () => {
         <div id="how-it-works">
           <HowItWorksSection />
         </div>
-        <PricingSection />
-        <div id="testimonials">
-          <TestimonialsSection />
+        <div id="pricing">
+          <PricingSection />
         </div>
         <div id="faq">
           <FAQSection />

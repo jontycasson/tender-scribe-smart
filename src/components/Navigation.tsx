@@ -37,8 +37,7 @@ export const Navigation = ({ showNewTenderButton = false }: NavigationProps) => 
   const navigationLinks = [
     { name: "How It Works", href: "/#how-it-works" },
     { name: "Benefits", href: "/#benefits" },
-    { name: "Testimonials", href: "/#testimonials" },
-    { name: "Pricing", href: "/pricing" },
+    { name: "Pricing", href: "/#pricing" },
     { name: "FAQ", href: "/#faq" }
   ];
 
