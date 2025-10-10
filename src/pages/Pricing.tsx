@@ -4,6 +4,7 @@ import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Link } from "react-router-dom";
 
 const pricingPlans = [
   {
@@ -140,8 +141,8 @@ const Pricing = () => {
               <p className="text-muted-foreground mb-6">
                 Our team is here to help you choose the right plan for your business.
               </p>
-              <Button variant="outline">
-                Contact Sales
+              <Button variant="outline" asChild>
+                <Link to="/contact">Contact Sales</Link>
               </Button>
             </div>
           </div>
