@@ -90,17 +90,24 @@ const Onboarding = () => {
 
       let error;
       if (existingProfile) {
-        // Update existing profile
+        // Update existing profile - don't modify subscription fields
         const { error: updateError } = await supabase
           .from("company_profiles")
           .update(profileData)
           .eq("user_id", user.id);
         error = updateError;
       } else {
-        // Create new profile
+        // Create new profile with trial initialization
+        const trialEndDate = new Date();
+        trialEndDate.setDate(trialEndDate.getDate() + 14); // 14 day trial
+
         const { error: insertError } = await supabase
           .from("company_profiles")
-          .insert(profileData);
+          .insert({
+            ...profileData,
+            trial_start_date: new Date().toISOString(),
+            trial_end_date: trialEndDate.toISOString(),
+          });
         error = insertError;
       }
 
