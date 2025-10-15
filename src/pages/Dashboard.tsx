@@ -12,6 +12,7 @@ import { Navigation } from "@/components/Navigation";
 import { useToast } from "@/hooks/use-toast";
 import { ProjectsView } from "@/components/dashboard/ProjectsView";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { SubscriptionStatusBanner } from "@/components/settings/SubscriptionStatusBanner";
 
 // Types
 interface CompanyProfile {
@@ -520,6 +521,9 @@ export default function Dashboard() {
             <p className="text-destructive">{state.error}</p>
           </div>
         )}
+
+        {/* Subscription Status Banner */}
+        <SubscriptionStatusBanner />
 
         <div className="mb-8">
           <div className="flex items-center justify-between">

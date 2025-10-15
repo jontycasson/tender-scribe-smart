@@ -17,6 +17,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Navigation } from "@/components/Navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SubscriptionStatusBanner } from "@/components/settings/SubscriptionStatusBanner";
 
 // Utility to safely normalize error messages
 const toErrMsg = (error: unknown): string => {
@@ -343,6 +344,65 @@ const NewTender = () => {
       return;
     }
 
+    // Check subscription status and tender creation limits
+    try {
+      const { data: canCreateData, error: canCreateError } = await supabase.rpc('can_create_tender');
+      
+      if (canCreateError) {
+        console.error('Error checking tender limits:', canCreateError);
+        throw canCreateError;
+      }
+
+      const canCreate = canCreateData as any;
+      
+      if (!canCreate.can_create) {
+        const reason = canCreate.reason;
+        
+        if (reason === 'trial_limit_reached') {
+          toast({
+            title: "Trial limit reached",
+            description: canCreate.message || "You've reached your trial limit. Upgrade to continue processing tenders.",
+            variant: "destructive",
+          });
+          navigate('/pricing');
+          return;
+        } else if (reason === 'subscription_inactive') {
+          toast({
+            title: "Subscription inactive",
+            description: canCreate.message || "Your subscription is not active. Please upgrade to continue.",
+            variant: "destructive",
+          });
+          navigate('/pricing');
+          return;
+        } else if (reason === 'no_company') {
+          toast({
+            title: "Company profile required",
+            description: "Please complete your company profile first.",
+            variant: "destructive",
+          });
+          navigate('/onboarding');
+          return;
+        } else {
+          toast({
+            title: "Cannot create tender",
+            description: canCreate.message || "Unable to create tender at this time.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+      
+      console.log('Tender creation allowed:', canCreate);
+    } catch (error) {
+      console.error('Error validating tender creation:', error);
+      toast({
+        title: "Validation error",
+        description: "Unable to verify subscription status. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     console.log('Starting upload and process for file:', file.name);
     setUploading(true);
     setProcessing(true);
@@ -549,6 +609,27 @@ const NewTender = () => {
             setProcessing(false);
             setUploading(false);
             setCurrentStep('review');
+            
+            // Increment trial tender counter (async but non-blocking)
+            setTimeout(async () => {
+              try {
+                const { data: companyProfile } = await supabase
+                  .from('company_profiles')
+                  .select('id, subscription_status')
+                  .eq('user_id', user?.id)
+                  .single();
+                
+                if (companyProfile?.subscription_status === 'trial') {
+                  await supabase.rpc('increment_trial_tender_count', {
+                    company_id: companyProfile.id
+                  });
+                  console.log('Trial tender count incremented');
+                }
+              } catch (error) {
+                console.error('Failed to increment trial counter:', error);
+              }
+            }, 0);
+            
             fetchTenderResponses(tenderId);
             // Unsubscribe now that we've reached terminal state
             if (!channelUnsubscribed) {
@@ -942,6 +1023,13 @@ const NewTender = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* Subscription Status Banner */}
+        {user && (
+          <div className="mb-6">
+            <SubscriptionStatusBanner />
+          </div>
+        )}
+        
         {currentStep === 'upload' && (
           <div className="max-w-2xl mx-auto">
             {!user && (
