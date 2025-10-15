@@ -4,7 +4,11 @@ import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "@/hooks/use-toast";
+import { useState } from "react";
 
 const pricingPlans = [
   {
@@ -72,6 +76,40 @@ const pricingPlans = [
 ];
 
 const Pricing = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+
+  const handleGetStarted = async (planName: string) => {
+    if (!user) {
+      navigate("/auth");
+      return;
+    }
+
+    setLoadingPlan(planName);
+
+    try {
+      const { data, error } = await supabase.functions.invoke("create-checkout-session", {
+        body: { plan_name: planName, billing_period: "monthly" },
+      });
+
+      if (error) throw error;
+
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch (error) {
+      console.error("Error creating checkout session:", error);
+      toast({
+        title: "Error",
+        description: "Failed to start checkout. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingPlan(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Navigation />
@@ -118,8 +156,10 @@ const Pricing = () => {
                     <Button 
                       className={`w-full mb-6 ${plan.highlight ? 'bg-primary hover:bg-primary/90' : ''}`}
                       variant={plan.highlight ? 'default' : 'outline'}
+                      onClick={() => handleGetStarted(plan.name)}
+                      disabled={loadingPlan === plan.name}
                     >
-                      Get Started
+                      {loadingPlan === plan.name ? "Loading..." : "Get Started"}
                     </Button>
                     
                     <ul className="space-y-3 text-left">

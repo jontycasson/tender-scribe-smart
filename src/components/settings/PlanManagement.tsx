@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { Loader2, Check, Crown } from "lucide-react";
+import { Loader2, Check, Crown, CreditCard } from "lucide-react";
 import { Link } from "react-router-dom";
 
 interface Plan {
@@ -32,6 +32,8 @@ export function PlanManagement() {
   const [currentPlan, setCurrentPlan] = useState<string>('Solo');
   const [selectedPlan, setSelectedPlan] = useState<string>('Solo');
   const [isOwner, setIsOwner] = useState(false);
+  const [hasStripeSubscription, setHasStripeSubscription] = useState(false);
+  const [isComplimentary, setIsComplimentary] = useState(false);
 
   useEffect(() => {
     fetchCurrentPlan();
@@ -44,7 +46,7 @@ export function PlanManagement() {
     try {
       const { data, error } = await supabase
         .from('company_profiles')
-        .select('plan_name, user_id')
+        .select('plan_name, user_id, stripe_subscription_id, is_complimentary')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -54,6 +56,8 @@ export function PlanManagement() {
         setIsOwner(true);
         setCurrentPlan(data.plan_name || 'Solo');
         setSelectedPlan(data.plan_name || 'Solo');
+        setHasStripeSubscription(!!data.stripe_subscription_id);
+        setIsComplimentary(data.is_complimentary || false);
       } else {
         setIsOwner(false);
       }
@@ -83,34 +87,43 @@ export function PlanManagement() {
 
     setUpdating(true);
     try {
-      const { data, error } = await supabase.rpc('update_company_plan', {
-        p_plan_name: selectedPlan,
-        p_seat_limit: selectedPlanData.seats
+      // Use Stripe checkout for plan changes
+      const { data, error } = await supabase.functions.invoke("create-checkout-session", {
+        body: { plan_name: selectedPlan, billing_period: "monthly" },
       });
 
       if (error) throw error;
 
-      const result = data as any;
-      if (!result.success) {
-        toast({
-          title: "Unable to update plan",
-          description: result.error || "Failed to update plan",
-          variant: "destructive",
-        });
-        return;
+      if (data.url) {
+        window.location.href = data.url;
       }
-
-      toast({
-        title: "Plan updated",
-        description: `Successfully switched to ${selectedPlan} plan with ${selectedPlanData.seats} seats`,
-      });
-
-      setCurrentPlan(selectedPlan);
     } catch (error: any) {
       console.error("Error updating plan:", error);
       toast({
         title: "Error",
         description: error.message || "Failed to update plan",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleManageBilling = async () => {
+    setUpdating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-customer-portal");
+
+      if (error) throw error;
+
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch (error: any) {
+      console.error("Error opening portal:", error);
+      toast({
+        title: "Error",
+        description: "Failed to open billing portal",
         variant: "destructive",
       });
     } finally {
@@ -196,22 +209,30 @@ export function PlanManagement() {
         </div>
 
         <div className="flex items-center justify-between pt-4 border-t">
-          <Button variant="outline" asChild>
-            <Link to="/pricing">View Full Details</Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" asChild>
+              <Link to="/pricing">View Full Details</Link>
+            </Button>
+            {hasStripeSubscription && (
+              <Button variant="outline" onClick={handleManageBilling} disabled={updating}>
+                <CreditCard className="h-4 w-4 mr-2" />
+                Manage Billing
+              </Button>
+            )}
+          </div>
           <Button 
             onClick={handleUpdatePlan}
-            disabled={updating || selectedPlan === currentPlan}
+            disabled={updating || selectedPlan === currentPlan || isComplimentary}
           >
             {updating ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Updating...
+                Loading...
               </>
             ) : selectedPlan === currentPlan ? (
               'Current Plan'
             ) : (
-              'Update Plan'
+              'Upgrade Plan'
             )}
           </Button>
         </div>
@@ -219,9 +240,15 @@ export function PlanManagement() {
         <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
           <p className="font-medium mb-1">Note:</p>
           <ul className="list-disc list-inside space-y-1">
-            <li>Plan changes take effect immediately</li>
-            <li>You cannot downgrade if current team size exceeds new seat limit</li>
-            <li>For billing questions, please contact support</li>
+            {isComplimentary ? (
+              <li>You have complimentary access. Contact support to make changes.</li>
+            ) : (
+              <>
+                <li>Plan changes are processed securely through Stripe</li>
+                <li>You can manage billing and view invoices in the billing portal</li>
+                <li>Changes take effect immediately upon payment</li>
+              </>
+            )}
           </ul>
         </div>
       </CardContent>

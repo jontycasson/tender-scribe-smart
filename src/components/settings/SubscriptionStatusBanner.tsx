@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Crown, AlertTriangle, CheckCircle2, Gift } from "lucide-react";
+import { Crown, AlertTriangle, CheckCircle2, Gift, CreditCard } from "lucide-react";
 import { Link } from "react-router-dom";
 
 interface SubscriptionStatus {
@@ -24,6 +24,7 @@ export function SubscriptionStatusBanner() {
   const { user } = useAuth();
   const [status, setStatus] = useState<SubscriptionStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [openingPortal, setOpeningPortal] = useState(false);
 
   useEffect(() => {
     fetchStatus();
@@ -40,6 +41,21 @@ export function SubscriptionStatusBanner() {
       console.error('Error fetching subscription status:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleManageBilling = async () => {
+    setOpeningPortal(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-customer-portal");
+      if (error) throw error;
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch (error) {
+      console.error("Error opening portal:", error);
+    } finally {
+      setOpeningPortal(false);
     }
   };
 
@@ -75,11 +91,34 @@ export function SubscriptionStatusBanner() {
             <span className="text-green-900 dark:text-green-200">
               <strong>{status.plan_name}</strong> plan active
               {status.billing_period && ` (${status.billing_period})`}
+              {status.cancel_at_period_end && ' - Cancels at period end'}
             </span>
           </div>
-          <Link to="/settings">
-            <Button variant="ghost" size="sm">Manage</Button>
-          </Link>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={handleManageBilling} disabled={openingPortal}>
+              <CreditCard className="h-3 w-3 mr-1" />
+              {openingPortal ? 'Loading...' : 'Billing'}
+            </Button>
+            <Link to="/settings">
+              <Button variant="ghost" size="sm">Manage</Button>
+            </Link>
+          </div>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  // Past due payment
+  if (status.subscription_status === 'past_due') {
+    return (
+      <Alert variant="destructive">
+        <AlertTriangle className="h-4 w-4" />
+        <AlertDescription className="flex items-center justify-between">
+          <span>Your last payment failed. Please update your payment method to continue.</span>
+          <Button variant="outline" size="sm" onClick={handleManageBilling} disabled={openingPortal}>
+            <CreditCard className="h-3 w-3 mr-1" />
+            {openingPortal ? 'Loading...' : 'Update Payment'}
+          </Button>
         </AlertDescription>
       </Alert>
     );
