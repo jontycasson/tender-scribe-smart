@@ -54,10 +54,16 @@ export type Database = {
           accreditations: string | null
           ai_generation_count: number | null
           ai_generation_last_reset: string | null
+          billing_period: string | null
+          cancel_at_period_end: boolean | null
           company_name: string
+          complimentary_reason: string | null
           created_at: string
+          current_period_end: string | null
+          current_period_start: string | null
           id: string
           industry: string
+          is_complimentary: boolean | null
           mission: string
           past_projects: string
           plan_name: string | null
@@ -66,7 +72,14 @@ export type Database = {
           seat_limit: number | null
           services_offered: string[]
           specializations: string
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          subscription_status: string | null
           team_size: string
+          trial_end_date: string | null
+          trial_start_date: string | null
+          trial_tender_limit: number | null
+          trial_tenders_processed: number | null
           updated_at: string
           user_id: string
           values: string
@@ -76,10 +89,16 @@ export type Database = {
           accreditations?: string | null
           ai_generation_count?: number | null
           ai_generation_last_reset?: string | null
+          billing_period?: string | null
+          cancel_at_period_end?: boolean | null
           company_name: string
+          complimentary_reason?: string | null
           created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
           id?: string
           industry: string
+          is_complimentary?: boolean | null
           mission: string
           past_projects: string
           plan_name?: string | null
@@ -88,7 +107,14 @@ export type Database = {
           seat_limit?: number | null
           services_offered?: string[]
           specializations: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_status?: string | null
           team_size: string
+          trial_end_date?: string | null
+          trial_start_date?: string | null
+          trial_tender_limit?: number | null
+          trial_tenders_processed?: number | null
           updated_at?: string
           user_id: string
           values: string
@@ -98,10 +124,16 @@ export type Database = {
           accreditations?: string | null
           ai_generation_count?: number | null
           ai_generation_last_reset?: string | null
+          billing_period?: string | null
+          cancel_at_period_end?: boolean | null
           company_name?: string
+          complimentary_reason?: string | null
           created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
           id?: string
           industry?: string
+          is_complimentary?: boolean | null
           mission?: string
           past_projects?: string
           plan_name?: string | null
@@ -110,7 +142,14 @@ export type Database = {
           seat_limit?: number | null
           services_offered?: string[]
           specializations?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_status?: string | null
           team_size?: string
+          trial_end_date?: string | null
+          trial_start_date?: string | null
+          trial_tender_limit?: number | null
+          trial_tenders_processed?: number | null
           updated_at?: string
           user_id?: string
           values?: string
@@ -372,6 +411,74 @@ export type Database = {
         }
         Relationships: []
       }
+      subscription_events: {
+        Row: {
+          company_profile_id: string | null
+          created_at: string | null
+          event_data: Json | null
+          event_type: string
+          id: string
+          stripe_event_id: string | null
+        }
+        Insert: {
+          company_profile_id?: string | null
+          created_at?: string | null
+          event_data?: Json | null
+          event_type: string
+          id?: string
+          stripe_event_id?: string | null
+        }
+        Update: {
+          company_profile_id?: string | null
+          created_at?: string | null
+          event_data?: Json | null
+          event_type?: string
+          id?: string
+          stripe_event_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_events_company_profile_id_fkey"
+            columns: ["company_profile_id"]
+            isOneToOne: false
+            referencedRelation: "company_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subscription_prices: {
+        Row: {
+          billing_period: string
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          plan_name: string
+          price_gbp: number
+          seats: number
+          stripe_price_id: string | null
+        }
+        Insert: {
+          billing_period: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          plan_name: string
+          price_gbp: number
+          seats: number
+          stripe_price_id?: string | null
+        }
+        Update: {
+          billing_period?: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          plan_name?: string
+          price_gbp?: number
+          seats?: number
+          stripe_price_id?: string | null
+        }
+        Relationships: []
+      }
       tender_responses: {
         Row: {
           ai_generated_answer: string | null
@@ -628,8 +735,20 @@ export type Database = {
         Args: { target_user_email: string }
         Returns: Json
       }
+      admin_grant_complimentary_access: {
+        Args: {
+          p_plan_name: string
+          p_reason: string
+          target_company_id: string
+        }
+        Returns: Json
+      }
       admin_reset_user_password: {
         Args: { target_user_email: string }
+        Returns: Json
+      }
+      admin_revoke_complimentary_access: {
+        Args: { target_company_id: string }
         Returns: Json
       }
       assign_user_to_company: {
@@ -643,6 +762,10 @@ export type Database = {
       binary_quantize: {
         Args: { "": string } | { "": unknown }
         Returns: unknown
+      }
+      can_create_tender: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
       }
       check_ai_generation_limit: {
         Args: { user_id_param: string }
@@ -770,6 +893,10 @@ export type Database = {
           unique_companies: number
         }[]
       }
+      get_subscription_status: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       get_team_members: {
         Args: Record<PropertyKey, never>
         Returns: {
@@ -836,6 +963,10 @@ export type Database = {
         Args: { user_id_param: string }
         Returns: undefined
       }
+      increment_trial_tender_count: {
+        Args: { company_id: string }
+        Returns: undefined
+      }
       is_admin: {
         Args: { check_user_id?: string }
         Returns: boolean
@@ -846,6 +977,10 @@ export type Database = {
       }
       is_company_owner: {
         Args: { company_id?: string }
+        Returns: boolean
+      }
+      is_subscription_active: {
+        Args: Record<PropertyKey, never>
         Returns: boolean
       }
       ivfflat_bit_support: {
