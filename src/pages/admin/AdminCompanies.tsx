@@ -5,20 +5,31 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
-import { Search, Building, FileText, Calendar, TrendingUp, MoreHorizontal } from "lucide-react";
+import { Search, Building, FileText, Calendar, TrendingUp, MoreHorizontal, Gift, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { CompanyMembersDialog } from "@/components/admin/companies/CompanyMembersDialog";
 import { UserTendersDialog } from "@/components/admin/users/UserTendersDialog";
 import { CreateCompanyDialog } from "@/components/admin/companies/CreateCompanyDialog";
 import { Building2 } from "lucide-react";
 import { EditCompanyDialog } from "@/components/admin/companies/EditCompanyDialog";
-import { Edit } from "lucide-react";
+import { GrantComplimentaryDialog } from "@/components/admin/companies/GrantComplimentaryDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -38,6 +49,10 @@ interface CompanyWithStats {
   tenderCount?: number;
   lastTenderDate?: string;
   activeProjects?: number;
+  subscription_status?: string;
+  is_complimentary?: boolean;
+  complimentary_reason?: string;
+  plan_name?: string;
 }
 
 const AdminCompanies = () => {
@@ -51,6 +66,9 @@ const AdminCompanies = () => {
   const [createCompanyDialogOpen, setCreateCompanyDialogOpen] = useState(false);
   const [editCompanyDialogOpen, setEditCompanyDialogOpen] = useState(false);
   const [companyToEdit, setCompanyToEdit] = useState<string | null>(null);
+  const [grantComplimentaryDialogOpen, setGrantComplimentaryDialogOpen] = useState(false);
+  const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
+  const [companyForComplimentary, setCompanyForComplimentary] = useState<CompanyWithStats | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -69,22 +87,41 @@ const AdminCompanies = () => {
     try {
       setLoading(true);
 
-      const { data: companiesData, error } = await supabase
+      // Fetch company stats
+      const { data: companiesData, error: statsError } = await supabase
         .rpc('get_admin_companies_with_stats');
 
-      if (error) throw error;
+      if (statsError) throw statsError;
 
-      const companiesWithStats = (companiesData || []).map((company: any) => ({
-        id: company.id,
-        company_name: company.company_name,
-        industry: company.industry,
-        team_size: company.team_size,
-        created_at: company.created_at,
-        updated_at: company.updated_at,
-        tenderCount: Number(company.tender_count) || 0,
-        lastTenderDate: company.last_tender_date,
-        activeProjects: Number(company.project_count) || 0,
-      })) as CompanyWithStats[];
+      // Fetch subscription details separately
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('company_profiles')
+        .select('id, subscription_status, is_complimentary, complimentary_reason, plan_name');
+
+      if (profilesError) throw profilesError;
+
+      const subscriptionMap = new Map(
+        profilesData?.map(p => [p.id, p]) || []
+      );
+
+      const companiesWithStats = (companiesData || []).map((company: any) => {
+        const subscription = subscriptionMap.get(company.id);
+        return {
+          id: company.id,
+          company_name: company.company_name,
+          industry: company.industry,
+          team_size: company.team_size,
+          created_at: company.created_at,
+          updated_at: company.updated_at,
+          tenderCount: Number(company.tender_count) || 0,
+          lastTenderDate: company.last_tender_date,
+          activeProjects: Number(company.project_count) || 0,
+          subscription_status: subscription?.subscription_status,
+          is_complimentary: subscription?.is_complimentary,
+          complimentary_reason: subscription?.complimentary_reason,
+          plan_name: subscription?.plan_name,
+        };
+      }) as CompanyWithStats[];
 
       setCompanies(companiesWithStats);
     } catch (error) {
@@ -127,6 +164,38 @@ const AdminCompanies = () => {
       case '201-1000': return 'bg-orange-100 text-orange-800';
       case '1000+': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const handleRevokeComplimentary = async () => {
+    if (!companyForComplimentary) return;
+
+    try {
+      const { data, error } = await supabase.rpc('admin_revoke_complimentary_access', {
+        target_company_id: companyForComplimentary.id
+      });
+
+      if (error) throw error;
+
+      const result = data as { success: boolean; error?: string };
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to revoke complimentary access');
+      }
+
+      toast({
+        title: "Success",
+        description: `Complimentary access revoked for ${companyForComplimentary.company_name}. Company moved to trial status.`
+      });
+
+      fetchCompanies();
+      setRevokeDialogOpen(false);
+      setCompanyForComplimentary(null);
+    } catch (error: any) {
+      toast({ 
+        title: "Error", 
+        description: error.message, 
+        variant: "destructive" 
+      });
     }
   };
 
@@ -259,6 +328,7 @@ const AdminCompanies = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Company</TableHead>
+                    <TableHead>Plan</TableHead>
                     <TableHead>Industry</TableHead>
                     <TableHead>Team Size</TableHead>
                     <TableHead>Tenders</TableHead>
@@ -276,8 +346,30 @@ const AdminCompanies = () => {
                         <TableCell>
                           <div className="flex items-center space-x-2">
                             <Building className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-medium">{company.company_name}</span>
+                            <div>
+                              <div className="font-medium">{company.company_name}</div>
+                              {company.is_complimentary && (
+                                <div className="flex items-center gap-1 mt-1">
+                                  <Gift className="h-3 w-3 text-primary" />
+                                  <span className="text-xs text-muted-foreground">
+                                    Complimentary
+                                  </span>
+                                </div>
+                              )}
+                            </div>
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          {company.is_complimentary ? (
+                            <Badge className="bg-primary/10 text-primary border-primary/20">
+                              <Gift className="h-3 w-3 mr-1" />
+                              {company.plan_name || 'Enterprise'}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline">
+                              {company.plan_name || 'Solo'}
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline">{company.industry}</Badge>
@@ -322,7 +414,7 @@ const AdminCompanies = () => {
                                 <MoreHorizontal className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
+                            <DropdownMenuContent align="end" className="bg-background">
                               <DropdownMenuItem
                                 onClick={() => {
                                   setSelectedCompany(company);
@@ -330,14 +422,14 @@ const AdminCompanies = () => {
                                 }}
                               >
                                 View Tenders
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                   setCompanyToEdit(company.id);
-                                   setEditCompanyDialogOpen(true);
-                                    }}
-                                      >
-                                    Edit Company
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setCompanyToEdit(company.id);
+                                  setEditCompanyDialogOpen(true);
+                                }}
+                              >
+                                Edit Company
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => {
@@ -347,6 +439,31 @@ const AdminCompanies = () => {
                               >
                                 Manage Members
                               </DropdownMenuItem>
+                              
+                              <DropdownMenuSeparator />
+                              
+                              {company.is_complimentary ? (
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setCompanyForComplimentary(company);
+                                    setRevokeDialogOpen(true);
+                                  }}
+                                  className="text-destructive focus:text-destructive"
+                                >
+                                  <XCircle className="mr-2 h-4 w-4" />
+                                  Revoke Complimentary Access
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setCompanyForComplimentary(company);
+                                    setGrantComplimentaryDialogOpen(true);
+                                  }}
+                                >
+                                  <Gift className="mr-2 h-4 w-4" />
+                                  Grant Complimentary Access
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
@@ -390,6 +507,47 @@ const AdminCompanies = () => {
           companyId={companyToEdit}
           onSuccess={fetchCompanies}
         />
+      )}
+
+      {companyForComplimentary && (
+        <>
+          <GrantComplimentaryDialog
+            open={grantComplimentaryDialogOpen}
+            onOpenChange={setGrantComplimentaryDialogOpen}
+            companyId={companyForComplimentary.id}
+            companyName={companyForComplimentary.company_name}
+            onSuccess={fetchCompanies}
+          />
+
+          <AlertDialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Revoke Complimentary Access</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to revoke complimentary access for <strong>{companyForComplimentary.company_name}</strong>?
+                  <br /><br />
+                  This will:
+                  <ul className="list-disc list-inside mt-2 space-y-1">
+                    <li>Move them to trial status (14 days, 10 tenders)</li>
+                    <li>Start their trial period immediately</li>
+                    <li>Log this action in subscription events</li>
+                  </ul>
+                  {companyForComplimentary.complimentary_reason && (
+                    <div className="mt-3 p-2 bg-muted rounded text-sm">
+                      <strong>Original reason:</strong> {companyForComplimentary.complimentary_reason}
+                    </div>
+                  )}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleRevokeComplimentary} className="bg-destructive hover:bg-destructive/90">
+                  Revoke Access
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
       )}
     </AdminLayout>
   );
