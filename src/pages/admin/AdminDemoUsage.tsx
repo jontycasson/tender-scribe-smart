@@ -73,6 +73,9 @@ const AdminDemoUsage = () => {
         return;
       }
 
+      // Set submissions immediately so table populates even if stats fail
+      setSubmissions(submissionsData || []);
+
       // Fetch demo statistics (secured function)
       const { data: statsData, error: statsError } = await supabase
         .rpc('get_demo_usage_stats');
@@ -80,16 +83,15 @@ const AdminDemoUsage = () => {
       if (statsError) {
         console.error('Error fetching demo stats:', statsError);
         toast({
-          title: "Access Error", 
-          description: "Failed to load demo statistics. Admin access required.",
+          title: "Stats Warning", 
+          description: "Failed to load demo statistics. Table data is available.",
           variant: "destructive",
         });
-        return;
+        // Don't return - submissions are already set
+      } else {
+        const stats = Array.isArray(statsData) ? statsData[0] : statsData;
+        setStats(stats);
       }
-
-      setSubmissions(submissionsData || []);
-      const stats = Array.isArray(statsData) ? statsData[0] : statsData;
-      setStats(stats);
     } catch (error) {
       console.error('Error fetching demo data:', error);
       toast({
