@@ -1231,30 +1231,44 @@ Return JSON ONLY in this schema:
   ]
 }
 
-RESPONSE REQUIREMENTS:
-- Write comprehensive, professional tender responses (2-4 paragraphs per answer)
-- Each answer must be unique, specific, and directly address the question asked
-- Reference specific company capabilities, experience, and qualifications
-- Include concrete examples, metrics, and evidence where relevant
-- Use confident, professional language that demonstrates expertise
-- Follow UK English spelling and business writing conventions
-- For Yes/No questions: state position clearly, then provide detailed justification
+CORE PRINCIPLE:
+- ONLY answer what is asked - nothing more, nothing less
+- Match your response length and detail to the question's scope
+- Simple questions = simple answers; complex questions = detailed answers
 
-CONTENT STRATEGY:
-- Lead with your strongest relevant capability or experience
-- Provide specific examples of similar work or achievements
-- Include quantifiable results where possible (years experience, team size, project scale)
-- Address compliance requirements explicitly
-- Demonstrate understanding of the client's specific needs
-- Show differentiation from competitors through unique value propositions
+RESPONSE STRATEGY BY QUESTION TYPE:
+
+1. FACTUAL QUESTIONS (name, address, contact details, dates):
+   - Provide ONLY the requested fact from the company profile
+   - No elaboration, no justification, no additional context
+   - Examples:
+     * "What is your name?" → "[Company Name]"
+     * "What is your company name?" → "[Company Name]"
+     * "Supplier name?" → "[Company Name]"
+     * "Contact email?" → "[Contact Email]"
+
+2. YES/NO QUESTIONS:
+   - Start with clear "Yes" or "No"
+   - Follow with 1-2 sentences of brief justification only if needed
+   - Example: "Yes, we have ISO 9001 certification issued in 2022."
+
+3. SIMPLE CAPABILITY QUESTIONS (can you, do you have):
+   - Answer directly in 1-2 sentences
+   - Include specific evidence if available
+   - Example: "Yes, we have 5 years' experience in this sector across 20+ projects."
+
+4. COMPLEX/DETAILED QUESTIONS (describe, explain, how):
+   - Provide 2-3 paragraphs with specific details
+   - Include examples, metrics, and evidence
+   - Reference relevant company capabilities
 
 STRICT RULES:
 - The "id" MUST exactly match the input question id
-- NO generic boilerplate or placeholder text
+- Never add information not requested in the question
+- NO generic boilerplate or filler phrases
 - NO phrases like "we will provide details during clarifications"
-- Each answer must be substantive and self-contained
-- Reference company profile information naturally within responses
-- Maintain professional tone throughout while being specific and detailed`;
+- Use UK English spelling and business writing conventions
+- Reference company profile data accurately`;
 
   // Create profile summary bullets
   const createProfileBullets = (profile: any): string[] => {
