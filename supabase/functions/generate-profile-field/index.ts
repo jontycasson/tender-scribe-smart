@@ -155,23 +155,23 @@ serve(async (req) => {
       });
     }
 
-    // Create Supabase client with service role for database operations
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
-
     // Extract JWT token from authorization header
     const jwt = authHeader.replace('Bearer ', '');
-    
-    // Verify JWT and get user ID using service role client
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(jwt);
-    
+
+    // Create auth client with anon key for JWT validation
+    const supabaseAuth = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    );
+
+    // Verify JWT and get user ID using anon key client
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(jwt);
+
     if (authError || !user) {
       console.error('Auth error:', authError);
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         error: 'Invalid authentication',
-        details: authError?.message 
+        details: authError?.message
       }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -179,6 +179,12 @@ serve(async (req) => {
     }
 
     console.log(`Authenticated user: ${user.id}`);
+
+    // Create Supabase client with service role for database operations
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
 
     // Check rate limit using service role client
     const { data: rateLimitData, error: rateLimitError } = await supabaseClient
