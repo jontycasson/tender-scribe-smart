@@ -30,7 +30,7 @@ export const ExportButton: React.FC<ExportButtonProps> = ({ tenderId }) => {
         }),
         new Paragraph({ children: [new TextRun("")] }), // Empty line
         new Paragraph({
-          children: [new TextRun(item.answer)],
+          children: [new TextRun(item.answer || 'No answer provided')],
         }),
         new Paragraph({ children: [new TextRun("")] }), // Empty line
       );
@@ -71,7 +71,8 @@ export const ExportButton: React.FC<ExportButtonProps> = ({ tenderId }) => {
       
       // Answer
       pdf.setFont(undefined, 'normal');
-      const answerLines = pdf.splitTextToSize(item.answer, 170);
+      const answerText = item.answer || 'No answer provided';
+      const answerLines = pdf.splitTextToSize(answerText, 170);
       pdf.text(answerLines, margin, yPosition);
       yPosition += answerLines.length * 5 + 15;
     });
@@ -93,21 +94,30 @@ export const ExportButton: React.FC<ExportButtonProps> = ({ tenderId }) => {
   const handleExport = async (format: 'docx' | 'pdf') => {
     setIsExporting(true);
     try {
-      const { data, error } = await supabase.functions.invoke('export-tender', {
-        body: JSON.stringify({ tenderId, format }),
+      const { data: rawData, error } = await supabase.functions.invoke('export-tender', {
+        body: { tenderId, format },
       });
 
       if (error) throw error;
+
+      console.log('[EXPORT] Raw data received:', rawData);
+
+      // The edge function returns the data directly, no need to parse
+      const exportData = rawData;
+
+      if (!exportData || !exportData.title || !exportData.items) {
+        throw new Error('Invalid export data structure');
+      }
 
       let blob: Blob;
       let filename: string;
 
       if (format === 'docx') {
-        blob = await generateDOCX(data);
-        filename = `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}_responses.docx`;
+        blob = await generateDOCX(exportData);
+        filename = `${exportData.title.replace(/[^a-zA-Z0-9]/g, '_')}_responses.docx`;
       } else {
-        blob = generatePDF(data);
-        filename = `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}_responses.pdf`;
+        blob = generatePDF(exportData);
+        filename = `${exportData.title.replace(/[^a-zA-Z0-9]/g, '_')}_responses.pdf`;
       }
 
       downloadFile(blob, filename);
