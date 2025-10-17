@@ -1600,10 +1600,15 @@ async function saveAnswerBatch(
       question_type: 'standard',
       response_length: answer.answer.length,
       processing_time_ms: 0,
-      // Add source tracking information
+      // Add comprehensive source tracking information
       original_reference: question.original_reference || null,
       source_location: question.source_location || null,
-      page_number: question.page_number || null
+      page_number: question.page_number || null,
+      original_line_number: question.original_line_number || null,
+      sheet_name: question.sheet_name || null,
+      section_name: question.section_name || null,
+      chunk_index: question.chunk_index || null,
+      source_confidence: question.confidence || null
     });
   }
   

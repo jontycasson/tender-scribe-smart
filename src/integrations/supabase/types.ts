@@ -482,51 +482,75 @@ export type Database = {
       tender_responses: {
         Row: {
           ai_generated_answer: string | null
+          chunk_index: number | null
           company_profile_id: string
           created_at: string
           id: string
           is_approved: boolean | null
           model_used: string | null
+          original_line_number: number | null
+          original_reference: string | null
+          page_number: number | null
           processing_time_ms: number | null
           question: string
           question_index: number | null
           question_type: string | null
           research_used: boolean | null
           response_length: number | null
+          section_name: string | null
+          sheet_name: string | null
+          source_confidence: number | null
+          source_location: string | null
           tender_id: string
           updated_at: string
           user_edited_answer: string | null
         }
         Insert: {
           ai_generated_answer?: string | null
+          chunk_index?: number | null
           company_profile_id: string
           created_at?: string
           id?: string
           is_approved?: boolean | null
           model_used?: string | null
+          original_line_number?: number | null
+          original_reference?: string | null
+          page_number?: number | null
           processing_time_ms?: number | null
           question: string
           question_index?: number | null
           question_type?: string | null
           research_used?: boolean | null
           response_length?: number | null
+          section_name?: string | null
+          sheet_name?: string | null
+          source_confidence?: number | null
+          source_location?: string | null
           tender_id: string
           updated_at?: string
           user_edited_answer?: string | null
         }
         Update: {
           ai_generated_answer?: string | null
+          chunk_index?: number | null
           company_profile_id?: string
           created_at?: string
           id?: string
           is_approved?: boolean | null
           model_used?: string | null
+          original_line_number?: number | null
+          original_reference?: string | null
+          page_number?: number | null
           processing_time_ms?: number | null
           question?: string
           question_index?: number | null
           question_type?: string | null
           research_used?: boolean | null
           response_length?: number | null
+          section_name?: string | null
+          sheet_name?: string | null
+          source_confidence?: number | null
+          source_location?: string | null
           tender_id?: string
           updated_at?: string
           user_edited_answer?: string | null

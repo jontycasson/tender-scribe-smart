@@ -463,8 +463,43 @@ const TenderDetails = () => {
               {responses?.map((response) => (
                   <Card key={response.id}>
                     <CardHeader>
-                      <CardTitle>Question {response.question_index}</CardTitle>
-                      <CardDescription>{response.question}</CardDescription>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <CardTitle className="flex items-center gap-2">
+                            Question {response.question_index}
+                            {response.original_reference && (
+                              <Badge variant="outline" className="font-mono text-xs">
+                                {response.original_reference}
+                              </Badge>
+                            )}
+                          </CardTitle>
+                          <CardDescription className="mt-2">{response.question}</CardDescription>
+                          {(response.source_location || response.sheet_name || response.page_number) && (
+                            <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                              {response.source_location && (
+                                <Badge variant="secondary" className="text-xs">
+                                  📍 {response.source_location}
+                                </Badge>
+                              )}
+                              {response.sheet_name && (
+                                <Badge variant="secondary" className="text-xs">
+                                  📄 {response.sheet_name}
+                                </Badge>
+                              )}
+                              {response.page_number && (
+                                <Badge variant="secondary" className="text-xs">
+                                  📖 Page {response.page_number}
+                                </Badge>
+                              )}
+                              {response.original_line_number && (
+                                <Badge variant="outline" className="text-xs">
+                                  Line {response.original_line_number}
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </CardHeader>
                   <CardContent>
                     <div className="mb-4">
