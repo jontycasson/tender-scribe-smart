@@ -1298,21 +1298,9 @@ const NewTender = () => {
                 </p>
               </div>
               <div className="flex space-x-2">
-                <Button onClick={() => exportResponses('rtf')} variant="outline">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export RTF
-                </Button>
-                <Button onClick={() => exportResponses('txt')} variant="outline">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export TXT
-                </Button>
-                <Button onClick={() => exportResponses('csv')} variant="outline">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export CSV
-                </Button>
                 <Button onClick={finaliseTender} disabled={questions.some(q => !q.is_approved)}>
                   <Save className="h-4 w-4 mr-2" />
-                  Finalise Tender
+                  Save and Continue
                 </Button>
               </div>
             </div>
