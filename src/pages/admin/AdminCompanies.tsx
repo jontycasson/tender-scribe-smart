@@ -100,12 +100,20 @@ const AdminCompanies = () => {
 
       if (profilesError) throw profilesError;
 
+      console.log('Profiles data:', profilesData);
+      console.log('Companies data:', companiesData);
+
       const subscriptionMap = new Map(
         profilesData?.map(p => [p.id, p]) || []
       );
 
       const companiesWithStats = (companiesData || []).map((company: any) => {
         const subscription = subscriptionMap.get(company.id);
+        console.log(`Company ${company.company_name}:`, {
+          id: company.id,
+          subscription,
+          is_complimentary: subscription?.is_complimentary
+        });
         return {
           id: company.id,
           company_name: company.company_name,
@@ -117,12 +125,13 @@ const AdminCompanies = () => {
           lastTenderDate: company.last_tender_date,
           activeProjects: Number(company.project_count) || 0,
           subscription_status: subscription?.subscription_status,
-          is_complimentary: subscription?.is_complimentary,
+          is_complimentary: subscription?.is_complimentary === true,
           complimentary_reason: subscription?.complimentary_reason,
           plan_name: subscription?.plan_name,
         };
       }) as CompanyWithStats[];
 
+      console.log('Final companies with stats:', companiesWithStats);
       setCompanies(companiesWithStats);
     } catch (error) {
       console.error('Error fetching companies:', error);
