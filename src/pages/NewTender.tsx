@@ -652,18 +652,41 @@ const NewTender = () => {
       .subscribe();
     
     try {
-      // Call edge function to process document
+      // Call edge function to process document with timeout
       const processorName = USE_V2_PROCESSOR ? 'process-tender-v2' : 'process-tender';
-      console.log(`Calling ${processorName} edge function...`);
+      console.log(`[CLIENT] Calling ${processorName} edge function with timeout...`);
       
-      const { data, error } = await supabase.functions.invoke(processorName, {
+      // Create a timeout promise (120 seconds to match edge function budget)
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('EDGE_FUNCTION_TIMEOUT')), 120000);
+      });
+      
+      // Race between the edge function call and timeout
+      const invokePromise = supabase.functions.invoke(processorName, {
         body: USE_V2_PROCESSOR 
           ? { tenderId, filePath, extractedText }
           : { tenderId, filePath, extractedText, extractedTextPath }
       });
+      
+      const result = await Promise.race([invokePromise, timeoutPromise]) as any;
+      const { data, error } = result;
+
+      // Log the full response for debugging
+      console.log('[CLIENT] Edge function response:', { 
+        hasData: !!data, 
+        hasError: !!error,
+        data: data ? JSON.stringify(data).substring(0, 500) : null,
+        error: error ? JSON.stringify(error) : null
+      });
 
       if (error) {
-        console.error('Edge function error:', error);
+        console.error('[CLIENT] Edge function returned error:', error);
+        
+        // Check for specific error types
+        if (error.message?.includes('FunctionsRelayError') || error.message?.includes('FunctionsHttpError')) {
+          throw new Error('Edge function deployment issue. The processing service may not be running. Please contact support.');
+        }
+        
         throw error;
       }
 
@@ -741,58 +764,90 @@ const NewTender = () => {
       }
 
     } catch (error) {
-      console.error('Processing error:', error);
+      console.error('[CLIENT] Processing error caught:', error);
+      
+      // Mark tender as failed in database
+      await supabase
+        .from('tenders')
+        .update({ 
+          status: 'error',
+          error_message: error instanceof Error ? error.message : 'Processing failed',
+          processing_stage: 'error'
+        })
+        .eq('id', tenderId);
       
       // Extract error details from structured responses
       let errorMessage = 'Processing failed';
       let errorDetails = '';
       
-      if (error?.message) {
-        try {
-          const parsedError = JSON.parse(error.message);
-          if (parsedError.error_code) {
-            errorMessage = parsedError.error;
-            errorDetails = parsedError.details || '';
-            
-            // Show specific error messages based on error code
-            switch (parsedError.error_code) {
-              case 'docai_config_missing':
-                errorMessage = 'Document AI not configured';
-                errorDetails = 'Please contact support to set up document processing';
-                break;
-              case 'docai_processor_missing':
-                errorMessage = 'Document processor not configured';
-                errorDetails = 'Please contact support to configure the document processor';
-                break;
-              case 'docai_config_invalid':
-                errorMessage = 'Document AI configuration invalid';
-                errorDetails = 'Please contact support to fix the configuration';
-                break;
-              case 'oauth_signing_failed':
-                errorMessage = 'Authentication failed';
-                errorDetails = 'Unable to authenticate with document processing service';
-                break;
-              case 'docai_processing_failed':
-                errorMessage = 'Document processing failed';
-                errorDetails = 'The document could not be processed. Please try a different file';
-                break;
-              case 'docai_no_text_extracted':
-                errorMessage = 'No text found in document';
-                errorDetails = 'The document appears to be empty or contains no readable text';
-                break;
+      if (error instanceof Error) {
+        // Handle timeout
+        if (error.message === 'EDGE_FUNCTION_TIMEOUT') {
+          errorMessage = 'Processing timed out';
+          errorDetails = 'The document took too long to process. Please try again or contact support if the issue persists.';
+        }
+        // Handle edge function deployment issues
+        else if (error.message.includes('deployment') || error.message.includes('not be running')) {
+          errorMessage = 'Service unavailable';
+          errorDetails = error.message;
+        }
+        // Handle structured error responses
+        else if (error.message) {
+          try {
+            const parsedError = JSON.parse(error.message);
+            if (parsedError.error_code) {
+              errorMessage = parsedError.error;
+              errorDetails = parsedError.details || '';
+              
+              // Show specific error messages based on error code
+              switch (parsedError.error_code) {
+                case 'docai_config_missing':
+                  errorMessage = 'Document AI not configured';
+                  errorDetails = 'Please contact support to set up document processing';
+                  break;
+                case 'docai_processor_missing':
+                  errorMessage = 'Document processor not configured';
+                  errorDetails = 'Please contact support to configure the document processor';
+                  break;
+                case 'docai_config_invalid':
+                  errorMessage = 'Document AI configuration invalid';
+                  errorDetails = 'Please contact support to fix the configuration';
+                  break;
+                case 'oauth_signing_failed':
+                  errorMessage = 'Authentication failed';
+                  errorDetails = 'Unable to authenticate with document processing service';
+                  break;
+                case 'docai_processing_failed':
+                  errorMessage = 'Document processing failed';
+                  errorDetails = 'The document could not be processed. Please try a different file';
+                  break;
+                case 'docai_no_text_extracted':
+                  errorMessage = 'No text found in document';
+                  errorDetails = 'The document appears to be empty or contains no readable text';
+                  break;
+              }
+            } else {
+              errorMessage = error.message;
             }
-          } else {
-            errorMessage = error.message;
+          } catch {
+            errorMessage = error.message || 'Processing failed';
           }
-        } catch {
-          errorMessage = error.message || 'Processing failed';
         }
       }
       
-      const displayError = errorDetails ? `${errorMessage} (${errorDetails})` : errorMessage;
+      const displayError = errorDetails ? `${errorMessage}: ${errorDetails}` : errorMessage;
       setProcessingError(displayError);
-      setCurrentStep('upload');
-      // Note: Progress bar will show red color automatically via error prop in ProcessingProgress component
+      setProcessing(false);
+      setUploading(false);
+      
+      // Show error toast
+      toast({
+        title: errorMessage,
+        description: errorDetails || 'Please try again or contact support if the issue persists.',
+        variant: "destructive",
+      });
+      
+      // Note: Don't reset to upload step - keep processing UI with error so user can see what happened
     } finally {
       // Only unsubscribe if we haven't already
       if (!channelUnsubscribed) {
