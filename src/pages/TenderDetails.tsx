@@ -126,6 +126,8 @@ const TenderDetails = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const { data: tender, isLoading: tenderLoading } = useQuery({
     queryKey: ['tender', id],
@@ -167,6 +169,29 @@ const TenderDetails = () => {
       supabase.removeChannel(channel);
     };
   }, [tender?.id, queryClient, id]);
+
+  // Generate signed URL for document preview
+  useEffect(() => {
+    const generateSignedUrl = async () => {
+      if (!tender?.file_url) return;
+      
+      try {
+        const { data, error } = await supabase.storage
+          .from('tender-documents')
+          .createSignedUrl(tender.file_url, 3600); // 1 hour expiry
+        
+        if (error) throw error;
+        setPreviewUrl(data.signedUrl);
+        setPreviewError(null);
+      } catch (error) {
+        console.error('Error generating signed URL:', error);
+        setPreviewError('Failed to load document preview');
+        setPreviewUrl(null);
+      }
+    };
+    
+    generateSignedUrl();
+  }, [tender?.file_url]);
 
   const { data: responses, isLoading: responsesLoading, refetch: refetchResponses } = useQuery({
     queryKey: ['tender-responses', tender?.id],
@@ -537,27 +562,37 @@ const TenderDetails = () => {
                   <Button 
                     variant="outline" 
                     size="sm"
-                    onClick={() => {
-                      const { data } = supabase.storage.from('tender-documents').getPublicUrl(tender.file_url);
-                      window.open(data.publicUrl, '_blank');
-                    }}
+                    onClick={() => previewUrl && window.open(previewUrl, '_blank')}
+                    disabled={!previewUrl}
                   >
                     Open in New Tab
                   </Button>
                 </div>
                 <div className="w-full h-96 border rounded-lg bg-muted">
-                  {tender.file_url.toLowerCase().endsWith('.pdf') ? (
-                    <iframe
-                      src={supabase.storage.from('tender-documents').getPublicUrl(tender.file_url).data.publicUrl}
-                      className="w-full h-full rounded-lg"
-                      title="Tender Document Preview"
-                    />
-                  ) : (
-                    <iframe
-                      src={`https://docs.google.com/viewer?url=${encodeURIComponent(supabase.storage.from('tender-documents').getPublicUrl(tender.file_url).data.publicUrl)}&embedded=true`}
-                      className="w-full h-full rounded-lg"
-                      title="Tender Document Preview"
-                    />
+                  {!previewUrl && !previewError && (
+                    <div className="flex items-center justify-center h-full">
+                      <p className="text-muted-foreground">Loading preview...</p>
+                    </div>
+                  )}
+                  {previewError && (
+                    <div className="flex items-center justify-center h-full">
+                      <p className="text-destructive">{previewError}</p>
+                    </div>
+                  )}
+                  {previewUrl && !previewError && (
+                    tender.file_url.toLowerCase().endsWith('.pdf') ? (
+                      <iframe
+                        src={previewUrl}
+                        className="w-full h-full rounded-lg"
+                        title="Tender Document Preview"
+                      />
+                    ) : (
+                      <iframe
+                        src={`https://docs.google.com/viewer?url=${encodeURIComponent(previewUrl)}&embedded=true`}
+                        className="w-full h-full rounded-lg"
+                        title="Tender Document Preview"
+                      />
+                    )
                   )}
                 </div>
               </div>
