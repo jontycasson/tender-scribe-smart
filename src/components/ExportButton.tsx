@@ -24,10 +24,30 @@ export const ExportButton: React.FC<ExportButtonProps> = ({ tenderId }) => {
     ];
 
     exportData.items.forEach((item: any) => {
+      // Question heading
       paragraphs.push(
         new Paragraph({
           children: [new TextRun({ text: `${item.questionNumber}. ${item.question}`, bold: true })],
-        }),
+        })
+      );
+
+      // Add source tracking information if available
+      if (item.originalReference || item.sourceLocation) {
+        const sourceInfo = [];
+        if (item.originalReference) {
+          sourceInfo.push(`Reference: ${item.originalReference}`);
+        }
+        if (item.sourceLocation) {
+          sourceInfo.push(`Source: ${item.sourceLocation}`);
+        }
+        paragraphs.push(
+          new Paragraph({
+            children: [new TextRun({ text: sourceInfo.join(' | '), italics: true, size: 20, color: '666666' })],
+          })
+        );
+      }
+
+      paragraphs.push(
         new Paragraph({ children: [new TextRun("")] }), // Empty line
         new Paragraph({
           children: [new TextRun(item.answer || 'No answer provided')],
@@ -61,15 +81,40 @@ export const ExportButton: React.FC<ExportButtonProps> = ({ tenderId }) => {
         pdf.addPage();
         yPosition = 30;
       }
-      
+
       // Question
       pdf.setFontSize(12);
       pdf.setFont(undefined, 'bold');
       const questionLines = pdf.splitTextToSize(`${item.questionNumber}. ${item.question}`, 170);
       pdf.text(questionLines, margin, yPosition);
-      yPosition += questionLines.length * 7 + 5;
-      
+      yPosition += questionLines.length * 7 + 3;
+
+      // Add source tracking information if available
+      if (item.originalReference || item.sourceLocation) {
+        pdf.setFontSize(9);
+        pdf.setFont(undefined, 'italic');
+        pdf.setTextColor(100, 100, 100);
+
+        const sourceInfo = [];
+        if (item.originalReference) {
+          sourceInfo.push(`Reference: ${item.originalReference}`);
+        }
+        if (item.sourceLocation) {
+          sourceInfo.push(`Source: ${item.sourceLocation}`);
+        }
+
+        const sourceText = sourceInfo.join(' | ');
+        pdf.text(sourceText, margin, yPosition);
+        yPosition += 7;
+
+        // Reset color
+        pdf.setTextColor(0, 0, 0);
+      }
+
+      yPosition += 2;
+
       // Answer
+      pdf.setFontSize(11);
       pdf.setFont(undefined, 'normal');
       const answerText = item.answer || 'No answer provided';
       const answerLines = pdf.splitTextToSize(answerText, 170);

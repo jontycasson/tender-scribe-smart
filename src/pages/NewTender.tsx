@@ -35,6 +35,9 @@ interface Question {
   ai_generated_answer: string;
   user_edited_answer?: string;
   is_approved: boolean;
+  original_reference?: string | null;
+  source_location?: string | null;
+  page_number?: number | null;
 }
 
 const processingStages = [
@@ -1411,6 +1414,20 @@ const NewTender = () => {
                           <div>
                             <Label className="text-sm font-medium text-muted-foreground">Question</Label>
                             <p className="mt-1 p-3 bg-muted rounded-md">{question.question}</p>
+                            {(question.original_reference || question.source_location) && (
+                              <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                                {question.original_reference && (
+                                  <span className="inline-flex items-center px-2 py-1 bg-primary/10 rounded">
+                                    <span className="font-semibold">Ref:</span>&nbsp;{question.original_reference}
+                                  </span>
+                                )}
+                                {question.source_location && (
+                                  <span className="inline-flex items-center px-2 py-1 bg-secondary/50 rounded">
+                                    <span className="font-semibold">Source:</span>&nbsp;{question.source_location}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           <div>

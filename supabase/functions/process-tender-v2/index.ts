@@ -242,35 +242,81 @@ async function extractRtfText(fileData: Blob): Promise<string> {
     }
 }
 
-// XLSX text extraction with improved error handling
+// XLSX text extraction with sheet name detection and structure preservation
 async function extractXlsxText(fileData: Blob): Promise<string> {
   try {
-    console.log(`[DIAGNOSTIC] Attempting XLSX text extraction...`);
+    console.log(`[DIAGNOSTIC] Attempting XLSX text extraction with sheet detection...`);
     const arrayBuffer = await fileData.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
-    
-    // Basic XLSX content extraction (looking for readable text)
+
+    // Decode as text to search for XML structure
     const decoder = new TextDecoder('utf-8', { fatal: false });
     const content = decoder.decode(uint8Array);
-    
-    // Look for cell content and questions
-    const textMatches = content.match(/[\w\s\.,;:!?\-'"()]{5,}/g);
-    if (textMatches) {
-      const text = textMatches
-        .filter(match => match.length > 5)
-        .filter(match => !/^[\d\s\.,]+$/.test(match)) // Filter out pure numbers
-        .join(', ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      
-      if (text.length >= 30) {
-        console.log(`[DIAGNOSTIC] XLSX extraction successful - ${text.length} characters`);
-        return text;
-      }
+
+    // Try to extract sheet names from workbook.xml structure
+    // XLSX files contain XML like: <sheet name="Sheet1" sheetId="1" />
+    const sheetNameMatches = content.matchAll(/<sheet[^>]*name="([^"]+)"/gi);
+    const sheetNames = Array.from(sheetNameMatches).map(match => match[1]);
+
+    if (sheetNames.length > 0) {
+      console.log(`[DIAGNOSTIC] Found ${sheetNames.length} sheets: ${sheetNames.join(', ')}`);
     }
-    
-    throw new Error('Unable to extract meaningful text from XLSX');
-    
+
+    // Extract cell content with better pattern matching
+    // Look for patterns like <v>text</v>, <t>text</t> which are cell values in XLSX
+    const cellValueMatches = content.matchAll(/<[vt]>([^<]+)<\/[vt]>/gi);
+    const cellValues = Array.from(cellValueMatches).map(match => match[1].trim());
+
+    // Also look for inline strings <is><t>text</t></is>
+    const inlineStringMatches = content.matchAll(/<is><t>([^<]+)<\/t><\/is>/gi);
+    const inlineStrings = Array.from(inlineStringMatches).map(match => match[1].trim());
+
+    // Combine all extracted text
+    const allText = [...cellValues, ...inlineStrings];
+
+    // Filter out numeric-only cells and very short text
+    const meaningfulText = allText
+      .filter(text => text.length > 2)
+      .filter(text => !/^[\d\s\.,\-]+$/.test(text)) // Filter out pure numbers
+      .filter(text => text.length > 0);
+
+    if (meaningfulText.length === 0) {
+      // Fallback to regex pattern matching
+      console.log(`[DIAGNOSTIC] No structured text found, trying pattern matching...`);
+      const textMatches = content.match(/[\w\s\.,;:!?\-'"()]{5,}/g);
+      if (textMatches) {
+        const text = textMatches
+          .filter(match => match.length > 5)
+          .filter(match => !/^[\d\s\.,]+$/.test(match))
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (text.length >= 30) {
+          console.log(`[DIAGNOSTIC] XLSX pattern extraction successful - ${text.length} characters`);
+          return text;
+        }
+      }
+      throw new Error('Unable to extract meaningful text from XLSX');
+    }
+
+    // Build output with sheet markers if we detected multiple sheets
+    let output = '';
+    if (sheetNames.length > 1) {
+      // If we have multiple sheets, try to group content by sheet
+      // For now, we'll mark sheet boundaries in the text
+      output = sheetNames.map((sheetName, idx) => {
+        return `[SHEET: ${sheetName}]\n`;
+      }).join('\n') + '\n\n' + meaningfulText.join('\n');
+    } else if (sheetNames.length === 1) {
+      output = `[SHEET: ${sheetNames[0]}]\n\n` + meaningfulText.join('\n');
+    } else {
+      output = meaningfulText.join('\n');
+    }
+
+    console.log(`[DIAGNOSTIC] XLSX extraction successful - ${output.length} characters, ${sheetNames.length} sheets detected`);
+    return output;
+
   } catch (error) {
     const errorMessage = getErrorMessage(error);
     const errorMsg = `XLSX extraction failed: ${errorMessage}`;
@@ -586,34 +632,71 @@ function rescueContextFromText(rawText: string): any[] {
   return contextItems;
 }
 
-// Extract obvious questions using regex patterns
+// Extract obvious questions using regex patterns with source tracking
 function extractObviousQuestions(text: string): any[] {
   const questions = [];
   const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
   let lineIndex = 0;
+  let currentSheet = null;
+  let currentSection = null;
 
   for (const line of lines) {
     lineIndex++;
-    if (line.length < 5) continue; // Reduced from 10 to catch very short questions
-    
+
+    // Check if this is a sheet marker
+    const sheetMatch = line.match(/^\[SHEET:\s*(.+?)\]$/);
+    if (sheetMatch) {
+      currentSheet = sheetMatch[1];
+      console.log(`📄 Detected sheet: ${currentSheet}`);
+      continue;
+    }
+
+    // Check if this is a section header (for Word/PDF documents)
+    const sectionMatch = line.match(/^(SECTION|Chapter|Part)\s+(\d+[.\d]*)\s*:?\s*(.+)$/i);
+    if (sectionMatch && line.length < 100) {
+      currentSection = `${sectionMatch[1]} ${sectionMatch[2]}: ${sectionMatch[3]}`;
+      console.log(`📑 Detected section: ${currentSection}`);
+      continue;
+    }
+
+    if (line.length < 5) continue;
+
+    // Try to extract original question reference (e.g., "Q1.2", "1.2.3", "A5")
+    let originalRef = null;
+    const refMatch = line.match(/^([Qq]\d+(?:\.\d+)?|[A-Z]?\d+(?:\.\d+)*|[\(\[]?[A-Za-z][\)\]])\s*[:\.\-\)]/);
+    if (refMatch) {
+      originalRef = refMatch[1].replace(/[:\.\-\)]/g, '').trim();
+    }
+
     const cleanLine = line.replace(/^[\d\.\)\-\*\•\s]+/, '').trim();
-    if (cleanLine.length < 5) continue; // Reduced threshold
-    
+    if (cleanLine.length < 5) continue;
+
     // Regex patterns for obvious questions
     const isDirectQuestion = cleanLine.endsWith('?');
     const isNumberedQuestion = /^(question\s*\d+|q\d+|q\.\d+)/i.test(line);
     const isImperative = /^(please\s+)?(describe|provide|explain|tell|list|outline|detail|specify|identify|confirm|state|indicate|demonstrate|show|what|when|where|why|how|which|do you|can you|will you|have you|are you|would you|could you|give|submit|attach|include|evidence|address)/i.test(cleanLine);
     const isBulletQuestion = /^[\*\•\-]\s*(what|when|where|why|how|which|describe|provide|explain|tell|list|do you|can you)/i.test(line);
-    
+
     if (isDirectQuestion || isNumberedQuestion || isImperative || isBulletQuestion) {
+      // Build source location string
+      let sourceLocation = null;
+      if (currentSheet) {
+        sourceLocation = `Sheet: ${currentSheet}`;
+      } else if (currentSection) {
+        sourceLocation = currentSection;
+      }
+
       questions.push({
-        question_number: lineIndex, // Use line index to preserve order
+        question_number: lineIndex,
         question_text: cleanLine,
         source: 'regex',
         confidence: isDirectQuestion ? 0.9 : 0.7,
-        original_line_number: lineIndex // Track original position
+        original_line_number: lineIndex,
+        original_reference: originalRef,
+        source_location: sourceLocation,
+        page_number: currentSheet ? null : null // Will be set later if we can determine it
       });
-      console.log(`✓ Extracted Q at line ${lineIndex}: "${cleanLine.substring(0, 60)}..."`);
+      console.log(`✓ Extracted Q at line ${lineIndex}${originalRef ? ` [Ref: ${originalRef}]` : ''}${sourceLocation ? ` [Source: ${sourceLocation}]` : ''}: "${cleanLine.substring(0, 60)}..."`);
     }
   }
 
@@ -1501,11 +1584,11 @@ async function saveAnswerBatch(
   modelUsed: string = 'gpt-4o-mini'
 ): Promise<{ data: any[] | null; error?: any }> {
   const batchAnswers = [];
-  
+
   for (let i = 0; i < answers.length && i < questionBatch.length; i++) {
     const answer = answers[i];
     const question = questionBatch[i];
-    
+
     batchAnswers.push({
       tender_id: tenderId,
       company_profile_id: companyProfileId,
@@ -1516,7 +1599,11 @@ async function saveAnswerBatch(
       model_used: modelUsed,
       question_type: 'standard',
       response_length: answer.answer.length,
-      processing_time_ms: 0
+      processing_time_ms: 0,
+      // Add source tracking information
+      original_reference: question.original_reference || null,
+      source_location: question.source_location || null,
+      page_number: question.page_number || null
     });
   }
   

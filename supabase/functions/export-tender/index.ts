@@ -88,7 +88,11 @@ serve(async (req) => {
       items: responses.map((response, index) => ({
         questionNumber: index + 1,
         question: response.question,
-        answer: response.user_edited_answer || response.ai_generated_answer
+        answer: response.user_edited_answer || response.ai_generated_answer,
+        // Include source tracking information
+        originalReference: response.original_reference || null,
+        sourceLocation: response.source_location || null,
+        pageNumber: response.page_number || null
       })),
       format
     };
