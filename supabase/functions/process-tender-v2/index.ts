@@ -694,9 +694,11 @@ function extractObviousQuestions(text: string): any[] {
         original_line_number: lineIndex,
         original_reference: originalRef,
         source_location: sourceLocation,
+        sheet_name: currentSheet || null,
+        section_name: currentSection || null,
         page_number: currentSheet ? null : null // Will be set later if we can determine it
       });
-      console.log(`✓ Extracted Q at line ${lineIndex}${originalRef ? ` [Ref: ${originalRef}]` : ''}${sourceLocation ? ` [Source: ${sourceLocation}]` : ''}: "${cleanLine.substring(0, 60)}..."`);
+      console.log(`✓ Extracted Q at line ${lineIndex}${originalRef ? ` [Ref: ${originalRef}]` : ''}${sourceLocation ? ` [Source: ${sourceLocation}]` : ''}${currentSheet ? ` [Sheet: ${currentSheet}]` : ''}: "${cleanLine.substring(0, 60)}..."`);
     }
   }
 
