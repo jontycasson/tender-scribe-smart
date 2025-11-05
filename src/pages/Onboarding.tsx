@@ -12,6 +12,7 @@ const Onboarding = () => {
   const { toast } = useToast();
   const { user, loading } = useAuth();
   const [existingProfile, setExistingProfile] = useState<CompanyProfileData | null>(null);
+  const [companyProfileId, setCompanyProfileId] = useState<string | undefined>(undefined);
   const [profileLoading, setProfileLoading] = useState(true);
 
   useEffect(() => {
@@ -34,6 +35,7 @@ const Onboarding = () => {
         if (error) {
           console.error("Error fetching profile:", error);
         } else if (data) {
+          setCompanyProfileId(data.id);
           // Convert database format to form format
           setExistingProfile({
             companyName: data.company_name,
@@ -115,6 +117,19 @@ const Onboarding = () => {
         throw error;
       }
 
+      // If creating a new profile, get the ID for document uploads
+      if (!existingProfile) {
+        const { data: newProfile } = await supabase
+          .from("company_profiles")
+          .select("id")
+          .eq("user_id", user.id)
+          .single();
+        
+        if (newProfile) {
+          setCompanyProfileId(newProfile.id);
+        }
+      }
+
       toast({
         title: existingProfile ? "Profile updated successfully!" : "Profile created successfully!",
         description: existingProfile 
@@ -153,7 +168,11 @@ const Onboarding = () => {
       <Navigation />
       <div className="flex items-center justify-center p-6 min-h-[calc(100vh-80px)]">
         <div className="max-w-2xl w-full">
-          <OnboardingForm onComplete={handleOnboardingComplete} existingData={existingProfile} />
+          <OnboardingForm 
+            onComplete={handleOnboardingComplete} 
+            existingData={existingProfile}
+            companyProfileId={companyProfileId}
+          />
         </div>
       </div>
     </div>

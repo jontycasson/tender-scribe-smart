@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { CompanyProfileData, companyProfileSchema, industryOptions, teamSizeOptions, serviceOptions, yearsInBusinessOptions } from "@/lib/validations/onboarding";
 import { AIGenerateButton } from "@/components/onboarding/AIGenerateButton";
+import { DocumentUpload } from "./DocumentUpload";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -19,9 +20,10 @@ interface OnboardingFormProps {
   onComplete: (data: CompanyProfileData) => void;
   existingData?: CompanyProfileData | null;
   isSettings?: boolean;
+  companyProfileId?: string;
 }
 
-export function OnboardingForm({ onComplete, existingData, isSettings = false }: OnboardingFormProps) {
+export function OnboardingForm({ onComplete, existingData, isSettings = false, companyProfileId }: OnboardingFormProps) {
   const { toast } = useToast();
   const [generatingField, setGeneratingField] = useState<string | null>(null);
 
@@ -492,6 +494,16 @@ export function OnboardingForm({ onComplete, existingData, isSettings = false }:
                   )}
                 />
               </div>
+
+              {/* Step 5: Supporting Documents */}
+              <Card className="bg-card/50 backdrop-blur-sm border-border/50">
+                <CardHeader>
+                  <CardTitle>Supporting Documents</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <DocumentUpload companyProfileId={companyProfileId} />
+                </CardContent>
+              </Card>
 
               <div className="flex justify-end pt-6">
                 <Button type="submit" size="lg">
