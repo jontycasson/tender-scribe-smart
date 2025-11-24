@@ -1172,6 +1172,45 @@ async function fetchCompanyProfile(companyProfileId: string, supabaseClient: any
   }
 }
 
+// Fetch company documents for context enrichment
+async function fetchCompanyDocuments(companyProfileId: string, supabaseClient: any): Promise<string> {
+  console.log(`Fetching company documents for profile: ${companyProfileId}`);
+  
+  try {
+    const { data: documents, error } = await supabaseClient
+      .from('company_documents')
+      .select('file_name, document_type, extracted_content')
+      .eq('company_profile_id', companyProfileId)
+      .not('extracted_content', 'is', null)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching company documents:', error);
+      return '';
+    }
+
+    if (!documents || documents.length === 0) {
+      console.log('No company documents found');
+      return '';
+    }
+
+    console.log(`Found ${documents.length} company documents with content`);
+    
+    // Format documents for context
+    const documentContext = documents.map((doc: any) => {
+      const typeLabel = doc.document_type === 'policy' ? 'Policy' : 
+                       doc.document_type === 'fact_sheet' ? 'Fact Sheet' : 'Document';
+      return `[${typeLabel}: ${doc.file_name}]\n${doc.extracted_content}`;
+    }).join('\n\n');
+
+    return documentContext;
+
+  } catch (error) {
+    console.error('Error fetching company documents:', error);
+    return '';
+  }
+}
+
 // Perform vector search for questions using qa_memory - limit to 5 questions for performance
 async function performVectorSearch(questions: any[], companyProfileId: string, supabaseClient: any): Promise<any[]> {
   const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
@@ -1400,13 +1439,18 @@ STRICT RULES:
 
   const instructionsText = toText(enrichment.instructions || []).slice(0, 800);
 
+  const companyDocsText = enrichment.companyDocuments 
+    ? enrichment.companyDocuments.slice(0, 2000) // Limit to 2000 chars to avoid token overload
+    : '';
+
   const promptText = [
     `COMPANY PROFILE:\n${profileSummaryBullets.map(b => `• ${b}`).join('\n')}`,
+    companyDocsText ? `\nCOMPANY DOCUMENTS (Use these for factual accuracy):\n${companyDocsText}` : '',
     contextText ? `\nTENDER CONTEXT:\n${contextText}` : '',
     instructionsText ? `\nMANDATORY COMPLIANCE:\n${instructionsText}` : '',
     `\nQUESTIONS (do not paraphrase IDs; answer by id):\n` +
     qItems.map(q => `${q.id}. ${q.text}`).join('\n')
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
   // Log payload size
   const finalPayloadSize = (systemPrompt + promptText).length;
@@ -1842,13 +1886,15 @@ if (tokenEstimate <= 4000 && payloadChars <= 16000) {
 function buildEnrichmentBundle(
   companyProfile: any,
   retrievedSnippets: any[],
-  segments: { questions: any[]; context: any[]; instructions: any[]; }
+  segments: { questions: any[]; context: any[]; instructions: any[]; },
+  companyDocuments: string = ''
 ): any {
   return {
     companyProfile,
     retrievedSnippets,
     documentContext: segments.context,
-    instructions: segments.instructions
+    instructions: segments.instructions,
+    companyDocuments
   };
 }
 
@@ -2010,6 +2056,12 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       const companyProfile = await fetchCompanyProfile(tender.company_profile_id, supabaseClient);
       console.log(`[DIAGNOSTIC] Company profile fetched: ${companyProfile.company_name}`);
       
+      // Fetch company documents for additional context
+      const companyDocuments = await fetchCompanyDocuments(tender.company_profile_id, supabaseClient);
+      if (companyDocuments) {
+        console.log(`[DIAGNOSTIC] Company documents fetched - ${companyDocuments.length} characters of document context`);
+      }
+      
       // Perform vector search for questions (only if we have questions)
       let retrievedSnippets = [];
       if (segments.questions.length > 0) {
@@ -2024,9 +2076,9 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       }
       
       // Build enrichment bundle
-      enrichment = buildEnrichmentBundle(companyProfile, retrievedSnippets, segments);
+      enrichment = buildEnrichmentBundle(companyProfile, retrievedSnippets, segments, companyDocuments);
       console.log(`✅ Enrichment complete`);
-      console.log(`[DIAGNOSTIC] Enrichment bundle: profile=${companyProfile.company_name}, snippets=${retrievedSnippets.length}, context=${segments.context.length}, instructions=${segments.instructions.length}`);
+      console.log(`[DIAGNOSTIC] Enrichment bundle: profile=${companyProfile.company_name}, snippets=${retrievedSnippets.length}, context=${segments.context.length}, instructions=${segments.instructions.length}, documents=${companyDocuments ? 'yes' : 'no'}`);
       
       response.enrichment = enrichment;
       response.status = 'enriched';
@@ -2036,7 +2088,8 @@ async function processTenderV2(request: ProcessTenderRequest): Promise<ProcessTe
       // Create minimal enrichment to allow processing to continue
       try {
         const fallbackProfile = await fetchCompanyProfile(tender.company_profile_id, supabaseClient);
-        enrichment = buildEnrichmentBundle(fallbackProfile, [], segments);
+        const fallbackDocuments = await fetchCompanyDocuments(tender.company_profile_id, supabaseClient);
+        enrichment = buildEnrichmentBundle(fallbackProfile, [], segments, fallbackDocuments);
         console.log(`[DIAGNOSTIC] Using fallback enrichment with minimal profile`);
         response.status = 'enriched';
       } catch (fallbackError) {

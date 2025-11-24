@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { CompanyProfileData, companyProfileSchema, industryOptions, teamSizeOptions, serviceOptions, yearsInBusinessOptions } from "@/lib/validations/onboarding";
 import { AIGenerateButton } from "@/components/onboarding/AIGenerateButton";
 import { DocumentUpload } from "./DocumentUpload";
+import { DocumentList } from "./DocumentList";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -499,9 +500,17 @@ export function OnboardingForm({ onComplete, existingData, isSettings = false, c
               <Card className="bg-card/50 backdrop-blur-sm border-border/50">
                 <CardHeader>
                   <CardTitle>Supporting Documents</CardTitle>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Upload policies, fact sheets, or other documents to improve AI response accuracy.
+                  </p>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-6">
                   <DocumentUpload companyProfileId={companyProfileId} />
+                  
+                  <div>
+                    <h4 className="text-sm font-semibold mb-3">Uploaded Documents</h4>
+                    <DocumentList companyProfileId={companyProfileId} />
+                  </div>
                 </CardContent>
               </Card>
 
