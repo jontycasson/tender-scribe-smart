@@ -50,15 +50,6 @@ export const DocumentUpload = ({ companyProfileId }: DocumentUploadProps) => {
   };
 
   const handleUpload = async () => {
-    if (!companyProfileId) {
-      toast({
-        title: "Error",
-        description: "Please save your company profile first before uploading documents.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setUploading(true);
 
     try {
@@ -127,7 +118,15 @@ export const DocumentUpload = ({ companyProfileId }: DocumentUploadProps) => {
         </p>
       </div>
 
-      <Card className="border-2 border-dashed hover:border-primary/50 transition-colors">
+      {!companyProfileId && (
+        <div className="bg-muted/50 border border-border rounded-lg p-3">
+          <p className="text-sm text-muted-foreground">
+            💡 Save your company profile first to enable document uploads
+          </p>
+        </div>
+      )}
+
+      <Card className={`border-2 border-dashed transition-colors ${!companyProfileId ? 'opacity-50 pointer-events-none' : 'hover:border-primary/50'}`}>
         <label
           htmlFor="document-upload"
           className="flex flex-col items-center justify-center p-8 cursor-pointer"
@@ -144,6 +143,7 @@ export const DocumentUpload = ({ companyProfileId }: DocumentUploadProps) => {
             accept=".pdf,.docx,.doc,.txt"
             onChange={handleFileChange}
             className="hidden"
+            disabled={!companyProfileId}
           />
         </label>
       </Card>
@@ -188,7 +188,7 @@ export const DocumentUpload = ({ companyProfileId }: DocumentUploadProps) => {
 
           <Button
             onClick={handleUpload}
-            disabled={uploading}
+            disabled={uploading || !companyProfileId}
             className="w-full"
           >
             {uploading ? (
